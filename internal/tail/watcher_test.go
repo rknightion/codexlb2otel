@@ -1,0 +1,260 @@
+package tail
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/rknightion/codexlb2otel/internal/archive"
+	"github.com/rknightion/codexlb2otel/internal/frame"
+	"github.com/rknightion/codexlb2otel/internal/turn"
+)
+
+const fixture = "2026-08-06T21.jsonl.gz"
+
+func loadFixture(t *testing.T) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "live", fixture))
+	if err != nil {
+		t.Skipf("live fixture absent (%v); pull one from camden to run this", err)
+	}
+	return b
+}
+
+func newWatcher(t *testing.T, dir string, cfg func(*Config)) *Watcher {
+	t.Helper()
+	c := Config{
+		Dir:            dir,
+		CheckpointPath: filepath.Join(dir, "state", "checkpoint.json"),
+		PollInterval:   time.Hour, // Poll is driven directly in tests
+		ChunkSize:      1 << 20,
+	}
+	if cfg != nil {
+		cfg(&c)
+	}
+	w, err := New(c, turn.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
+func collect(turns *[]*turn.Turn) Emit {
+	return func(_ context.Context, batch []*turn.Turn) error {
+		*turns = append(*turns, batch...)
+		return nil
+	}
+}
+
+// Tailing a file as it is appended must produce exactly what reading it once
+// produces - no duplicates from re-reading, and nothing lost at a chunk boundary.
+// The append sizes deliberately land mid-gzip-member, which is the case that breaks
+// naive offset tracking.
+func TestWatcher_IncrementalAppendMatchesSinglePass(t *testing.T) {
+	data := loadFixture(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, fixture)
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	var got []*turn.Turn
+	w := newWatcher(t, dir, nil)
+	ctx := context.Background()
+
+	// Sizes are coprime-ish and unaligned to any member boundary on purpose.
+	for off := 0; off < len(data); {
+		end := off + 997_003
+		if end > len(data) {
+			end = len(data)
+		}
+		if _, err := f.Write(data[off:end]); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Poll(ctx, collect(&got)); err != nil {
+			t.Fatal(err)
+		}
+		off = end
+	}
+	got = append(got, w.reducer.Flush()...)
+
+	want := singlePass(t, data)
+	if len(got) != len(want) {
+		t.Errorf("tailed %d turns, single pass produced %d", len(got), len(want))
+	}
+
+	seen := map[string]int{}
+	for _, x := range got {
+		if x.RequestID != "" {
+			seen[x.RequestID]++
+		}
+	}
+	for id, n := range seen {
+		if n > 1 {
+			t.Errorf("request %s emitted %d times; offsets are being replayed", id, n)
+		}
+	}
+}
+
+func singlePass(t *testing.T, data []byte) []*turn.Turn {
+	t.Helper()
+	res, err := archive.DecodeMembers(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := turn.New()
+	var out []*turn.Turn
+	err = frame.Lines(res.Data, func(rec *frame.Record) error {
+		done, err := r.Add(rec)
+		if done != nil {
+			out = append(out, done)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(out, r.Flush()...)
+}
+
+// A restart must resume from the checkpoint rather than replaying the file. Shipping
+// the same turns twice is the failure this guards: Loki deduplicates poorly and OTLP
+// counters would double-count outright.
+func TestWatcher_ResumesWithoutReplaying(t *testing.T) {
+	data := loadFixture(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, fixture)
+	half := len(data) / 2
+
+	if err := os.WriteFile(path, data[:half], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var first []*turn.Turn
+	w1 := newWatcher(t, dir, nil)
+	if err := w1.Poll(context.Background(), collect(&first)); err != nil {
+		t.Fatal(err)
+	}
+	if len(first) == 0 {
+		t.Fatal("first pass produced no turns")
+	}
+
+	// Append the rest, then start a completely fresh watcher over the same state.
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(data[half:]); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	var second []*turn.Turn
+	w2 := newWatcher(t, dir, nil)
+	if err := w2.Poll(context.Background(), collect(&second)); err != nil {
+		t.Fatal(err)
+	}
+
+	firstIDs := map[string]bool{}
+	for _, x := range first {
+		firstIDs[x.RequestID] = true
+	}
+	for _, x := range second {
+		if x.RequestID != "" && firstIDs[x.RequestID] {
+			t.Fatalf("request %s re-emitted after restart", x.RequestID)
+		}
+	}
+	if len(second) == 0 {
+		t.Error("resumed watcher produced nothing from the appended half")
+	}
+	t.Logf("%d turns before restart, %d after, no overlap", len(first), len(second))
+}
+
+// Reclaim must never touch the newest file: that is the one codex-lb is still
+// appending to, where offset==size only means we have caught up.
+func TestWatcher_ReclaimSparesTheLiveFile(t *testing.T) {
+	data := loadFixture(t)
+	dir := t.TempDir()
+	older := filepath.Join(dir, "2026-08-06T20.jsonl.gz")
+	live := filepath.Join(dir, "2026-08-06T21.jsonl.gz")
+	for _, p := range []string{older, live} {
+		if err := os.WriteFile(p, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Backdate both well past the retention window, so only the live-file rule can
+	// be what saves the newest one.
+	old := time.Now().Add(-48 * time.Hour)
+	for _, p := range []string{older, live} {
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var got []*turn.Turn
+	w := newWatcher(t, dir, func(c *Config) { c.DeleteAfter = time.Hour })
+	if err := w.Poll(context.Background(), collect(&got)); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(older); !os.IsNotExist(err) {
+		t.Errorf("fully ingested older file was not reclaimed (err=%v)", err)
+	}
+	if _, err := os.Stat(live); err != nil {
+		t.Errorf("newest file must never be deleted: %v", err)
+	}
+	if w.Stats.FilesDeleted != 1 {
+		t.Errorf("FilesDeleted = %d, want 1", w.Stats.FilesDeleted)
+	}
+}
+
+// Deletion is opt-in. A zero DeleteAfter must leave everything on disk: this removes
+// the only copy of the raw capture, so it must never happen by default.
+func TestWatcher_ReclaimIsOptIn(t *testing.T) {
+	data := loadFixture(t)
+	dir := t.TempDir()
+	for _, n := range []string{"2026-08-06T20.jsonl.gz", "2026-08-06T21.jsonl.gz"} {
+		if err := os.WriteFile(filepath.Join(dir, n), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []*turn.Turn
+	w := newWatcher(t, dir, nil) // DeleteAfter unset
+	if err := w.Poll(context.Background(), collect(&got)); err != nil {
+		t.Fatal(err)
+	}
+	if w.Stats.FilesDeleted != 0 {
+		t.Errorf("deleted %d files with retention disabled", w.Stats.FilesDeleted)
+	}
+	entries, _ := filepath.Glob(filepath.Join(dir, "*.jsonl.gz"))
+	if len(entries) != 2 {
+		t.Errorf("%d archive files remain, want 2", len(entries))
+	}
+}
+
+// A sink failure must not advance the checkpoint, or the rejected turns are lost.
+func TestWatcher_FailedEmitDoesNotAdvanceCheckpoint(t *testing.T) {
+	data := loadFixture(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, fixture), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newWatcher(t, dir, nil)
+	boom := func(context.Context, []*turn.Turn) error { return os.ErrClosed }
+	if err := w.Poll(context.Background(), boom); err == nil {
+		t.Fatal("expected the sink failure to surface")
+	}
+
+	cp, err := LoadCheckpoint(w.cfg.CheckpointPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := cp.Files[fixture]; st.Offset != 0 {
+		t.Errorf("checkpoint advanced to %d despite the sink failing", st.Offset)
+	}
+}
