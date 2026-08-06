@@ -15,6 +15,11 @@ const StatusIncomplete = "incomplete"
 // Distinct from StatusIncomplete: here the server said why it ended.
 const StatusError = "error"
 
+// StatusTransport marks a websocket-level event - a close, or a connection error -
+// belonging to no response. Distinct from StatusError, which is the SERVER rejecting
+// a request; this is the connection itself failing, and the two want different alerts.
+const StatusTransport = "transport"
+
 // Flush emits every in-flight response and clears them. Use at end of input.
 //
 // Without this, a response whose completion frame never arrives would sit in the

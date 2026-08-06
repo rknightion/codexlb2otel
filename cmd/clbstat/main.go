@@ -97,7 +97,7 @@ var handled = map[string]bool{
 	frame.EvOutputItemAdded: true, frame.EvOutputItemDone: true,
 	frame.EvRateLimits: true, frame.EvResponseMetadata: true,
 	frame.EvWebsocketTiming: true, frame.EvError: true,
-	frame.EvOutputTextDelta: true,
+	frame.EvOutputTextDelta:      true,
 	frame.EvCustomToolInputDelta: true, frame.EvFunctionArgsDelta: true,
 	frame.EvCustomToolInputDone: true, frame.EvFunctionArgsDone: true,
 	frame.EvOutputTextDone: true, frame.EvContentPartAdded: true,

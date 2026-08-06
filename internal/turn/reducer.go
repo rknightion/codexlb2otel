@@ -1,8 +1,11 @@
 package turn
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -94,7 +97,11 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 			InstallationID: rec.Header(frame.HdrInstallation),
 			WindowID:       rec.Header(frame.HdrWindow),
 			AccountID:      rec.AccountID,
+			Originator:     rec.Header(frame.HdrOriginator),
+			ClientVersion:  rec.Header(frame.HdrVersion),
+			Family:         rec.Family(),
 			IsSubagent:     rec.IsSubagent(),
+			SubagentKind:   rec.Header(frame.HdrSubagent),
 			FirstTS:        rec.Timestamp,
 			ItemCounts:     map[string]int{},
 		}
@@ -104,6 +111,10 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 	t.LastTS = rec.Timestamp
 	t.Frames++
 	t.Bytes += len(rec.Payload.Text)
+
+	if rec.IsTransport() {
+		applyTransport(t, rec)
+	}
 
 	ev, ok := rec.ParseEvent()
 	if !ok {
@@ -154,11 +165,35 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 	return nil, nil
 }
 
-// addUncorrelated handles a frame with no request_id. Only errors carry information
-// worth keeping on their own, so everything else is dropped rather than accumulated.
+// applyTransport records a websocket-level error or close.
+//
+// These carry no protocol event: their payload is a plain-text reason such as
+// "received 1012 (service restart); then sent 1012", so ParseEvent rejects it and a
+// payload-only decoder sees nothing at all. The close code lives in the archive's
+// extra block rather than in the payload.
+func applyTransport(t *Turn, rec *frame.Record) {
+	if rec.Extra.CloseCode != nil {
+		t.CloseCode = rec.Extra.CloseCode
+	}
+	if rec.Extra.FrameType == frame.FrameError {
+		t.FrameErrors++
+	}
+	if t.TransportEvent == "" {
+		t.TransportEvent = rec.Payload.Text
+	}
+}
+
+// addUncorrelated handles a frame with no request_id.
+//
+// Keying these on "" would merge unrelated frames from every connection into one
+// ever-growing turn. Only frames that mean something standalone are kept: protocol
+// errors, and the websocket-level close and error frames - which are precisely the
+// ones that report a connection dying, and which arrive with no request_id far more
+// often than not (13 of 20 in the captured corpus).
 func (r *Reducer) addUncorrelated(rec *frame.Record) (*Turn, error) {
-	ev, ok := rec.ParseEvent()
-	if !ok || ev.Type != frame.EvError {
+	ev, evOK := rec.ParseEvent()
+	isProtocolError := evOK && ev.Type == frame.EvError
+	if !isProtocolError && !rec.IsTransport() {
 		return nil, nil
 	}
 	t := &Turn{
@@ -167,6 +202,8 @@ func (r *Reducer) addUncorrelated(rec *frame.Record) (*Turn, error) {
 		ParentThreadID: rec.Header(frame.HdrParentThread),
 		InstallationID: rec.Header(frame.HdrInstallation),
 		AccountID:      rec.AccountID,
+		Originator:     rec.Header(frame.HdrOriginator),
+		Family:         rec.Family(),
 		IsSubagent:     rec.IsSubagent(),
 		FirstTS:        rec.Timestamp,
 		LastTS:         rec.Timestamp,
@@ -175,7 +212,12 @@ func (r *Reducer) addUncorrelated(rec *frame.Record) (*Turn, error) {
 		ItemCounts:     map[string]int{},
 	}
 	t.TraceID, t.SpanID = rec.Trace()
-	r.applyError(t, ev)
+	if isProtocolError {
+		r.applyError(t, ev)
+	} else {
+		applyTransport(t, rec)
+		t.Status = StatusTransport
+	}
 	r.ensureLogicalTurn(t)
 	return t, nil
 }
@@ -205,6 +247,13 @@ func (r *Reducer) applyError(t *Turn, ev frame.Event) {
 // Prewarm responses do no engine work and carry no cumulative series, so each is its
 // own logical turn - there is nothing for it to be a continuation of.
 func (r *Reducer) ensureLogicalTurn(t *Turn) {
+	if t.TurnID != "" {
+		// The server told us which turn this is. Trust it over anything inferred: the
+		// inference exists only because this field is absent on prewarms and on the
+		// HTTP family's error frames.
+		t.LogicalTurnID = t.TurnID
+		return
+	}
 	if t.LogicalTurnID != "" {
 		return
 	}
@@ -216,14 +265,35 @@ func (r *Reducer) ensureLogicalTurn(t *Turn) {
 type createEvent struct {
 	Model     string `json:"model"`
 	Reasoning struct {
-		Effort string `json:"effort"`
+		Effort  string `json:"effort"`
+		Context string `json:"context"`
+		Mode    string `json:"mode"`
 	} `json:"reasoning"`
 	Text struct {
 		Verbosity string `json:"verbosity"`
 	} `json:"text"`
-	Instructions   string      `json:"instructions"`
-	PrevResponseID string      `json:"previous_response_id"`
-	Input          []inputItem `json:"input"`
+	Instructions   string         `json:"instructions"`
+	PrevResponseID string         `json:"previous_response_id"`
+	PromptCacheKey string         `json:"prompt_cache_key"`
+	ParallelTools  bool           `json:"parallel_tool_calls"`
+	Input          []inputItem    `json:"input"`
+	ClientMetadata clientMetadata `json:"client_metadata"`
+}
+
+// clientMetadata is the per-response identity block. Everything here is authoritative
+// for THIS response, unlike the same-named request headers, which are fixed when the
+// websocket opens and go stale immediately.
+type clientMetadata struct {
+	SessionID string `json:"session_id"`
+	ThreadID  string `json:"thread_id"`
+	TurnID    string `json:"turn_id"`
+	// TurnMetadata is a JSON document embedded as a string.
+	TurnMetadata string `json:"x-codex-turn-metadata"`
+	// StreamStartMs is the client's own request start, as a decimal string.
+	StreamStartMs string `json:"x-codex-ws-stream-request-start-ms"`
+	Lite          string `json:"ws_request_header_x_openai_internal_codex_responses_lite"`
+	Subagent      string `json:"x-openai-subagent"`
+	ParentThread  string `json:"x-codex-parent-thread-id"`
 }
 
 // inputItem is one entry of the conversation history the client re-sends on every
@@ -240,6 +310,9 @@ type inputItem struct {
 	CallID  string          `json:"call_id"`
 	Output  json.RawMessage `json:"output"`
 	Content json.RawMessage `json:"content"`
+	// Author and Recipient are task paths, present on agent_message items.
+	Author    string `json:"author"`
+	Recipient string `json:"recipient"`
 }
 
 // flattenText renders a polymorphic text field: a bare JSON string, or a list of
@@ -274,21 +347,93 @@ func (r *Reducer) applyCreate(t *Turn, ev frame.Event) {
 		t.Model = c.Model
 	}
 	t.Effort = c.Reasoning.Effort
+	t.ReasoningCtx = c.Reasoning.Context
+	t.ReasoningMode = c.Reasoning.Mode
 	t.Verbosity = c.Text.Verbosity
 	t.InputItems = len(c.Input)
 	t.PrevResponseID = c.PrevResponseID
+	t.PromptCacheKey = c.PromptCacheKey
+	t.ParallelTools = c.ParallelTools
+	r.applyClientMetadata(t, c.ClientMetadata)
 
-	// The system prompt arrives as a top-level field, not an input item. It is
-	// identical across every thread, so it is deduplicated globally: captured once so
-	// it can be read, never repeated per thread.
-	if c.Instructions != "" && r.opts.MaxPromptChars > 0 &&
-		r.seen.add("instructions", c.Instructions) {
-		text, _ := truncate(c.Instructions, r.opts.MaxPromptChars)
-		t.Prompts = append(t.Prompts, Prompt{
-			Role: "instructions", Chars: len(c.Instructions), Text: text,
-		})
+	// The system prompt arrives as a top-level field, not an input item. It runs to
+	// 67 KB but takes only a handful of distinct values, so the body is emitted once
+	// globally and every response carries just the hash and length.
+	if c.Instructions != "" {
+		t.InstructionsChars = len(c.Instructions)
+		t.InstructionsHash = shortHash(c.Instructions)
+		if r.opts.MaxPromptChars > 0 && r.seen.add("instructions", t.InstructionsHash) {
+			text, _ := truncate(c.Instructions, r.opts.MaxPromptChars)
+			t.Prompts = append(t.Prompts, Prompt{
+				Role: "instructions", Chars: len(c.Instructions), Text: text,
+			})
+		}
 	}
 	r.captureInput(t, c.Input)
+}
+
+// applyClientMetadata takes identity from the per-response block.
+//
+// The turn metadata is deliberately read from HERE rather than from the request
+// header of the same name. The header is written once when the websocket opens and
+// never refreshed: over one hour of live traffic it reported request_kind="prewarm"
+// with an empty turn_id for 177 of 199 genuine turns. Reading the header would
+// mislabel 89% of turns.
+func (r *Reducer) applyClientMetadata(t *Turn, cm clientMetadata) {
+	if cm.ThreadID != "" {
+		t.ThreadID = cm.ThreadID
+	}
+	if cm.SessionID != "" {
+		t.SessionID = cm.SessionID
+	}
+	if cm.TurnID != "" {
+		t.TurnID = cm.TurnID
+	}
+	if cm.ParentThread != "" {
+		t.ParentThreadID = cm.ParentThread
+		t.IsSubagent = true
+	}
+	if cm.Subagent != "" {
+		t.SubagentKind = cm.Subagent
+	}
+	t.Lite = cm.Lite == "true"
+	if ms, err := strconv.ParseInt(cm.StreamStartMs, 10, 64); err == nil && ms > 0 {
+		t.ClientRequestStart = time.UnixMilli(ms).UTC()
+	}
+
+	m, ok := frame.ParseTurnMeta(cm.TurnMetadata)
+	if !ok {
+		return
+	}
+	if m.TurnID != "" {
+		t.TurnID = m.TurnID
+	}
+	t.RequestKind = m.RequestKind
+	t.ThreadSource = m.ThreadSource
+	t.Sandbox = m.Sandbox
+	t.ForkedFromThreadID = m.ForkedFromThreadID
+	if m.SubagentKind != "" {
+		t.SubagentKind = m.SubagentKind
+	}
+	if m.WindowID != "" {
+		t.WindowID = m.WindowID
+	}
+	if m.InstallationID != "" {
+		t.InstallationID = m.InstallationID
+	}
+	if m.ParentThreadID != "" {
+		t.ParentThreadID = m.ParentThreadID
+		t.IsSubagent = true
+	}
+	if ts, ok := m.TurnStart(); ok {
+		t.TurnStart = ts
+	}
+}
+
+// shortHash identifies a large near-static body without shipping it.
+func shortHash(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:8])
 }
 
 // captureInput recovers the input half of the conversation - user prompts and tool
@@ -321,6 +466,20 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 			}
 			text, _ := truncate(body, r.opts.MaxPromptChars)
 			t.Prompts = append(t.Prompts, Prompt{Role: it.Role, Chars: len(body), Text: text})
+
+		// agent_message is one agent talking to another, addressed by task path. It is
+		// the only record of the multi-agent topology anywhere in the capture, so it is
+		// kept even when prompt capture is off - the edge matters more than the body.
+		case "agent_message":
+			body := flattenText(it.Content)
+			if !r.seen.add(t.ThreadID, "agentmsg", it.Author, it.Recipient, body) {
+				continue
+			}
+			am := AgentMessage{Author: it.Author, Recipient: it.Recipient, Chars: len(body)}
+			if r.opts.MaxPromptChars > 0 {
+				am.Text, _ = truncate(body, r.opts.MaxPromptChars)
+			}
+			t.AgentMessages = append(t.AgentMessages, am)
 
 		case "custom_tool_call_output", "function_call_output":
 			if r.opts.MaxToolOutputChars <= 0 {
@@ -363,29 +522,73 @@ func truncate(s string, max int) (string, bool) {
 	return s[:cut], true
 }
 
-type rateLimitEvent struct {
-	PlanType   string `json:"plan_type"`
-	RateLimits struct {
-		LimitReached bool `json:"limit_reached"`
-		Primary      *struct {
-			UsedPercent       float64 `json:"used_percent"`
-			WindowMinutes     int     `json:"window_minutes"`
-			ResetAfterSeconds float64 `json:"reset_after_seconds"`
-		} `json:"primary"`
-	} `json:"rate_limits"`
+// rateLimitWindow is one reported quota window.
+type rateLimitWindow struct {
+	UsedPercent       float64 `json:"used_percent"`
+	WindowMinutes     int     `json:"window_minutes"`
+	ResetAfterSeconds float64 `json:"reset_after_seconds"`
 }
 
+// rateLimitBlock is the shape used by both the account's own limits and each entry of
+// additional_rate_limits. Every level is a pointer: the server sends explicit nulls
+// for windows a plan does not have.
+type rateLimitBlock struct {
+	Allowed      bool             `json:"allowed"`
+	LimitReached bool             `json:"limit_reached"`
+	Primary      *rateLimitWindow `json:"primary"`
+	Secondary    *rateLimitWindow `json:"secondary"`
+}
+
+type rateLimitEvent struct {
+	PlanType   string                     `json:"plan_type"`
+	RateLimits *rateLimitBlock            `json:"rate_limits"`
+	Additional map[string]*rateLimitBlock `json:"additional_rate_limits"`
+	Credits    *struct {
+		HasCredits bool   `json:"has_credits"`
+		Unlimited  bool   `json:"unlimited"`
+		Balance    string `json:"balance"`
+	} `json:"credits"`
+}
+
+// applyRateLimits records this account's quota headroom.
+//
+// codex-lb balances across several ChatGPT accounts, so these readings are only
+// meaningful grouped by AccountID - aggregated across accounts they average away
+// exactly the exhaustion the load balancer exists to avoid.
 func (r *Reducer) applyRateLimits(t *Turn, ev frame.Event) {
 	var e rateLimitEvent
 	if ev.Decode(&e) != nil {
 		return
 	}
 	t.PlanType = e.PlanType
-	t.RateLimitReached = e.RateLimits.LimitReached
-	if p := e.RateLimits.Primary; p != nil {
-		t.RateLimitUsedPercent = p.UsedPercent
-		t.RateLimitWindowMin = p.WindowMinutes
-		t.RateLimitResetSeconds = p.ResetAfterSeconds
+	if c := e.Credits; c != nil {
+		t.HasCredits = c.HasCredits
+		t.CreditsUnlimited = c.Unlimited
+		t.CreditsBalance = c.Balance
+	}
+	if rl := e.RateLimits; rl != nil {
+		t.RateLimitReached = rl.LimitReached
+		t.RateLimitAllowed = rl.Allowed
+		if p := rl.Primary; p != nil {
+			t.RateLimitUsedPercent = p.UsedPercent
+			t.RateLimitWindowMin = p.WindowMinutes
+			t.RateLimitResetSeconds = p.ResetAfterSeconds
+		}
+		if s := rl.Secondary; s != nil {
+			t.RateLimit2UsedPercent = s.UsedPercent
+			t.RateLimit2WindowMin = s.WindowMinutes
+		}
+	}
+	// Keyed by model name and bounded by the models on the plan, so this is safe to
+	// fan out into per-model gauges.
+	for model, blk := range e.Additional {
+		if blk == nil || blk.Primary == nil {
+			continue
+		}
+		if t.ExtraRateLimits == nil {
+			t.ExtraRateLimits = map[string]float64{}
+		}
+		t.ExtraRateLimits[model] = blk.Primary.UsedPercent
 	}
 }
 
@@ -479,6 +682,7 @@ type timingEvent struct {
 		TotalTurnTimeS     *float64 `json:"total_turn_time_s"`
 		PreInferenceMs     *float64 `json:"pre_inference_ms"`
 		FirstTTFTMs        *float64 `json:"first_sampled_message_ttft_ms"`
+		FirstReasoning     *int     `json:"first_sampled_message_reasoning_tokens"`
 		EngineQueueMaxMs   *float64 `json:"engine_queue_max_ms"`
 		NumEngineCalls     *int     `json:"num_engine_calls"`
 		EngineIDs          *string  `json:"engine_ids"`
@@ -486,7 +690,68 @@ type timingEvent struct {
 		CachedTokensTotal  *int     `json:"engine_cached_prompt_tokens_total"`
 		SampledTokensTotal *int     `json:"num_sampled_tokens_total"`
 		ClientToolPauseMs  *float64 `json:"client_tool_pause_total_ms"`
+
+		// A second timing domain reported alongside engine_iapi_*. Divergence between
+		// the two is what tells you whether time went in the engine or around it.
+		ServiceTotalMs *float64 `json:"engine_service_total_ms"`
+		ServiceTTFTMs  *float64 `json:"engine_service_ttft_total_ms"`
+		IapiTTFTMs     *float64 `json:"engine_iapi_ttft_total_ms"`
+
+		TextDeltaCount *int     `json:"websocket_output_text_delta_count"`
+		TextDeltaTBTMs *float64 `json:"websocket_output_text_delta_tbt_ms"`
+		PauseCount     *int     `json:"responses_duration_pause_count"`
+
+		// TimingScope is "logical_turn" for the block above - which is exactly why the
+		// fields above need delta conversion and CriticalPath does not.
+		TimingScope  string `json:"timing_scope"`
+		CriticalPath *struct {
+			Scope             string   `json:"scope"`
+			Coverage          string   `json:"coverage"`
+			BoundaryType      string   `json:"boundary_type"`
+			NumEngineCalls    *int     `json:"num_engine_calls"`
+			EngineWallMs      *float64 `json:"engine_wall_ms"`
+			EngineIapiTotalMs *float64 `json:"engine_iapi_total_ms"`
+			HarnessUnblocked  *float64 `json:"responses_harness_unblocked_ms"`
+			PreInferenceMs    *float64 `json:"responses_pre_inference_ms"`
+			SamplingStreamMs  *float64 `json:"sampling_and_stream_total_ms"`
+			ClientToolPauseMs *float64 `json:"client_tool_pause_ms"`
+			OtherMs           *float64 `json:"responses_other_ms"`
+		} `json:"critical_path"`
 	} `json:"timing_metrics"`
+}
+
+// applyCriticalPath copies the server's own per-response breakdown across.
+//
+// This is measured, not derived: the block declares scope="response" while its parent
+// declares scope="logical_turn". Where Coverage is not "complete" the server is saying
+// it could not find a harness boundary, so consumers should exclude those rather than
+// average them in.
+func applyCriticalPath(t *Turn, e *timingEvent) {
+	cp := e.M.CriticalPath
+	if cp == nil {
+		return
+	}
+	t.CriticalPath = CriticalPath{Coverage: cp.Coverage, BoundaryType: cp.BoundaryType}
+	c := &t.CriticalPath
+	if cp.NumEngineCalls != nil {
+		c.EngineCalls = *cp.NumEngineCalls
+	}
+	for _, f := range []struct {
+		src *float64
+		dst *float64
+	}{
+		{cp.EngineWallMs, &c.EngineWallMs},
+		{cp.EngineIapiTotalMs, &c.EngineIapiMs},
+		{cp.HarnessUnblocked, &c.HarnessUnblockedMs},
+		{cp.PreInferenceMs, &c.PreInferenceMs},
+		{cp.SamplingStreamMs, &c.SamplingStreamMs},
+		{cp.ClientToolPauseMs, &c.ClientToolPauseMs},
+		{cp.OtherMs, &c.OtherMs},
+	} {
+		if f.src != nil {
+			*f.dst = *f.src
+		}
+	}
 }
 
 // applyTiming converts the cumulative logical-turn counters into per-response
@@ -512,6 +777,31 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 	if m.EngineQueueMaxMs != nil {
 		t.EngineQueueMaxMs = *m.EngineQueueMaxMs
 	}
+	if m.FirstTTFTMs != nil {
+		t.FirstMsgTTFTMs = *m.FirstTTFTMs
+	}
+	if m.FirstReasoning != nil {
+		t.FirstMsgReasoning = *m.FirstReasoning
+	}
+	if m.ServiceTotalMs != nil {
+		t.EngineServiceTotal = *m.ServiceTotalMs
+	}
+	if m.ServiceTTFTMs != nil {
+		t.EngineServiceTTFT = *m.ServiceTTFTMs
+	}
+	if m.IapiTTFTMs != nil {
+		t.EngineIapiTTFT = *m.IapiTTFTMs
+	}
+	if m.TextDeltaCount != nil {
+		t.TextDeltaCount = *m.TextDeltaCount
+	}
+	if m.TextDeltaTBTMs != nil {
+		t.TextDeltaTBTMs = *m.TextDeltaTBTMs
+	}
+	if m.PauseCount != nil {
+		t.PauseCount = *m.PauseCount
+	}
+	applyCriticalPath(t, &e)
 
 	cur := cumulative{}
 	if m.NumEngineCalls != nil {
@@ -563,6 +853,7 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 	}
 	t.LogicalTurnSeq = r.seq[t.ThreadID]
 	t.LogicalTurnID = fmt.Sprintf("%s:%d", t.ThreadID, t.LogicalTurnSeq)
+	r.ensureLogicalTurn(t) // server turn id wins where it exists
 
 	t.EngineCallsDelta = cur.engineCalls - prev.engineCalls
 	t.TurnTimeSecondsDelta = cur.turnTimeS - prev.turnTimeS
@@ -580,10 +871,33 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 }
 
 type completedEvent struct {
-	Response struct {
-		Status string `json:"status"`
-		Model  string `json:"model"`
-		Usage  *struct {
+	// SafetyBuffering is polymorphic: literal false on nearly every response, an
+	// object on the rare one where the platform re-ran it through another model. A
+	// non-pointer struct here would abort the decode of the WHOLE event on the common
+	// `false` case and silently drop every usage figure with it.
+	SafetyBuffering json.RawMessage `json:"safety_buffering"`
+	Response        struct {
+		Status         string  `json:"status"`
+		Model          string  `json:"model"`
+		ServiceTier    string  `json:"service_tier"`
+		SafetyID       string  `json:"safety_identifier"`
+		CreatedAt      float64 `json:"created_at"`
+		CompletedAt    float64 `json:"completed_at"`
+		CacheRetention string  `json:"prompt_cache_retention"`
+		ParallelTools  bool    `json:"parallel_tool_calls"`
+		Reasoning      struct {
+			Context string `json:"context"`
+			Mode    string `json:"mode"`
+		} `json:"reasoning"`
+		ToolUsage struct {
+			WebSearch struct {
+				NumRequests int `json:"num_requests"`
+			} `json:"web_search"`
+			ImageGen struct {
+				TotalTokens int `json:"total_tokens"`
+			} `json:"image_gen"`
+		} `json:"tool_usage"`
+		Usage *struct {
 			InputTokens        int `json:"input_tokens"`
 			OutputTokens       int `json:"output_tokens"`
 			TotalTokens        int `json:"total_tokens"`
@@ -607,6 +921,25 @@ func (r *Reducer) applyCompleted(t *Turn, ev frame.Event) error {
 	if e.Response.Model != "" {
 		t.Model = e.Response.Model
 	}
+	if e.Response.ServiceTier != "" {
+		t.ServiceTier = e.Response.ServiceTier
+	}
+	if e.Response.SafetyID != "" {
+		t.SafetyID = e.Response.SafetyID
+	}
+	if e.Response.Reasoning.Context != "" {
+		t.ReasoningCtx = e.Response.Reasoning.Context
+	}
+	if e.Response.Reasoning.Mode != "" {
+		t.ReasoningMode = e.Response.Reasoning.Mode
+	}
+	t.CacheRetention = e.Response.CacheRetention
+	t.ParallelTools = t.ParallelTools || e.Response.ParallelTools
+	t.ServerCreatedAt = epoch(e.Response.CreatedAt)
+	t.ServerCompletedAt = epoch(e.Response.CompletedAt)
+	t.WebSearchRequests = e.Response.ToolUsage.WebSearch.NumRequests
+	t.ImageGenTokens = e.Response.ToolUsage.ImageGen.TotalTokens
+	applySafetyBuffering(t, e.SafetyBuffering)
 	if u := e.Response.Usage; u != nil {
 		t.InputTokens = u.InputTokens
 		t.OutputTokens = u.OutputTokens
@@ -619,6 +952,38 @@ func (r *Reducer) applyCompleted(t *Turn, ev frame.Event) error {
 		}
 	}
 	return nil
+}
+
+// epoch converts a fractional unix timestamp, tolerating an absent zero.
+func epoch(secs float64) time.Time {
+	if secs <= 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(int64(secs * 1000)).UTC()
+}
+
+// applySafetyBuffering decodes the polymorphic safety_buffering field. It is `false`
+// on almost every response and an object on the few where the platform re-ran the
+// request through a different model.
+func applySafetyBuffering(t *Turn, raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
+	var b bool
+	if json.Unmarshal(raw, &b) == nil {
+		t.SafetyBuffering = b
+		return
+	}
+	var o struct {
+		RetryModel string   `json:"retry_model"`
+		UseCases   []string `json:"use_cases"`
+	}
+	if json.Unmarshal(raw, &o) != nil {
+		return
+	}
+	t.SafetyBuffering = true
+	t.SafetyRetryModel = o.RetryModel
+	t.SafetyUseCases = o.UseCases
 }
 
 // Open reports how many responses are still streaming. A steadily growing value

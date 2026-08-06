@@ -22,22 +22,90 @@ const (
 
 // Record is one line of the archive.
 type Record struct {
-	AccountID  string            `json:"account_id"`
-	Direction  string            `json:"direction"`
-	Headers    map[string]string `json:"headers"`
-	Kind       string            `json:"kind"`
-	Method     string            `json:"method"`
-	Payload    Payload           `json:"payload"`
-	RequestID  string            `json:"request_id"`
-	StatusCode *int              `json:"status_code"`
-	Timestamp  time.Time         `json:"timestamp"`
-	Transport  string            `json:"transport"`
-	URL        string            `json:"url"`
+	AccountID  string    `json:"account_id"`
+	Direction  string    `json:"direction"`
+	Headers    Headers   `json:"headers"`
+	Kind       string    `json:"kind"`
+	Method     string    `json:"method"`
+	Payload    Payload   `json:"payload"`
+	RequestID  string    `json:"request_id"`
+	StatusCode *int      `json:"status_code"`
+	Timestamp  time.Time `json:"timestamp"`
+	Transport  string    `json:"transport"`
+	URL        string    `json:"url"`
+	Extra      Extra     `json:"extra"`
+}
+
+// Headers is the captured request header set, keyed by LOWERCASE name.
+//
+// codex-lb preserves whatever casing the client sent, and that casing is not stable:
+// the websocket family sends "chatgpt-account-id" while the CLI family sends
+// "ChatGPT-Account-Id", and "Authorization" is capitalised everywhere. A plain map
+// lookup therefore reads as absent for whichever spelling you did not guess, silently
+// and with no error. Normalising once on decode removes the whole class of bug.
+type Headers map[string]string
+
+// UnmarshalJSON lowercases every header name.
+func (h *Headers) UnmarshalJSON(b []byte) error {
+	var raw map[string]string
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	out := make(Headers, len(raw))
+	for k, v := range raw {
+		out[strings.ToLower(k)] = v
+	}
+	*h = out
+	return nil
 }
 
 // Payload wraps the inner protocol event, which arrives as a JSON string.
 type Payload struct {
 	Text string `json:"text"`
+}
+
+// Websocket frame types, from the archive's extra block.
+const (
+	FrameText  = "text"
+	FrameError = "error"
+	FrameClose = "close"
+)
+
+// Extra carries connection-level events. Nothing here appears in payload.text, so a
+// decoder that ignores it cannot see a websocket close or a transport-level error at
+// all - which is how close code 1012 (service restart) stayed invisible.
+type Extra struct {
+	FrameType string `json:"frame_type"`
+	CloseCode *int   `json:"close_code"`
+}
+
+// Record families. These are NOT distinguishable by the record's own transport field,
+// which reads "websocket" for all of them.
+const (
+	// FamilyWebsocket is the Codex TUI over a multiplexed websocket: request_id is
+	// "ws_<hex32>", and turn metadata rides in x-codex-turn-metadata.
+	FamilyWebsocket = "websocket"
+	// FamilyHTTP is the same client over per-request HTTP: request_id is a UUID
+	// matching x-request-id, and x-codex-turn-state is prefixed "http_turn_".
+	FamilyHTTP = "http"
+	// FamilyProbe is codex-lb's own synthetic health check - originator codex_cli_rs,
+	// a tiny model, and the prompt "say OK". Real user metrics must exclude it.
+	FamilyProbe = "probe"
+)
+
+// OriginatorProbe identifies the synthetic health-check client.
+const OriginatorProbe = "codex_cli_rs"
+
+// Family classifies the record. Callers should label metrics with it rather than with
+// Transport, which does not vary.
+func (r *Record) Family() string {
+	if r.Header(HdrOriginator) == OriginatorProbe {
+		return FamilyProbe
+	}
+	if strings.HasPrefix(r.RequestID, "ws_") {
+		return FamilyWebsocket
+	}
+	return FamilyHTTP
 }
 
 // Header names carrying identity and agent-tree structure. Authorization is already
@@ -52,10 +120,83 @@ const (
 	HdrTraceparent  = "traceparent"
 	HdrOriginator   = "originator"
 	HdrBetaFeatures = "x-codex-beta-features"
+	HdrTurnMetadata = "x-codex-turn-metadata"
+	HdrTurnState    = "x-codex-turn-state"
+	HdrRequestID    = "x-request-id"
+	HdrClientReqID  = "x-client-request-id"
+	HdrVersion      = "version"
+	HdrAccountID    = "chatgpt-account-id"
 )
 
-// Header returns a header value, tolerating absence.
+// Header returns a header value, tolerating absence. Names must be lowercase; see
+// the Headers type.
 func (r *Record) Header(name string) string { return r.Headers[name] }
+
+// TurnMeta is the decoded x-codex-turn-metadata blob.
+//
+// IMPORTANT: prefer the copy nested in response.create's client_metadata over the one
+// in the request HEADER. The header is written when the websocket opens and is never
+// updated, so on a long-lived connection it reports a stale turn - measured on one
+// hour of live traffic, 177 of 199 real turns carried a header saying
+// request_kind="prewarm" with an empty turn_id while the inner copy had the true
+// turn_id. Reading the header would mislabel 89% of turns as prewarm.
+type TurnMeta struct {
+	InstallationID string `json:"installation_id"`
+	SessionID      string `json:"session_id"`
+	ThreadID       string `json:"thread_id"`
+	TurnID         string `json:"turn_id"`
+	WindowID       string `json:"window_id"`
+	// RequestKind is "turn" for real work or "prewarm" for a speculative warmup that
+	// does no engine work and reports no counters.
+	RequestKind string `json:"request_kind"`
+	// ThreadSource is "user" or "subagent".
+	ThreadSource        string `json:"thread_source"`
+	Sandbox             string `json:"sandbox"`
+	ParentThreadID      string `json:"parent_thread_id"`
+	ForkedFromThreadID  string `json:"forked_from_thread_id"`
+	SubagentKind        string `json:"subagent_kind"`
+	TurnStartedAtUnixMs int64  `json:"turn_started_at_unix_ms"`
+}
+
+// Request kinds.
+const (
+	KindTurn    = "turn"
+	KindPrewarm = "prewarm"
+	// KindCompaction is the server compacting the thread's context. It does real
+	// engine work but is not a user turn, so counting it as one overstates turn rates
+	// and understates cost per turn.
+	KindCompaction = "compaction"
+)
+
+// IsTransport reports whether this frame is a websocket-level event rather than a
+// protocol message. Their payload.text is PLAIN TEXT, not JSON - "no close frame
+// received or sent", "received 1012 (service restart); then sent 1012" - so
+// ParseEvent rejects them and they are invisible to any payload-only decoder.
+func (r *Record) IsTransport() bool {
+	return r.Extra.FrameType == FrameError || r.Extra.FrameType == FrameClose
+}
+
+// ParseTurnMeta decodes a turn-metadata blob, tolerating absence and malformation.
+func ParseTurnMeta(s string) (TurnMeta, bool) {
+	if s == "" {
+		return TurnMeta{}, false
+	}
+	var m TurnMeta
+	if err := json.Unmarshal([]byte(s), &m); err != nil {
+		return TurnMeta{}, false
+	}
+	return m, true
+}
+
+// TurnStart converts TurnStartedAtUnixMs into a time, reporting whether it was set.
+// This is the client's own turn start, so it measures the turn end to end rather than
+// from when the server began work.
+func (m TurnMeta) TurnStart() (time.Time, bool) {
+	if m.TurnStartedAtUnixMs <= 0 {
+		return time.Time{}, false
+	}
+	return time.UnixMilli(m.TurnStartedAtUnixMs).UTC(), true
+}
 
 // IsSubagent reports whether this frame belongs to a spawned sub-agent thread
 // rather than the user's main thread.

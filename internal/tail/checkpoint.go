@@ -3,8 +3,12 @@
 package tail
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -30,11 +34,44 @@ type FileState struct {
 	// Offset is a byte position that always falls on a gzip member boundary, so a
 	// resume never starts mid-member. See archive.DecodeMembers.
 	Offset int64 `json:"offset"`
-	// Size at the time of the last read, used to notice truncation or replacement.
+	// Size at the time of the last read.
 	Size int64 `json:"size"`
+	// Fingerprint identifies the file CONTENT, not the path.
+	//
+	// A path is not a stable identity here. codex-lb reopens the archive with
+	// O_APPEND|O_CREAT for every batch, so moving a file away - copying the day's
+	// archives off the host, say - makes it recreate the same name from scratch. That
+	// is not hypothetical: 2026-08-06T18 exists as two entirely different files, one
+	// covering 18:00-18:27 and one 18:43-18:52.
+	//
+	// Detecting that by size alone is unsound. It only works while the replacement is
+	// still SMALLER than the old offset; if the new file has already grown past it by
+	// the next poll, the old offset is silently applied to unrelated bytes and the
+	// reader resumes mid-member on a different stream. The fingerprint catches the
+	// replacement whatever the sizes happen to be.
+	Fingerprint string `json:"fingerprint,omitempty"`
 	// Deleted marks a file reclaimed after ingest, so it is not re-read if it
 	// somehow reappears and is not re-reported as new.
 	Deleted bool `json:"deleted,omitempty"`
+}
+
+// fingerprintBytes is how much of the file head identifies it. One gzip member header
+// plus the start of its payload is ample, and cheap enough to re-read every poll.
+const fingerprintBytes = 512
+
+// fingerprint hashes the head of a file. A file shorter than fingerprintBytes is
+// hashed whole, so a file being replaced by a smaller one is still detected.
+func fingerprint(f *os.File) (string, error) {
+	buf := make([]byte, fingerprintBytes)
+	n, err := f.ReadAt(buf, 0)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	if n == 0 {
+		return "", nil
+	}
+	sum := sha256.Sum256(buf[:n])
+	return hex.EncodeToString(sum[:8]), nil
 }
 
 const checkpointVersion = 1
