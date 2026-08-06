@@ -1,0 +1,17 @@
+# Build artifacts
+/bin/
+/dist/
+/codexlb2otel
+*.out
+
+# Scratch plans and specs - NEVER committed
+docs/superpowers/
+
+# Local config with secrets
+config.yaml
+.env
+
+# Test fixtures pulled from live archives (large, contain conversation content)
+testdata/live/
+*.jsonl
+*.jsonl.gz
