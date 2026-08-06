@@ -11,6 +11,10 @@ import (
 // are absent and their deltas unreliable.
 const StatusIncomplete = "incomplete"
 
+// StatusError marks a turn terminated by an error frame rather than a completion.
+// Distinct from StatusIncomplete: here the server said why it ended.
+const StatusError = "error"
+
 // Flush emits every in-flight response and clears them. Use at end of input.
 //
 // Without this, a response whose completion frame never arrives would sit in the

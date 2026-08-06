@@ -19,6 +19,7 @@ type Turn struct {
 	// Identity. All high cardinality - log attributes only, never metric labels.
 	RequestID      string    `json:"request_id"`
 	ResponseID     string    `json:"response_id,omitempty"`
+	PrevResponseID string    `json:"previous_response_id,omitempty"`
 	SessionID      string    `json:"session_id,omitempty"`
 	ThreadID       string    `json:"thread_id,omitempty"`
 	ParentThreadID string    `json:"parent_thread_id,omitempty"`
@@ -42,6 +43,13 @@ type Turn struct {
 	PlanType    string `json:"plan_type,omitempty"`
 	IsSubagent  bool   `json:"is_subagent"`
 
+	// Error detail, set when Status is StatusError. ErrorType and ErrorCode are
+	// enum-like and safe as metric attributes; ErrorMessage embeds ids and is a log
+	// field only.
+	ErrorType    string `json:"error_type,omitempty"`
+	ErrorCode    string `json:"error_code,omitempty"`
+	ErrorMessage string `json:"error_message,omitempty"`
+
 	// EngineIDs can be a comma-joined list and rotates over time. Log field only.
 	EngineIDs string `json:"engine_ids,omitempty"`
 
@@ -53,6 +61,12 @@ type Turn struct {
 	ReasoningTokens  int     `json:"reasoning_tokens"`
 	TotalTokens      int     `json:"total_tokens"`
 	CacheHitRatio    float64 `json:"cache_hit_ratio"`
+
+	// BaselineReset marks a response whose deltas were computed with no prior
+	// cumulative baseline - a cold start, or the first sighting of a thread after a
+	// gap. Its deltas are upper bounds that absorb unobserved work, so aggregations
+	// wanting accuracy should exclude these.
+	BaselineReset bool `json:"baseline_reset,omitempty"`
 
 	// Per-response deltas derived from the cumulative logical-turn metrics.
 	EngineCallsDelta        int     `json:"engine_calls_delta"`
@@ -76,6 +90,9 @@ type Turn struct {
 	// Activity.
 	ToolCalls    []ToolCall     `json:"tool_calls,omitempty"`
 	Messages     []Message      `json:"messages,omitempty"`
+	Prompts      []Prompt       `json:"prompts,omitempty"`
+	ToolOutputs  []ToolOutput   `json:"tool_outputs,omitempty"`
+	InputItems   int            `json:"input_items,omitempty"`
 	ItemCounts   map[string]int `json:"item_counts,omitempty"`
 	TextDeltas   int            `json:"text_deltas"`
 	ToolDeltas   int            `json:"tool_input_deltas"`
@@ -104,6 +121,29 @@ type Message struct {
 	Phase string `json:"phase,omitempty"`
 	Chars int    `json:"chars"`
 	Text  string `json:"text,omitempty"`
+}
+
+// Prompt is an input-side message: what the user or the harness asked for.
+//
+// These are recovered from response.create, which re-sends the entire conversation
+// on every turn, so each is emitted only on the first response that carries it.
+// Without this the archive records only the model's half of the conversation.
+type Prompt struct {
+	Role  string `json:"role"` // user | developer | assistant
+	Chars int    `json:"chars"`
+	Text  string `json:"text,omitempty"`
+}
+
+// ToolOutput is the result fed back for a tool call - command output, file contents,
+// and so on. Recovered from response.create like Prompt, and deduplicated by call id.
+//
+// Text is truncated: these carry whole command outputs and are the single largest
+// content source in the archive. Chars always records the untruncated length.
+type ToolOutput struct {
+	CallID    string `json:"call_id,omitempty"`
+	Chars     int    `json:"chars"`
+	Truncated bool   `json:"truncated,omitempty"`
+	Text      string `json:"text,omitempty"`
 }
 
 // cumulative snapshots the logical-turn counters so the next response can be diffed

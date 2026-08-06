@@ -3,6 +3,9 @@ package turn
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/rknightion/codexlb2otel/internal/frame"
 )
@@ -17,20 +20,70 @@ type Reducer struct {
 	open map[string]*Turn      // request_id -> in-flight turn
 	prev map[string]cumulative // thread_id -> last cumulative snapshot
 	seq  map[string]int        // thread_id -> logical turn counter
+	// lastSeen guards against diffing a new reading against a baseline old enough
+	// that unobserved traffic has advanced it. See applyTiming.
+	lastSeen map[string]time.Time
+	seen     *seenSet // content already emitted, bounded
+	opts     Options
 }
 
-// New returns an empty Reducer.
-func New() *Reducer {
+// Options tunes content capture. DefaultOptions is what New uses.
+type Options struct {
+	// MaxToolOutputChars truncates captured tool output. These carry whole command
+	// results and are the largest content source in the archive; the untruncated
+	// length is always recorded regardless. Zero disables tool-output capture.
+	MaxToolOutputChars int
+	// MaxPromptChars truncates captured prompts. Zero disables prompt capture.
+	MaxPromptChars int
+	// SeenSetSize bounds the dedup set for re-sent conversation history.
+	SeenSetSize int
+	// MaxThreadGap is how long a thread's cumulative baseline stays valid. Past it,
+	// unobserved traffic is assumed and the baseline is reset rather than diffed
+	// against - see applyTiming.
+	MaxThreadGap time.Duration
+}
+
+// DefaultOptions captures full prompts and generously truncated tool output.
+func DefaultOptions() Options {
+	return Options{
+		MaxToolOutputChars: 4096,
+		MaxPromptChars:     32768,
+		SeenSetSize:        32768,
+		MaxThreadGap:       30 * time.Minute,
+	}
+}
+
+// New returns an empty Reducer using DefaultOptions.
+func New() *Reducer { return NewWithOptions(DefaultOptions()) }
+
+// NewWithOptions returns an empty Reducer with explicit content-capture settings.
+func NewWithOptions(o Options) *Reducer {
+	if o.SeenSetSize <= 0 {
+		o.SeenSetSize = DefaultOptions().SeenSetSize
+	}
+	if o.MaxThreadGap <= 0 {
+		o.MaxThreadGap = DefaultOptions().MaxThreadGap
+	}
 	return &Reducer{
-		open: map[string]*Turn{},
-		prev: map[string]cumulative{},
-		seq:  map[string]int{},
+		open:     map[string]*Turn{},
+		prev:     map[string]cumulative{},
+		seq:      map[string]int{},
+		lastSeen: map[string]time.Time{},
+		seen:     newSeenSet(o.SeenSetSize),
+		opts:     o,
 	}
 }
 
 // Add feeds one frame in. It returns a completed Turn when the frame closed one,
 // otherwise nil. A frame whose payload is unparseable is counted and ignored.
 func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
+	// Frames with no request_id cannot be correlated, and were observed carrying
+	// connection-scoped errors. Keying them all on "" would merge unrelated frames
+	// into one ever-growing turn, so they are handled standalone and never stored.
+	if rec.RequestID == "" {
+		return r.addUncorrelated(rec)
+	}
+
 	t := r.open[rec.RequestID]
 	if t == nil {
 		t = &Turn{
@@ -79,6 +132,17 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 		r.applyOutputItem(t, ev)
 	case frame.EvWebsocketTiming:
 		r.applyTiming(t, ev)
+
+	// An error is terminal: no response.completed will follow, so the turn is closed
+	// here or it would linger until evicted and be reported as merely incomplete,
+	// losing the reason. Upstream overload and the websocket connection cap both
+	// arrive this way.
+	case frame.EvError:
+		r.applyError(t, ev)
+		r.ensureLogicalTurn(t)
+		delete(r.open, rec.RequestID)
+		return t, nil
+
 	case frame.EvResponseCompleted:
 		if err := r.applyCompleted(t, ev); err != nil {
 			return nil, err
@@ -88,6 +152,53 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 		return t, nil
 	}
 	return nil, nil
+}
+
+// addUncorrelated handles a frame with no request_id. Only errors carry information
+// worth keeping on their own, so everything else is dropped rather than accumulated.
+func (r *Reducer) addUncorrelated(rec *frame.Record) (*Turn, error) {
+	ev, ok := rec.ParseEvent()
+	if !ok || ev.Type != frame.EvError {
+		return nil, nil
+	}
+	t := &Turn{
+		SessionID:      rec.Header(frame.HdrSession),
+		ThreadID:       rec.Header(frame.HdrThread),
+		ParentThreadID: rec.Header(frame.HdrParentThread),
+		InstallationID: rec.Header(frame.HdrInstallation),
+		AccountID:      rec.AccountID,
+		IsSubagent:     rec.IsSubagent(),
+		FirstTS:        rec.Timestamp,
+		LastTS:         rec.Timestamp,
+		Frames:         1,
+		Bytes:          len(rec.Payload.Text),
+		ItemCounts:     map[string]int{},
+	}
+	t.TraceID, t.SpanID = rec.Trace()
+	r.applyError(t, ev)
+	r.ensureLogicalTurn(t)
+	return t, nil
+}
+
+type errorEvent struct {
+	Error struct {
+		Type    string `json:"type"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Param   string `json:"param"`
+	} `json:"error"`
+	Status int `json:"status"`
+}
+
+func (r *Reducer) applyError(t *Turn, ev frame.Event) {
+	t.Status = StatusError
+	var e errorEvent
+	if ev.Decode(&e) != nil {
+		return
+	}
+	t.ErrorType = e.Error.Type
+	t.ErrorCode = e.Error.Code
+	t.ErrorMessage = e.Error.Message
 }
 
 // ensureLogicalTurn assigns an id to a response that never reported timing metrics.
@@ -110,6 +221,48 @@ type createEvent struct {
 	Text struct {
 		Verbosity string `json:"verbosity"`
 	} `json:"text"`
+	Instructions   string      `json:"instructions"`
+	PrevResponseID string      `json:"previous_response_id"`
+	Input          []inputItem `json:"input"`
+}
+
+// inputItem is one entry of the conversation history the client re-sends on every
+// turn.
+//
+// Both content and output are polymorphic - a plain JSON string on some items and a
+// list of typed parts on others. They are held raw and flattened leniently because a
+// strict type here is a live hazard: Go's json decoder aborts the WHOLE event on one
+// mismatched field, so a single unexpected shape silently discarded every prompt,
+// the model and the input count for that entire turn. That happened.
+type inputItem struct {
+	Type    string          `json:"type"`
+	Role    string          `json:"role"`
+	CallID  string          `json:"call_id"`
+	Output  json.RawMessage `json:"output"`
+	Content json.RawMessage `json:"content"`
+}
+
+// flattenText renders a polymorphic text field: a bare JSON string, or a list of
+// parts each carrying a text field. Anything else yields "" rather than an error.
+func flattenText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var parts []struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &parts) != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, p := range parts {
+		b.WriteString(p.Text)
+	}
+	return b.String()
 }
 
 func (r *Reducer) applyCreate(t *Turn, ev frame.Event) {
@@ -122,6 +275,92 @@ func (r *Reducer) applyCreate(t *Turn, ev frame.Event) {
 	}
 	t.Effort = c.Reasoning.Effort
 	t.Verbosity = c.Text.Verbosity
+	t.InputItems = len(c.Input)
+	t.PrevResponseID = c.PrevResponseID
+
+	// The system prompt arrives as a top-level field, not an input item. It is
+	// identical across every thread, so it is deduplicated globally: captured once so
+	// it can be read, never repeated per thread.
+	if c.Instructions != "" && r.opts.MaxPromptChars > 0 &&
+		r.seen.add("instructions", c.Instructions) {
+		text, _ := truncate(c.Instructions, r.opts.MaxPromptChars)
+		t.Prompts = append(t.Prompts, Prompt{
+			Role: "instructions", Chars: len(c.Instructions), Text: text,
+		})
+	}
+	r.captureInput(t, c.Input)
+}
+
+// captureInput recovers the input half of the conversation - user prompts and tool
+// results - which appears nowhere else in the archive.
+//
+// response.create re-sends the whole history every turn (arrays of 800+ items were
+// routine), so each item is emitted only on the first turn that carries it.
+func (r *Reducer) captureInput(t *Turn, items []inputItem) {
+	for _, it := range items {
+		switch it.Type {
+		case "message":
+			if r.opts.MaxPromptChars <= 0 {
+				continue
+			}
+			body := flattenText(it.Content)
+			if body == "" {
+				continue
+			}
+			// Developer messages are harness boilerplate, identical across every
+			// thread, and the largest prompts by far - deduplicate them globally so
+			// a 36 KB system preamble is stored once rather than once per thread.
+			// User and assistant messages are the actual conversation and are scoped
+			// per thread so each thread reconstructs in full.
+			scope := t.ThreadID
+			if it.Role == "developer" {
+				scope = "global"
+			}
+			if !r.seen.add(scope, "msg", it.Role, body) {
+				continue
+			}
+			text, _ := truncate(body, r.opts.MaxPromptChars)
+			t.Prompts = append(t.Prompts, Prompt{Role: it.Role, Chars: len(body), Text: text})
+
+		case "custom_tool_call_output", "function_call_output":
+			if r.opts.MaxToolOutputChars <= 0 {
+				continue
+			}
+			body := flattenText(it.Output)
+			if body == "" {
+				body = flattenText(it.Content)
+			}
+			if body == "" {
+				continue
+			}
+			// Dedupe on call id where present: the same output is re-sent verbatim on
+			// every subsequent turn of the thread.
+			key := it.CallID
+			if key == "" {
+				key = body
+			}
+			if !r.seen.add(t.ThreadID, "out", key) {
+				continue
+			}
+			text, cut := truncate(body, r.opts.MaxToolOutputChars)
+			t.ToolOutputs = append(t.ToolOutputs, ToolOutput{
+				CallID: it.CallID, Chars: len(body), Truncated: cut, Text: text,
+			})
+		}
+	}
+}
+
+// truncate cuts s to at most max bytes without splitting a UTF-8 rune, reporting
+// whether it cut.
+func truncate(s string, max int) (string, bool) {
+	if len(s) <= max {
+		return s, false
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut], true
 }
 
 type rateLimitEvent struct {
@@ -296,10 +535,30 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 
 	prev, seen := r.prev[t.ThreadID]
 
+	// A stale baseline is worse than none. If this thread was last seen long enough
+	// ago that the intervening traffic cannot have been observed - the service was
+	// down, or the archive has a gap - the counters have advanced unseen and diffing
+	// against the old baseline attributes all of that missing work to this one
+	// response. Treat a gap as a fresh turn instead: the cost is one under-counted
+	// response rather than an arbitrarily large over-count.
+	if seen && !t.FirstTS.IsZero() {
+		if last, ok := r.lastSeen[t.ThreadID]; ok && t.FirstTS.Sub(last) > r.opts.MaxThreadGap {
+			seen = false
+		}
+	}
+
 	// A new logical turn begins whenever the cumulative engine-call counter fails to
-	// advance. Validated across 87 turns of live traffic: zero negative deltas.
+	// advance. Validated across live traffic: zero negative deltas.
 	if !seen || m.NumEngineCalls == nil || cur.engineCalls <= prev.engineCalls {
 		r.seq[t.ThreadID]++
+		// Starting a turn with no prior baseline means this response absorbs all the
+		// work the turn had already done before we started watching. Deltas here are
+		// upper bounds, not measurements, so they are flagged: consumers can exclude
+		// them rather than silently believing an over-count. Only happens on a cold
+		// start, after a gap, or genuinely at a turn boundary - and at a real
+		// boundary the counters restart anyway, so the flag is only meaningful when
+		// no baseline existed.
+		t.BaselineReset = !seen
 		prev = cumulative{}
 	}
 	t.LogicalTurnSeq = r.seq[t.ThreadID]
@@ -316,6 +575,7 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 	// prewarm responses report no counters and must not reset it.
 	if m.NumEngineCalls != nil {
 		r.prev[t.ThreadID] = cur
+		r.lastSeen[t.ThreadID] = t.LastTS
 	}
 }
 

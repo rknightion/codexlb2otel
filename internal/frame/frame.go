@@ -114,6 +114,11 @@ const (
 	EvResponseMetadata   = "codex.response.metadata"
 	EvWebsocketTiming    = "responsesapi.websocket_timing"
 
+	// EvError terminates a response without a response.completed frame. Observed
+	// carrying upstream overload, the 60-minute websocket connection cap, and
+	// protocol desync - all worth alerting on, and all previously invisible.
+	EvError = "error"
+
 	EvOutputTextDelta      = "response.output_text.delta"
 	EvCustomToolInputDelta = "response.custom_tool_call_input.delta"
 	EvFunctionArgsDelta    = "response.function_call_arguments.delta"
