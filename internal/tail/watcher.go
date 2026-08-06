@@ -73,6 +73,7 @@ type Watcher struct {
 type Stats struct {
 	FilesSeen     int64
 	FilesDeleted  int64
+	FilesReplaced int64
 	BytesRead     int64
 	MembersRead   int64
 	FramesRead    int64
@@ -200,23 +201,42 @@ func (w *Watcher) readFile(ctx context.Context, path string, emit Emit) error {
 		return err
 	}
 
-	// A file smaller than our offset was replaced or truncated. Re-reading from the
-	// start would duplicate; the honest response is to restart it and say so, since
-	// codex-lb only ever appends and this means something unexpected happened.
-	if fi.Size() < st.Offset {
-		w.log.Warn("archive file shrank; restarting it",
-			"file", name, "was", st.Offset, "now", fi.Size())
-		st = FileState{}
-	}
-	if fi.Size() == st.Offset {
-		return nil
-	}
-
 	f, err := os.Open(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 	defer f.Close()
+
+	// Identify the file by content, not by path. codex-lb recreates the archive at the
+	// same name whenever the previous one is moved away, so a familiar name can be a
+	// completely different file - and applying the old offset to it would resume at an
+	// arbitrary point in an unrelated gzip stream.
+	fp, err := fingerprint(f)
+	if err != nil {
+		return err
+	}
+	if st.Fingerprint != "" && fp != "" && fp != st.Fingerprint {
+		w.log.Warn("archive file was replaced at the same path; restarting it",
+			"file", name, "old_offset", st.Offset, "new_size", fi.Size())
+		w.Stats.FilesReplaced++
+		st = FileState{}
+	} else if fi.Size() < st.Offset {
+		// Same file, but shorter than where we were. Only truncation explains that,
+		// and codex-lb never truncates, so say so rather than pretending it is normal.
+		w.log.Warn("archive file shrank; restarting it",
+			"file", name, "was", st.Offset, "now", fi.Size())
+		w.Stats.FilesReplaced++
+		st = FileState{}
+	}
+	st.Fingerprint = fp
+
+	if fi.Size() == st.Offset {
+		w.cp.Files[name] = st
+		return nil
+	}
 	if _, err := f.Seek(st.Offset, io.SeekStart); err != nil {
 		return err
 	}

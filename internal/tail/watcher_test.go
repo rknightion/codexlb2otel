@@ -12,11 +12,18 @@ import (
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
-const fixture = "2026-08-06T21.jsonl.gz"
+const (
+	fixture = "2026-08-06T21.jsonl.gz"
+	// otherFixture stands in for a same-path replacement: an unrelated capture that
+	// happens to land at a filename we already hold an offset for.
+	otherFixture = "2026-08-06T17.jsonl.gz"
+)
 
-func loadFixture(t *testing.T) []byte {
+func loadFixture(t *testing.T) []byte { return loadFixtureNamed(t, fixture) }
+
+func loadFixtureNamed(t *testing.T, name string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "live", fixture))
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "live", name))
 	if err != nil {
 		t.Skipf("live fixture absent (%v); pull one from camden to run this", err)
 	}
@@ -256,5 +263,90 @@ func TestWatcher_FailedEmitDoesNotAdvanceCheckpoint(t *testing.T) {
 	}
 	if st := cp.Files[fixture]; st.Offset != 0 {
 		t.Errorf("checkpoint advanced to %d despite the sink failing", st.Offset)
+	}
+}
+
+// codex-lb reopens the archive with O_APPEND|O_CREAT for every batch, so moving a file
+// away makes it recreate the same name from scratch. Live proof: 2026-08-06T18 exists
+// as two entirely different files, 18:00-18:27 and 18:43-18:52.
+//
+// Detecting that by size alone only works while the replacement is still SMALLER than
+// the old offset. This test replaces the file with a LARGER one, which the size check
+// cannot see: it would seek the stale offset into an unrelated gzip stream and either
+// error or, worse, decode garbage.
+func TestWatcher_DetectsReplacementAtTheSamePath(t *testing.T) {
+	data := loadFixture(t)
+	if len(data) < 4096 {
+		t.Skip("fixture too small")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, fixture)
+
+	// First generation: a short prefix, fully consumed.
+	head := data[:len(data)/4]
+	if err := os.WriteFile(path, head, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var first []*turn.Turn
+	w := newWatcher(t, dir, nil)
+	if err := w.Poll(context.Background(), collect(&first)); err != nil {
+		t.Fatal(err)
+	}
+	consumed := w.cp.Files[fixture].Offset
+	if consumed == 0 {
+		t.Fatal("nothing consumed from the first generation")
+	}
+
+	// Second generation: the same path, a genuinely different archive, and LARGER than
+	// the offset we hold - so file size gives no hint that anything changed. This is
+	// the real 2026-08-06T18 case, where one filename held two unrelated captures.
+	replacement := loadFixtureNamed(t, otherFixture)
+	if int64(len(replacement)) <= consumed {
+		t.Skip("replacement fixture is not larger than the consumed prefix")
+	}
+	if err := os.WriteFile(path, replacement, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var second []*turn.Turn
+	if err := w.Poll(context.Background(), collect(&second)); err != nil {
+		t.Fatalf("poll after replacement: %v", err)
+	}
+	if w.Stats.FilesReplaced != 1 {
+		t.Errorf("FilesReplaced = %d, want 1 - the replacement went unnoticed",
+			w.Stats.FilesReplaced)
+	}
+	// Restarted from zero, so everything decodable in the new file was read.
+	if got := w.cp.Files[fixture].Offset; got == 0 || got <= consumed {
+		t.Errorf("offset after replacement = %d (was %d); the file was not restarted",
+			got, consumed)
+	}
+	if len(second) == 0 {
+		t.Error("no turns from the replacement file")
+	}
+}
+
+// A file that is merely appended to must NOT be treated as replaced, or every poll
+// would re-ship the whole archive.
+func TestWatcher_AppendIsNotAReplacement(t *testing.T) {
+	data := loadFixture(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, fixture)
+	if err := os.WriteFile(path, data[:len(data)/2], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var turns []*turn.Turn
+	w := newWatcher(t, dir, nil)
+	if err := w.Poll(context.Background(), collect(&turns)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Poll(context.Background(), collect(&turns)); err != nil {
+		t.Fatal(err)
+	}
+	if w.Stats.FilesReplaced != 0 {
+		t.Errorf("FilesReplaced = %d on a plain append", w.Stats.FilesReplaced)
 	}
 }

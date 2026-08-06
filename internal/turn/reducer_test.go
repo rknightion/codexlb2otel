@@ -16,9 +16,19 @@ import (
 // traffic shapes turn up, and pinning "1245 responses" only produced churn. What
 // matters is that the reduction stays self-consistent whatever the input.
 const (
-	hour17 = "2026-08-06T17.jsonl.gz"
-	hour18 = "2026-08-06T18.jsonl.gz"
-	hour21 = "2026-08-06T21.jsonl.gz"
+	hour17 = "live/2026-08-06T17.jsonl.gz"
+	hour18 = "live/2026-08-06T18.jsonl.gz"
+	hour21 = "live/2026-08-06T21.jsonl.gz"
+
+	// The morning corpus was captured before the archive was moved off the host. It is
+	// the only fixture holding the HTTP and probe record families - the evening hours
+	// are pure websocket - so family handling is untested without it.
+	//
+	// Note morning hour 18 is a DIFFERENT FILE from live hour 18 despite the identical
+	// archive name: codex-lb recreated the path after the copy. That is exactly the
+	// case FileState.Fingerprint exists to catch.
+	mornHour16 = "live-morning/2026-08-06T16.jsonl.gz"
+	mornHour18 = "live-morning/2026-08-06T18.jsonl.gz"
 )
 
 func reduceFixtures(t *testing.T, names ...string) []*Turn {
@@ -35,7 +45,7 @@ func reduceFixtures(t *testing.T, names ...string) []*Turn {
 
 func feed(t *testing.T, r *Reducer, name string) []*Turn {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "live", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", filepath.FromSlash(name)))
 	if err != nil {
 		t.Skipf("live fixture absent (%v); pull one from camden to run this", err)
 	}
@@ -228,6 +238,214 @@ func TestReducer_InputContentIsDeduplicated(t *testing.T) {
 		t.Fatal("no tool outputs captured")
 	}
 	t.Logf("captured %d prompts + %d tool outputs", prompts, outputs)
+}
+
+// The record's own transport field reads "websocket" for every record in the capture,
+// including the HTTP ones and the synthetic health checks, so Family must come from
+// the request-id shape and the originator instead. Getting this wrong silently merges
+// codex-lb's own "say OK" probes into the user-facing latency and cost metrics.
+func TestReducer_ClassifiesRecordFamilies(t *testing.T) {
+	turns := reduceFixtures(t, mornHour16, mornHour18, hour21)
+
+	families := map[string]int{}
+	probeModels := set{}
+	var probeMaxInput, realTotal int
+	for _, x := range turns {
+		families[x.Family]++
+		if x.Family != frame.FamilyProbe {
+			realTotal++
+			continue
+		}
+		probeModels.add(x.Model)
+		// Probes must be identifiable by originator alone; if one is not, the
+		// classifier has caught a real request by accident.
+		if x.Originator != frame.OriginatorProbe {
+			t.Errorf("probe-family turn %s has originator %q, not %q",
+				x.RequestID, x.Originator, frame.OriginatorProbe)
+		}
+		if x.InputTokens > probeMaxInput {
+			probeMaxInput = x.InputTokens
+		}
+	}
+	for _, f := range []string{frame.FamilyWebsocket, frame.FamilyHTTP, frame.FamilyProbe} {
+		if families[f] == 0 {
+			t.Errorf("no %s-family turns; fixtures no longer cover that family (saw %v)",
+				f, families)
+		}
+	}
+	// Probes deliberately exercise BOTH a mini model and the real one, so model overlap
+	// with user traffic is expected and cannot be used to tell them apart. What does
+	// separate them is size: the probe prompts are literally "say OK" and "hi", so a
+	// probe carrying a real conversation's worth of context means the split has leaked.
+	if probeMaxInput > 5000 {
+		t.Errorf("largest probe input is %d tokens; real traffic is being classified "+
+			"as a health check", probeMaxInput)
+	}
+	if families[frame.FamilyProbe]*5 > realTotal {
+		t.Errorf("probes are %d of %d turns - too many to be health checks",
+			families[frame.FamilyProbe], len(turns))
+	}
+	t.Logf("families=%v probe models=%v largest probe input=%d tokens",
+		families, probeModels.keys(), probeMaxInput)
+}
+
+// The turn id must come from response.create's client_metadata, NOT from the
+// x-codex-turn-metadata request header. The header is written once when the websocket
+// opens and never refreshed, so on a live connection it reports request_kind=prewarm
+// with an empty turn_id long after real turns have begun - measured at 177 of 199
+// turns mislabelled. This test fails if anyone repoints it at the header.
+func TestReducer_TurnIdentityComesFromClientMetadata(t *testing.T) {
+	turns := reduceFixtures(t, hour17, hour18, hour21)
+
+	var withTurnID, prewarm, realTurn int
+	for _, x := range turns {
+		if x.TurnID != "" {
+			withTurnID++
+			if x.LogicalTurnID != x.TurnID {
+				t.Errorf("%s: logical_turn_id %q ignores the server turn id %q",
+					x.RequestID, x.LogicalTurnID, x.TurnID)
+			}
+		}
+		switch x.RequestKind {
+		case frame.KindPrewarm:
+			prewarm++
+		case frame.KindTurn:
+			realTurn++
+		}
+	}
+	if withTurnID == 0 {
+		t.Fatal("no turn carries a server turn id; client_metadata is not being read")
+	}
+	// The header would put nearly everything in the prewarm bucket. Real traffic is
+	// overwhelmingly real turns, so a prewarm majority means we are reading the header.
+	if prewarm > realTurn {
+		t.Errorf("%d prewarm vs %d real turns - that ratio is the signature of reading "+
+			"the stale x-codex-turn-metadata HEADER instead of client_metadata",
+			prewarm, realTurn)
+	}
+	t.Logf("server turn ids on %d/%d turns; kinds: turn=%d prewarm=%d",
+		withTurnID, len(turns), realTurn, prewarm)
+}
+
+// critical_path is scoped per-response by the server, so it needs no delta conversion
+// and should agree with the delta arithmetic where both are available. Divergence
+// means one of the two is being misread.
+func TestReducer_CriticalPathAgreesWithDeltas(t *testing.T) {
+	turns := reduceFixtures(t, hour17, hour18, hour21)
+
+	var complete, partial, agree, compared int
+	for _, x := range turns {
+		if x.CriticalPath.Coverage == "" {
+			continue
+		}
+		if x.CriticalPath.Complete() {
+			complete++
+		} else {
+			partial++
+		}
+		// Engine calls are integers reported by both paths, so they can be compared
+		// exactly. Skip cold starts, whose deltas absorb unobserved work.
+		if x.BaselineReset || !x.CriticalPath.Complete() || x.CriticalPath.EngineCalls == 0 {
+			continue
+		}
+		compared++
+		if x.CriticalPath.EngineCalls == x.EngineCallsDelta {
+			agree++
+		}
+	}
+	if complete == 0 {
+		t.Fatal("no critical_path captured; the per-response timings are being dropped")
+	}
+	if compared < 20 {
+		t.Fatalf("only %d comparable responses; fixture too small to validate", compared)
+	}
+	// These are two independent derivations of the same quantity. They will not match
+	// everywhere - the delta path resets at turn boundaries the server draws slightly
+	// differently - but broad disagreement means one is wrong.
+	if ratio := float64(agree) / float64(compared); ratio < 0.8 {
+		t.Errorf("critical_path engine calls agree with the delta only %.0f%% of the "+
+			"time (%d/%d); one of the two derivations is wrong", ratio*100, agree, compared)
+	}
+	t.Logf("critical_path: %d complete, %d partial; engine calls agree %d/%d",
+		complete, partial, agree, compared)
+}
+
+// codex-lb balances across several ChatGPT accounts, so account identity and per-account
+// rate-limit headroom are the point of the exercise. Losing them makes every headroom
+// figure an average across accounts, which hides the exhaustion it exists to show.
+func TestReducer_CapturesRoutingDimensions(t *testing.T) {
+	turns := reduceFixtures(t, mornHour16, mornHour18, hour17, hour21)
+
+	accounts, plans, safety, kinds := set{}, set{}, set{}, set{}
+	var withRateLimit, withExtraLimits int
+	for _, x := range turns {
+		accounts.add(x.AccountID)
+		plans.add(x.PlanType)
+		safety.add(x.SafetyID)
+		kinds.add(x.ThreadSource)
+		if x.RateLimitUsedPercent > 0 {
+			withRateLimit++
+		}
+		if len(x.ExtraRateLimits) > 0 {
+			withExtraLimits++
+		}
+	}
+	for _, c := range []struct {
+		name string
+		got  int
+	}{
+		{"account ids", len(accounts)},
+		{"plan types", len(plans)},
+		{"safety identifiers", len(safety)},
+		{"responses with rate-limit headroom", withRateLimit},
+		{"responses with per-model rate limits", withExtraLimits},
+	} {
+		if c.got == 0 {
+			t.Errorf("no %s captured", c.name)
+		}
+	}
+	// Every one of these is a metric attribute, so an unbounded value would be a
+	// cardinality incident rather than a cosmetic problem.
+	if len(accounts) > 10 || len(plans) > 5 || len(kinds) > 5 {
+		t.Errorf("routing dimensions too wide for metric labels: accounts=%d plans=%v kinds=%v",
+			len(accounts), plans.keys(), kinds.keys())
+	}
+	t.Logf("accounts=%d plans=%v thread_sources=%v rate-limited=%d per-model=%d",
+		len(accounts), plans.keys(), kinds.keys(), withRateLimit, withExtraLimits)
+}
+
+// Instructions run to 67 KB and take only a handful of distinct values across a whole
+// day, so the body must be emitted once while every response still carries the hash.
+// Shipping the body per response would dominate log spend for no extra information.
+func TestReducer_InstructionsAreHashedNotRepeated(t *testing.T) {
+	turns := reduceFixtures(t, hour17, hour18, hour21)
+
+	hashes, bodies := set{}, 0
+	var chars int
+	for _, x := range turns {
+		if x.InstructionsHash == "" {
+			continue
+		}
+		hashes.add(x.InstructionsHash)
+		if x.InstructionsChars > chars {
+			chars = x.InstructionsChars
+		}
+		for _, p := range x.Prompts {
+			if p.Role == "instructions" {
+				bodies++
+			}
+		}
+	}
+	if len(hashes) == 0 {
+		t.Skip("no instructions in fixture")
+	}
+	if bodies > len(hashes) {
+		t.Errorf("emitted %d instruction bodies for %d distinct prompts; the dedup is "+
+			"not holding and every response is carrying up to %d bytes of boilerplate",
+			bodies, len(hashes), chars)
+	}
+	t.Logf("%d distinct instruction prompts, largest %d bytes, %d bodies emitted",
+		len(hashes), chars, bodies)
 }
 
 type set map[string]bool
