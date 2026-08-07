@@ -252,6 +252,124 @@ func TestWatcher_ReclaimIsOptIn(t *testing.T) {
 	}
 }
 
+// RetainDays is a calendar rule, not a rolling one: at 12:00 on the 8th, every file
+// dated the 7th goes and every file dated the 8th stays, regardless of how many hours
+// old any of them is.
+func TestWatcher_RetainDaysDropsPriorDays(t *testing.T) {
+	data := loadFixture(t)
+	dir := t.TempDir()
+	names := []string{
+		"2026-08-06T09.jsonl.gz", // two days back
+		"2026-08-07T20.jsonl.gz", // yesterday
+		"2026-08-08T09.jsonl.gz", // today
+		"2026-08-08T10.jsonl.gz", // today, and the live file
+	}
+	for _, n := range names {
+		if err := os.WriteFile(filepath.Join(dir, n), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	now := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	var got []*turn.Turn
+	w := newWatcher(t, dir, func(c *Config) {
+		c.RetainDays = 1
+		c.now = func() time.Time { return now }
+	})
+	if err := w.Poll(context.Background(), collect(&got)); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, n := range names[:2] {
+		if _, err := os.Stat(filepath.Join(dir, n)); !os.IsNotExist(err) {
+			t.Errorf("%s is from a prior day and should be gone (err=%v)", n, err)
+		}
+	}
+	for _, n := range names[2:] {
+		if _, err := os.Stat(filepath.Join(dir, n)); err != nil {
+			t.Errorf("%s is from today and must be kept: %v", n, err)
+		}
+	}
+	if w.Stats.FilesDeleted != 2 {
+		t.Errorf("FilesDeleted = %d, want 2", w.Stats.FilesDeleted)
+	}
+}
+
+// The day in an archive filename is UTC, because codex-lb builds it from
+// datetime.now(UTC). Doing the arithmetic in local time is invisible in Britain for
+// half the year and wrong everywhere west of Greenwich, so pin it with a local zone
+// whose date differs from UTC's at the chosen instant.
+func TestWatcher_RetainDaysIsUTC(t *testing.T) {
+	newYork, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("no tzdata for America/New_York: %v", err)
+	}
+	saved := time.Local
+	time.Local = newYork
+	t.Cleanup(func() { time.Local = saved })
+
+	dir := t.TempDir()
+	// 00:30 on the 8th in UTC is still 20:30 on the 7th in New York.
+	now := time.Date(2026, 8, 8, 0, 30, 0, 0, time.UTC)
+	if got := now.In(time.Local).Day(); got != 7 {
+		t.Fatalf("test premise broken: local day is %d, want 7", got)
+	}
+
+	const stale = "2026-08-07T23.jsonl.gz" // last hour of the prior UTC day
+	const live = "2026-08-08T00.jsonl.gz"
+	for _, n := range []string{stale, live} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := newWatcher(t, dir, func(c *Config) {
+		c.RetainDays = 1
+		c.now = func() time.Time { return now }
+	})
+	// Hand-built checkpoint rather than a Poll: this test is about the calendar
+	// arithmetic, and the files hold no real archive data to ingest.
+	w.cp.Files[stale] = FileState{Offset: 1, Size: 1}
+	w.cp.Files[live] = FileState{Offset: 1, Size: 1}
+	w.reclaim([]string{filepath.Join(dir, stale), filepath.Join(dir, live)})
+
+	if _, err := os.Stat(filepath.Join(dir, stale)); !os.IsNotExist(err) {
+		t.Errorf("%s is the prior UTC day and should be gone; local-time arithmetic would keep it (err=%v)", stale, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, live)); err != nil {
+		t.Errorf("%s is the current UTC day and must be kept: %v", live, err)
+	}
+}
+
+// Retention must never outrun ingest. A prior-day file that has not been fully read -
+// the shape a restart behind a backlog produces - stays until it has been.
+func TestWatcher_RetainDaysSparesUnreadFile(t *testing.T) {
+	dir := t.TempDir()
+	const unread = "2026-08-07T20.jsonl.gz"
+	const live = "2026-08-08T10.jsonl.gz"
+	for _, n := range []string{unread, live} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("xxxx"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	now := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	w := newWatcher(t, dir, func(c *Config) {
+		c.RetainDays = 1
+		c.now = func() time.Time { return now }
+	})
+	w.cp.Files[unread] = FileState{Offset: 1, Size: 4} // read one byte of four
+	w.cp.Files[live] = FileState{Offset: 4, Size: 4}
+	w.reclaim([]string{filepath.Join(dir, unread), filepath.Join(dir, live)})
+
+	if _, err := os.Stat(filepath.Join(dir, unread)); err != nil {
+		t.Errorf("a partially read file must survive its calendar day: %v", err)
+	}
+	if w.Stats.FilesDeleted != 0 {
+		t.Errorf("FilesDeleted = %d, want 0", w.Stats.FilesDeleted)
+	}
+}
+
 // A sink failure must not advance the checkpoint, or the rejected turns are lost.
 func TestWatcher_FailedEmitDoesNotAdvanceCheckpoint(t *testing.T) {
 	data := loadFixture(t)

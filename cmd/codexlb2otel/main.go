@@ -131,6 +131,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 		ChunkSize:      cfg.Archive.ChunkBytes,
 		PollInterval:   cfg.Archive.PollInterval,
 		DeleteAfter:    cfg.Archive.DeleteAfter,
+		RetainDays:     cfg.Archive.RetainDays,
 		Logger:         log,
 	}, reducer)
 	if err != nil {

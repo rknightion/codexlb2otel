@@ -33,9 +33,10 @@
 #   DO NOT COPY codex-lb's `Z` FLAG ONTO THIS MOUNT. `Z` tells Docker to relabel
 #   the content with a label PRIVATE to the mounting container. Applying it here
 #   would relabel codex-lb's own data directory out from under it and break the
-#   service this one exists to observe - the exact "must never be able to damage
-#   the only copy of the raw capture" failure the read-only mount guards against,
-#   arriving through a flag rather than through a write. It is moot today because
+#   service this one exists to observe. Note this hazard SURVIVED the mount becoming
+#   writable (see the volumes section): retention deletes whole files this service
+#   has finished with, which is bounded and intended, whereas relabelling breaks
+#   codex-lb's access to its own live data. It is moot today because
 #   SELinux is Disabled on camden (Fedora 44 Server), which is why codex-lb's own
 #   `Z` is inert - but if SELinux is ever enabled, this mount wants a lowercase
 #   `z` (shared) or no label flag at all, never `Z`.
@@ -129,14 +130,22 @@ services:
     env_file:
       - /opt/codexlb2otel/.env
     volumes:
-      # Archive: READ-ONLY - the hard constraint from issue #10. This directory is
-      # the only copy of the raw capture; codexlb2otel must never be able to
-      # write to, move, or delete anything under it (contrast the checkpoint
-      # volume below, the one thing this service IS allowed to write). Container
-      # path mirrors the host path deliberately, so config.example.yaml's own
-      # archive.dir default works unedited - one less place for the two to drift
+      # Archive: WRITABLE, which REVERSES issue #10's read-only constraint. Rob,
+      # 2026-08-07: "it's okay for yesterdays and older to be gone this is a me only
+      # tool". The archive stops being the durable record of the raw capture and
+      # becomes a buffer, and the `:ro` flag existed only to protect it as the
+      # former - see issue #28.
+      #
+      # What this actually grants is unlink on files in this directory, which is
+      # what archive.retain_days needs; read-only made os.Remove return EROFS. The
+      # deletion is not blind: never the newest file, and never a file that has not
+      # been fully read, so a restart behind a backlog ingests it before dropping
+      # it. Both guards are in tail.Watcher.reclaim and are not configurable.
+      #
+      # Container path mirrors the host path deliberately, so config.example.yaml's
+      # own archive.dir default works unedited - one less place for the two to drift
       # apart. The host path is verified - see the ARCHIVE MOUNT block above.
-      - /opt/codex-lb/data/codex-lb/conversation-archive:/opt/codex-lb/data/codex-lb/conversation-archive:ro
+      - /opt/codex-lb/data/codex-lb/conversation-archive:/opt/codex-lb/data/codex-lb/conversation-archive
       # Config file: read-only single-file bind mount, resolved relative to
       # codex-lb's own compose file. See the CONFIG FILE block above.
       - ./codexlb2otel.config.yaml:/etc/codexlb2otel/config.yaml:ro
