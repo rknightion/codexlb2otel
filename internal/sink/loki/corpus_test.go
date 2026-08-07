@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rknightion/codexlb2otel/internal/archive"
@@ -13,31 +14,57 @@ import (
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
-// corpusTurns reduces the n cheapest archives. Mirrors internal/turn's and
-// internal/attr's own helpers of the same name; duplicated rather than exported
-// because a test helper is not API - see internal/attr/corpus_test.go's identical
-// note.
-func corpusTurns(t *testing.T, n int) []*turn.Turn {
+// Mirrors internal/attr's helper of the same name; duplicated rather than exported
+// because a test helper is not API.
+var (
+	corpusOnce  sync.Once
+	corpusCache []*turn.Turn
+	corpusErr   error
+)
+
+// corpusTurns reduces the WHOLE corpus, once per process.
+//
+// It read the three cheapest archives until 2026-08-07. The budget assertion below is
+// a claim about the largest line the corpus can produce, and a sample cannot support
+// a claim about a maximum - the same mistake #20 turned out to be, and the third
+// place in this repo it had been made. It matters concretely here now that Turn
+// carries a tool catalogue (#22 item 1): the catalogue rides on only 5.2% of
+// response.create events, so the three cheapest archives may contain no line of the
+// shape this test most needs to measure.
+//
+// Memoized because several tests here want the same reduction. The failure is
+// memoized too rather than raised with t.Fatal from inside the Once, since Fatal is
+// a Goexit that would still mark the Once done and leave later tests reporting "no
+// turns reduced" instead of the real cause.
+func corpusTurns(t *testing.T) []*turn.Turn {
 	t.Helper()
-	r := turn.New()
-	var out []*turn.Turn
-	for _, path := range fixture.Any(t, n) {
-		res, err := archive.DecodeMembers(fixture.Load(t, path))
-		if err != nil {
-			t.Fatalf("%s: %v", fixture.Name(path), err)
-		}
-		err = frame.Lines(res.Data, func(rec *frame.Record) error {
-			done, err := r.Add(rec)
-			if done != nil {
-				out = append(out, done)
+	corpusOnce.Do(func() {
+		r := turn.New()
+		var out []*turn.Turn
+		for _, path := range fixture.All(t) {
+			res, err := archive.DecodeMembers(fixture.Load(t, path))
+			if err != nil {
+				corpusErr = fmt.Errorf("%s: %w", fixture.Name(path), err)
+				return
 			}
-			return err
-		})
-		if err != nil {
-			t.Fatalf("%s: %v", fixture.Name(path), err)
+			err = frame.Lines(res.Data, func(rec *frame.Record) error {
+				done, err := r.Add(rec)
+				if done != nil {
+					out = append(out, done)
+				}
+				return err
+			})
+			if err != nil {
+				corpusErr = fmt.Errorf("%s: %w", fixture.Name(path), err)
+				return
+			}
 		}
+		corpusCache = append(out, r.Flush()...)
+	})
+	if corpusErr != nil {
+		t.Fatalf("reducing the corpus: %v", corpusErr)
 	}
-	return append(out, r.Flush()...)
+	return corpusCache
 }
 
 // TestCorpus_NoLineExceedsBudget is issue #6's first acceptance criterion: feed the
@@ -45,7 +72,7 @@ func corpusTurns(t *testing.T, n int) []*turn.Turn {
 // measured peak reflects the real production config, not an artificially tight one.
 func TestCorpus_NoLineExceedsBudget(t *testing.T) {
 	const budget = 192 << 10
-	turns := corpusTurns(t, 3)
+	turns := corpusTurns(t)
 	if len(turns) == 0 {
 		t.Fatal("no turns reduced; this test asserts nothing")
 	}
@@ -74,7 +101,7 @@ func TestCorpus_NoLineExceedsBudget(t *testing.T) {
 		}
 	}
 
-	t.Logf("corpus measurement (default MaxLineBytes=%d, %d turns from %d archives):", budget, len(turns), 3)
+	t.Logf("corpus measurement (default MaxLineBytes=%d, %d turns, whole corpus):", budget, len(turns))
 	t.Logf("  lines emitted:        %d", totalLines)
 	t.Logf("  total line bytes:     %d (%.2f MB)", totalBytes, float64(totalBytes)/(1<<20))
 	t.Logf("  peak line size:       %d bytes, record_type=%s", maxSeen, maxRecordType)
@@ -92,7 +119,7 @@ func TestCorpus_NoLineExceedsBudget(t *testing.T) {
 // output leaves the turn-metadata line for the SAME turn intact and far smaller
 // than the content that overflowed.
 func TestCorpus_MetadataSurvivesOversizedToolOutput(t *testing.T) {
-	turns := corpusTurns(t, 3)
+	turns := corpusTurns(t)
 
 	var biggest *turn.Turn
 	biggestChars := 0
@@ -165,8 +192,16 @@ func TestCorpus_MetadataSurvivesOversizedToolOutput(t *testing.T) {
 // drop content) on top of the reducer's own guarantee: each Turn.Prompts entry
 // becomes exactly one Loki line, so a body that is unique within its scope in the
 // reducer's output stays unique within that scope after passing through this sink.
+//
+// "GLOBALLY" above is bounded, not absolute, and this test used to assert otherwise.
+// turn.seenSet is an LRU of SeenSetSize entries (32768 by default), so a body is
+// deduped against the last N bodies rather than all of them, and one evicted after
+// tens of thousands of intervening bodies is correctly re-emitted. Reading three
+// archives never filled the cap, so the absolute assertion passed and looked true;
+// the whole corpus fills it and it is false. The assertion is now on the rate, which
+// is the property that actually distinguishes healthy eviction from a broken dedup.
 func TestCorpus_ContentDedupFlowsThroughUnchanged(t *testing.T) {
-	turns := corpusTurns(t, 3)
+	turns := corpusTurns(t)
 
 	guard := attr.NewGuard()
 	rej := newFakeRejecter()
@@ -205,7 +240,7 @@ func TestCorpus_ContentDedupFlowsThroughUnchanged(t *testing.T) {
 			key := fmt.Sprintf("%s\x00%s\x00%d\x00%s", scope, p.Role, p.Chars, p.Text)
 			if first, ok := seenBodies[key]; ok {
 				dupes++
-				t.Errorf("identical %s body re-emitted within its own dedup scope (%s): first on request_id=%s, again on request_id=%s",
+				t.Logf("%s body re-emitted in scope %s (LRU eviction): first on request_id=%s, again on request_id=%s",
 					l.recordType, scope, first, tn.RequestID)
 				continue
 			}
@@ -216,14 +251,33 @@ func TestCorpus_ContentDedupFlowsThroughUnchanged(t *testing.T) {
 	if instructionLines == 0 && promptLines == 0 {
 		t.Fatal("no prompt/instructions lines were emitted at all; this test asserts nothing")
 	}
-	t.Logf("instructions lines: %d, prompt lines: %d, in-scope duplicate bodies: %d", instructionLines, promptLines, dupes)
+
+	// A repeat is NOT a failure, and asserting otherwise was wrong - it only looked
+	// right while this test read three archives. turn.seenSet is a bounded LRU
+	// (SeenSetSize, default 32768), so "global" dedup means "global up to the cap":
+	// a body evicted after tens of thousands of intervening bodies is legitimately
+	// re-emitted. That is the deliberate trade - a duplicate Loki line costs bytes,
+	// an unbounded dedup set costs the process - and it is exactly what the whole
+	// corpus exercises and a sample never does.
+	//
+	// What must hold is that duplication stays RARE. If eviction were thrashing, the
+	// dedup would be doing no useful work and the re-sent-history problem it exists
+	// to solve would be back. A few percent is eviction; a large fraction is a bug.
+	total := instructionLines + promptLines
+	if dupes*10 > total {
+		t.Errorf("%d of %d content lines are in-scope repeats (>10%%); the dedup set is "+
+			"thrashing rather than evicting, which means re-sent history is being "+
+			"shipped again in bulk", dupes, total)
+	}
+	t.Logf("instructions lines: %d, prompt lines: %d, in-scope repeats after LRU eviction: %d (%.2f%% of %d)",
+		instructionLines, promptLines, dupes, 100*float64(dupes)/float64(total), total)
 }
 
 // TestCorpus_ForcedTruncation_MarksAndPreservesLength repeats the marker/length
 // property from the synthetic unit test against real corpus content, with a budget
 // tight enough to force truncation on ordinary (not artificially huge) tool output.
 func TestCorpus_ForcedTruncation_MarksAndPreservesLength(t *testing.T) {
-	turns := corpusTurns(t, 2)
+	turns := corpusTurns(t)
 	const budget = 200 // small enough that most non-trivial tool output must be cut
 
 	guard := attr.NewGuard()
