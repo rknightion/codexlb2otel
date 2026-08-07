@@ -1,20 +1,19 @@
 {
   "version": 2,
   "coverage": {
-    "files": 11,
-    "file_bytes": 1110397063,
-    "read_bytes": 1110397063,
+    "files": 12,
+    "file_bytes": 1383128599,
+    "read_bytes": 1383128599,
     "sampled": false
   },
   "storage": {
     "multi_member": true,
-    "lines_per_member": 1.21,
+    "lines_per_member": 1.2,
     "filename_patterns": [
       "N-N-NTN.jsonl.gz"
     ],
     "payload_framing": [
-      "json-object",
-      "plain-text"
+      "json-object"
     ],
     "payload_shapes": [
       "object{text}"
@@ -43,10 +42,12 @@
         "server_to_codex"
       ],
       "extra.close_code": [
+        "1000",
         "1012",
         "\u003cnil\u003e"
       ],
       "extra.frame_type": [
+        "close",
         "error",
         "text"
       ],
@@ -79,6 +80,7 @@
       "x-codex-turn-metadata",
       "x-codex-turn-state",
       "x-codex-window-id",
+      "x-openai-memgen-request",
       "x-openai-subagent"
     ],
     "header_values": {
@@ -104,8 +106,12 @@
       "x-codex-turn-state": [
         "\u003cset\u003e"
       ],
+      "x-openai-memgen-request": [
+        "\u003cset\u003e"
+      ],
       "x-openai-subagent": [
-        "collab_spawn"
+        "collab_spawn",
+        "memory_consolidation"
       ]
     },
     "request_id_shapes": [
@@ -141,6 +147,7 @@
       "paths": {
         "additional_rate_limits": {
           "types": [
+            "null",
             "object"
           ]
         },
@@ -207,6 +214,7 @@
         },
         "credits.balance": {
           "types": [
+            "null",
             "string"
           ],
           "values": [
@@ -234,6 +242,7 @@
             "string"
           ],
           "values": [
+            "business",
             "pro"
           ]
         },
@@ -244,6 +253,7 @@
         },
         "rate_limits": {
           "types": [
+            "null",
             "object"
           ]
         },
@@ -350,7 +360,8 @@
             "string"
           ],
           "values": [
-            "previous_response_not_found"
+            "previous_response_not_found",
+            "websocket_connection_limit_reached"
           ]
         },
         "error.message": {
@@ -469,6 +480,7 @@
             "string"
           ],
           "values": [
+            "gpt-5.6-luna",
             "gpt-5.6-sol",
             "gpt-5.6-terra"
           ]
@@ -603,6 +615,86 @@
         "response.text.format": {
           "types": [
             "object"
+          ]
+        },
+        "response.text.format.description": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.text.format.name": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.additionalProperties": {
+          "types": [
+            "bool"
+          ]
+        },
+        "response.text.format.schema.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.raw_memory": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.raw_memory.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_slug": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_slug.type": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_slug.type[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_summary": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_summary.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.text.format.schema.required[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.strict": {
+          "types": [
+            "bool"
           ]
         },
         "response.text.format.type": {
@@ -1330,6 +1422,7 @@
             "string"
           ],
           "values": [
+            "gpt-5.6-luna",
             "gpt-5.6-sol",
             "gpt-5.6-terra"
           ]
@@ -1387,6 +1480,91 @@
         "text": {
           "types": [
             "object"
+          ]
+        },
+        "text.format": {
+          "types": [
+            "object"
+          ]
+        },
+        "text.format.name": {
+          "types": [
+            "string"
+          ]
+        },
+        "text.format.schema": {
+          "types": [
+            "object"
+          ]
+        },
+        "text.format.schema.additionalProperties": {
+          "types": [
+            "bool"
+          ]
+        },
+        "text.format.schema.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "text.format.schema.properties.raw_memory": {
+          "types": [
+            "object"
+          ]
+        },
+        "text.format.schema.properties.raw_memory.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "text.format.schema.properties.rollout_slug": {
+          "types": [
+            "object"
+          ]
+        },
+        "text.format.schema.properties.rollout_slug.type": {
+          "types": [
+            "array"
+          ]
+        },
+        "text.format.schema.properties.rollout_slug.type[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "text.format.schema.properties.rollout_summary": {
+          "types": [
+            "object"
+          ]
+        },
+        "text.format.schema.properties.rollout_summary.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "text.format.schema.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "text.format.schema.required[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "text.format.schema.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "text.format.strict": {
+          "types": [
+            "bool"
+          ]
+        },
+        "text.format.type": {
+          "types": [
+            "string"
           ]
         },
         "text.verbosity": {
@@ -1492,6 +1670,7 @@
             "string"
           ],
           "values": [
+            "gpt-5.6-luna",
             "gpt-5.6-sol",
             "gpt-5.6-terra"
           ]
@@ -1625,6 +1804,86 @@
         "response.text.format": {
           "types": [
             "object"
+          ]
+        },
+        "response.text.format.description": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.text.format.name": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.additionalProperties": {
+          "types": [
+            "bool"
+          ]
+        },
+        "response.text.format.schema.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.raw_memory": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.raw_memory.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_slug": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_slug.type": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_slug.type[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_summary": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_summary.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.text.format.schema.required[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.strict": {
+          "types": [
+            "bool"
           ]
         },
         "response.text.format.type": {
@@ -2106,6 +2365,7 @@
             "string"
           ],
           "values": [
+            "gpt-5.6-luna",
             "gpt-5.6-sol",
             "gpt-5.6-terra"
           ]
@@ -2239,6 +2499,86 @@
         "response.text.format": {
           "types": [
             "object"
+          ]
+        },
+        "response.text.format.description": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.text.format.name": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.additionalProperties": {
+          "types": [
+            "bool"
+          ]
+        },
+        "response.text.format.schema.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.raw_memory": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.raw_memory.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_slug": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_slug.type": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_slug.type[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_summary": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.rollout_summary.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.text.format.schema.required[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.strict": {
+          "types": [
+            "bool"
           ]
         },
         "response.text.format.type": {
@@ -2499,7 +2839,7 @@
       }
     },
     "response.output_item.added": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "item": {
           "types": [
@@ -2539,6 +2879,11 @@
         "item.internal_chat_message_metadata_passthrough": {
           "types": [
             "object"
+          ]
+        },
+        "item.internal_chat_message_metadata_passthrough.create_time": {
+          "types": [
+            "number"
           ]
         },
         "item.internal_chat_message_metadata_passthrough.turn_id": {
@@ -2641,7 +2986,7 @@
       }
     },
     "response.output_item.done": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "item": {
           "types": [
@@ -2813,7 +3158,7 @@
       }
     },
     "response.output_text.delta": {
-      "magnitude": 4,
+      "magnitude": 5,
       "paths": {
         "content_index": {
           "types": [

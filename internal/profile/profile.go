@@ -133,6 +133,11 @@ type Profile struct {
 	PayloadUnparsed int64    `json:"payload_text_not_json"`
 	UnparsedSamples []string `json:"payload_text_not_json_samples,omitempty"`
 
+	// TransportFrames counts websocket CONTROL frames, whose payload.text is a
+	// human-readable reason string rather than a protocol event. They are excluded
+	// from PayloadFraming and PayloadUnparsed entirely - see payload.
+	TransportFrames int64 `json:"transport_frames"`
+
 	// Events is the induced schema per inner event type.
 	Events map[string]*EventProfile `json:"events"`
 
@@ -214,11 +219,15 @@ func (p *Profile) AddLine(line []byte, fp *FileProfile) {
 	}
 
 	// extra is an open bag; flatten whatever is in it.
+	control := false
 	if raw, ok := rec["extra"]; ok {
 		var m map[string]any
 		if json.Unmarshal(raw, &m) == nil {
 			for k, v := range m {
 				p.field("extra." + k).add(fmt.Sprint(v))
+			}
+			if ft, ok := m["frame_type"].(string); ok && ft != "" && ft != frameTypeText {
+				control = true
 			}
 		} else {
 			p.field("extra").add(jsonKind(raw))
@@ -252,12 +261,19 @@ func (p *Profile) AddLine(line []byte, fp *FileProfile) {
 	}
 
 	p.sampleRecord(rec, kind, line)
-	p.payload(rec, kind)
+	p.payload(rec, kind, control)
 }
 
 // payload characterises the payload field and, when it holds a JSON event, induces
 // that event's schema.
-func (p *Profile) payload(rec map[string]json.RawMessage, kind string) {
+//
+// control marks a websocket CONTROL frame, whose payload.text is a reason string by
+// design ("no close frame received or sent", or empty on a clean close). Feeding one
+// to the framing classifier reports `plain-text` or `empty`, which Diff grades as a
+// transport change - so 20 control frames in 1.5M lines produced a standing BREAKING
+// finding about an SSE transport that does not exist. Their vocabulary is still
+// tracked, as extra.frame_type and extra.close_code enums on the record.
+func (p *Profile) payload(rec map[string]json.RawMessage, kind string, control bool) {
 	raw, ok := rec["payload"]
 	if !ok {
 		p.PayloadShapes["<absent>"]++
@@ -292,6 +308,10 @@ func (p *Profile) payload(rec map[string]json.RawMessage, kind string) {
 	var s string
 	if json.Unmarshal(inner, &s) != nil {
 		p.PayloadShapes["text:not-a-string"]++
+		return
+	}
+	if control {
+		p.TransportFrames++
 		return
 	}
 	p.PayloadFraming[framing(s)]++
@@ -459,6 +479,7 @@ func (p *Profile) Merge(o *Profile) {
 	p.Members += o.Members
 	p.Bytes += o.Bytes
 	p.PayloadUnparsed += o.PayloadUnparsed
+	p.TransportFrames += o.TransportFrames
 
 	mergeCounts(p.RecordKeys, o.RecordKeys)
 	mergeCounts(p.PayloadShapes, o.PayloadShapes)
@@ -527,6 +548,15 @@ func mergeCounts(dst, src map[string]int64) {
 		dst[k] += v
 	}
 }
+
+// frameTypeText is the websocket frame that carries protocol messages. Anything else
+// with a non-empty frame_type is a control frame.
+//
+// Tested by exclusion rather than against a list of known control types: a control
+// frame codex-lb has never written would then be classified correctly on its first
+// appearance, while still surfacing as a new extra.frame_type enum value - which is
+// the finding a human should act on, rather than a phantom transport change.
+const frameTypeText = "text"
 
 // Payload framing classes. Everything captured so far is JSONObject; the rest exist
 // so that a change to the wire format is reported as a new bucket rather than as a

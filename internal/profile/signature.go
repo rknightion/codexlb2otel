@@ -86,6 +86,12 @@ type EventSig struct {
 // exact failure that silently discarded 1,500 input items: inputItem.Output was
 // declared string, the protocol also sent an array, and Go's decoder abandons the
 // whole event on one mismatched field. A new type here is a breaking finding.
+//
+// EXCEPT null, which Diff grades as new rather than breaking. encoding/json accepts
+// null into any Go type as a no-op and leaves the zero value, so a field turning
+// nullable destroys nothing. Grading it breaking put three phantom entries
+// (codex.rate_limits rate_limits, additional_rate_limits, credits.balance) in the
+// category that has to stay believable to be worth reading.
 type PathSig struct {
 	Types  []string `json:"types"`
 	Values []string `json:"values,omitempty"`
@@ -272,6 +278,12 @@ func Diff(base, cur *Signature) []Finding {
 				continue
 			}
 			for _, t := range added(bp.Types, cp.Types) {
+				if t == "null" {
+					add(SevNew, "event.path.nullable", name+" "+path,
+						sprintf("was always %s, now also sent as null - the field became optional",
+							strings.Join(bp.Types, "|")))
+					continue
+				}
 				add(SevBreaking, "event.path.type", name+" "+path,
 					sprintf("was %s, now also %s - a typed decoder abandons the whole event on a mismatch here",
 						strings.Join(bp.Types, "|"), t))
