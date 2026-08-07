@@ -209,10 +209,17 @@ func (s *Sink) addRejected(reason string, n int64) {
 
 // dropTooOld removes lines Loki will accept and then discard.
 //
-// Grafana Cloud enforces a maximum sample age, and it does NOT reject an older line -
-// measured 2026-08-07 against logs-prod-035, a push at 3h old returns 204 and is
-// queryable, while 4h, 5h, 8h, 15h and 26h all return 204 and are queryable NOWHERE.
-// There is no error, no rejection body and no counter; the line simply never exists.
+// Grafana Cloud enforces a maximum sample age, and it does NOT reject an older line
+// the way its own docs describe. Measured 2026-08-07 against logs-prod-035 by pushing
+// one line per age and querying each back: 3h old returns 204 and is queryable; 4h,
+// 5h, 8h, 15h and 26h all return 204 and were queryable neither 6 seconds nor 45
+// minutes later. There is no error, no rejection body and no counter.
+//
+// CAREFUL WITH THE CONCLUSION: the documented tenant limit is 7 DAYS, and old data is
+// described as ingestable but not immediately queryable. So this is not proof the
+// lines are discarded - only that they do not become visible on any timescale a
+// delivery check can wait for. Either way the operational consequence is the same and
+// is all this code acts on: a push that returns 204 is not evidence of delivery.
 //
 // That is the worst failure this sink can have, and it is invisible by construction:
 // the first live run replayed a 15-hour-old archive, logged nothing, wrote a clean
@@ -220,8 +227,9 @@ func (s *Sink) addRejected(reason string, n int64) {
 // counted loss - the same reasoning as every other rejection reason here.
 //
 // This does not affect the service's actual job. Tailing live traffic emits records
-// seconds old. It bites only on BACKFILL, which cannot work against this tenant at
-// all and should therefore fail loudly rather than appear to succeed.
+// seconds old, and the default window is sized for the only realistic gap - Grafana
+// Cloud being unreachable for an hour or two. Backfilling an old corpus is explicitly
+// NOT a goal, and failing it loudly beats appearing to succeed.
 func (s *Sink) dropTooOld(lines []outLine) []outLine {
 	if s.cfg.MaxLineAge <= 0 {
 		return lines
