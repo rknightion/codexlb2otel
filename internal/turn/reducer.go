@@ -313,6 +313,21 @@ type inputItem struct {
 	// Author and Recipient are task paths, present on agent_message items.
 	Author    string `json:"author"`
 	Recipient string `json:"recipient"`
+	// Tools is populated only on an "additional_tools" item - measured as the ONLY
+	// place the wire protocol carries a tool catalogue (#22 item 1 assumed a
+	// top-level response.create field named tools[]; the corpus has none across
+	// 8,916 response.create events). See Turn.Tools.
+	Tools json.RawMessage `json:"tools"`
+}
+
+// wireTool is one entry of an additional_tools item's own tools[] array. Deliberately
+// shallow, same reasoning as ToolDef: parameters/output_schema/nested tools[] are
+// client-authored JSON Schema of unbounded shape and are left undecoded on purpose.
+type wireTool struct {
+	Type        string `json:"type"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Strict      bool   `json:"strict"`
 }
 
 // flattenText renders a polymorphic text field: a bare JSON string, or a list of
@@ -588,7 +603,40 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 			t.ToolOutputs = append(t.ToolOutputs, ToolOutput{
 				CallID: it.CallID, Chars: len(body), Truncated: cut, Text: text,
 			})
+
+		// additional_tools is the ONLY input item type observed carrying a tool
+		// catalogue - see Turn.Tools and wireTool. Kept unconditional on content-capture
+		// options, same as agent_message: the catalogue's presence/hash matters even
+		// with body capture off.
+		case "additional_tools":
+			r.applyToolCatalogue(t, it.Tools)
 		}
+	}
+}
+
+// applyToolCatalogue decodes an additional_tools item's tools[] and gets the SAME
+// dedup-by-hash treatment as InstructionsHash, mirrored deliberately rather than
+// invented fresh: ToolsHash is set on every response that carries a catalogue,
+// Tools (the bodies) only on the first response globally to carry that exact hash.
+// Scope is global, like instructions, not per-thread like Prompts - matching
+// InstructionsHash exactly rather than the message-scoping pattern, per instruction.
+func (r *Reducer) applyToolCatalogue(t *Turn, raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
+	var tools []wireTool
+	if json.Unmarshal(raw, &tools) != nil {
+		return
+	}
+	t.ToolsHash = shortHash(string(raw))
+	if !r.seen.add("tools", t.ToolsHash) {
+		return
+	}
+	t.Tools = make([]ToolDef, 0, len(tools))
+	for _, tl := range tools {
+		t.Tools = append(t.Tools, ToolDef{
+			Name: tl.Name, Kind: tl.Type, Description: tl.Description, Strict: tl.Strict,
+		})
 	}
 }
 
@@ -784,6 +832,42 @@ type timingEvent struct {
 		TextDeltaTBTMs *float64 `json:"websocket_output_text_delta_tbt_ms"`
 		PauseCount     *int     `json:"responses_duration_pause_count"`
 
+		// The nine cumulative fields #12's corpus comment identified (measured 2026-08-07
+		// against all 16 archives): same logical_turn scope, same turn-boundary reset
+		// rule as NumEngineCalls/PromptTokensTotal/etc above, so they are diffed the
+		// identical way in applyTiming. EngineUncachedPromptTokensTotal is
+		// PromptTokensTotal's uncached sibling - the only one of the pair that was
+		// unread; PromptTokensTotal itself has decoded into EnginePromptTokensDelta
+		// since before this change.
+		ServiceInferenceMs           *float64 `json:"engine_service_inference_total_ms"`
+		ServiceSamplingMs            *float64 `json:"engine_service_sampling_total_ms"`
+		IapiInferenceMs              *float64 `json:"engine_iapi_inference_total_ms"`
+		IapiSamplingMs               *float64 `json:"engine_iapi_sampling_total_ms"`
+		ExclEngineAndToolMs          *float64 `json:"responses_duration_excl_engine_and_client_tool_time_ms"`
+		ExclEngineWaitSamplingMs     *float64 `json:"responses_duration_excl_engine_wait_and_sampling_ms"`
+		ExclEngineWaitSamplingIapiMs *float64 `json:"responses_duration_excl_engine_wait_and_sampling_iapi_ms"`
+		ExclClientToolsMs            *float64 `json:"responsesapi_duration_excl_client_tools_ms"`
+		UncachedPromptTokensTotal    *int     `json:"engine_uncached_prompt_tokens_total"`
+
+		// The three TBT fields are running AVERAGES across engine calls, not sums -
+		// EngineServiceMinusIapiTBTMs measured going negative (min -6.70) in the
+		// corpus, which a cumulative sum cannot do. Used directly, per response, never
+		// diffed.
+		ServiceTBTMs          *float64 `json:"engine_service_tbt_across_engine_calls_ms"`
+		IapiTBTMs             *float64 `json:"engine_iapi_tbt_across_engine_calls_ms"`
+		ServiceMinusIapiTBTMs *float64 `json:"engine_service_minus_iapi_tbt_across_engine_calls_ms"`
+
+		// ToolCallDurationsMs is cumulative across the logical turn like the fields
+		// above, but is an ARRAY (one entry appended per tool call) rather than a
+		// running total, so applyTiming suffix-diffs it instead of subtracting. Present
+		// on every logical_turn timing event in the corpus (8,883/8,883), length 1-100,
+		// never null. ToolCallDurationsTruncated is its companion flag and DROPS THE
+		// "_ms" its sibling carries - a naming trap that already cost one round trip.
+		// null on 8,853/8,883 events, true on the rest, never false, so it decodes
+		// straight into a per-response bool rather than needing diff treatment either.
+		ToolCallDurationsMs        *[]float64 `json:"responsesapi_duration_excl_engine_per_tool_call_ms"`
+		ToolCallDurationsTruncated *bool      `json:"responsesapi_duration_excl_engine_per_tool_call_truncated"`
+
 		// TimingScope is "logical_turn" for the block above - which is exactly why the
 		// fields above need delta conversion and CriticalPath does not.
 		TimingScope  string `json:"timing_scope"`
@@ -902,6 +986,20 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 	if m.PauseCount != nil {
 		t.PauseCount = *m.PauseCount
 	}
+	// Running averages across engine calls, not sums - see the struct doc on why
+	// these are never delta-treated.
+	if m.ServiceTBTMs != nil {
+		t.EngineServiceTBTMs = *m.ServiceTBTMs
+	}
+	if m.IapiTBTMs != nil {
+		t.EngineIapiTBTMs = *m.IapiTBTMs
+	}
+	if m.ServiceMinusIapiTBTMs != nil {
+		t.EngineServiceMinusIapiTBTMs = *m.ServiceMinusIapiTBTMs
+	}
+	if m.ToolCallDurationsTruncated != nil {
+		t.ToolCallDurationsTruncated = *m.ToolCallDurationsTruncated
+	}
 	applyCriticalPath(t, &e)
 
 	cur := cumulative{}
@@ -922,6 +1020,33 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 	}
 	if m.ClientToolPauseMs != nil {
 		cur.toolPauseMs = *m.ClientToolPauseMs
+	}
+	if m.ServiceInferenceMs != nil {
+		cur.serviceInferenceMs = *m.ServiceInferenceMs
+	}
+	if m.ServiceSamplingMs != nil {
+		cur.serviceSamplingMs = *m.ServiceSamplingMs
+	}
+	if m.IapiInferenceMs != nil {
+		cur.iapiInferenceMs = *m.IapiInferenceMs
+	}
+	if m.IapiSamplingMs != nil {
+		cur.iapiSamplingMs = *m.IapiSamplingMs
+	}
+	if m.ExclEngineAndToolMs != nil {
+		cur.exclEngineAndToolMs = *m.ExclEngineAndToolMs
+	}
+	if m.ExclEngineWaitSamplingMs != nil {
+		cur.exclEngineWaitSamplingMs = *m.ExclEngineWaitSamplingMs
+	}
+	if m.ExclEngineWaitSamplingIapiMs != nil {
+		cur.exclEngineWaitSamplingIapiMs = *m.ExclEngineWaitSamplingIapiMs
+	}
+	if m.ExclClientToolsMs != nil {
+		cur.exclClientToolsMs = *m.ExclClientToolsMs
+	}
+	if m.UncachedPromptTokensTotal != nil {
+		cur.uncachedPromptTokens = *m.UncachedPromptTokensTotal
 	}
 
 	key := seriesKey(t)
@@ -963,6 +1088,43 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 	t.EnginePromptTokensDelta = cur.promptTokens - prev.promptTokens
 	t.EngineCachedTokensDelta = cur.cachedTokens - prev.cachedTokens
 	t.ClientToolPauseMsDelta = cur.toolPauseMs - prev.toolPauseMs
+	t.EngineServiceInferenceMsDelta = cur.serviceInferenceMs - prev.serviceInferenceMs
+	t.EngineServiceSamplingMsDelta = cur.serviceSamplingMs - prev.serviceSamplingMs
+	t.EngineIapiInferenceMsDelta = cur.iapiInferenceMs - prev.iapiInferenceMs
+	t.EngineIapiSamplingMsDelta = cur.iapiSamplingMs - prev.iapiSamplingMs
+	t.ResponsesExclEngineAndToolMsDelta = cur.exclEngineAndToolMs - prev.exclEngineAndToolMs
+	t.ResponsesExclEngineWaitSamplingMsDelta = cur.exclEngineWaitSamplingMs - prev.exclEngineWaitSamplingMs
+	t.ResponsesExclEngineWaitSamplingIapiMsDelta = cur.exclEngineWaitSamplingIapiMs - prev.exclEngineWaitSamplingIapiMs
+	t.ResponsesAPIExclClientToolsMsDelta = cur.exclClientToolsMs - prev.exclClientToolsMs
+	t.EngineUncachedPromptTokensDelta = cur.uncachedPromptTokens - prev.uncachedPromptTokens
+
+	// The per-tool-call array is cumulative like the fields above but cannot be
+	// diffed by subtraction - it is a growing list, not a running total. base is
+	// prev.toolCallDurationsMs, which the reset branch above already zeroed to nil
+	// when this response starts a new series, so a cold start or turn boundary
+	// naturally reports the WHOLE array as newly seen without special-casing it here.
+	//
+	// The len(newArr) < len(base) check is an independent safety net on top of that:
+	// #12's corpus measurement found the array shrinks in exactly the responses where
+	// the engine-calls reset above also fires, but that was an empirical finding
+	// about this corpus, not a protocol guarantee, so a shrink is treated as its own
+	// reset signal regardless of what the engine-calls counter says.
+	if m.ToolCallDurationsMs != nil {
+		newArr := *m.ToolCallDurationsMs
+		base := prev.toolCallDurationsMs
+		if len(newArr) < len(base) {
+			base = nil
+		}
+		if len(newArr) > len(base) {
+			t.ToolCallDurationsMs = append([]float64(nil), newArr[len(base):]...)
+		}
+		cur.toolCallDurationsMs = newArr
+	} else {
+		// Not present on this tick - carry the last known array forward so the next
+		// response that DOES carry it diffs against real history, not a phantom
+		// empty baseline. Turn.ToolCallDurationsMs stays nil: absent, not zero.
+		cur.toolCallDurationsMs = prev.toolCallDurationsMs
+	}
 
 	// Only advance the baseline once the server actually reported engine work;
 	// prewarm responses report no counters and must not reset it.
@@ -987,7 +1149,15 @@ type completedEvent struct {
 		CompletedAt    float64 `json:"completed_at"`
 		CacheRetention string  `json:"prompt_cache_retention"`
 		ParallelTools  bool    `json:"parallel_tool_calls"`
-		Reasoning      struct {
+		// Temperature and TopP are pointers so a genuinely absent value (never observed
+		// in the 2026-08-07 corpus, but response.max_output_tokens shows the wire does
+		// send explicit nulls for request parameters) is not confused with a real 0.0 -
+		// a valid, if unusual, temperature. #18 called both absent; measured present on
+		// all 8,883 response.completed events in the corpus (constant at 1.0 / 0.98 in
+		// that sample - a property of this traffic, not a wire guarantee).
+		Temperature *float64 `json:"temperature"`
+		TopP        *float64 `json:"top_p"`
+		Reasoning   struct {
 			Context string `json:"context"`
 			Mode    string `json:"mode"`
 		} `json:"reasoning"`
@@ -1037,6 +1207,12 @@ func (r *Reducer) applyCompleted(t *Turn, ev frame.Event) error {
 	}
 	t.CacheRetention = e.Response.CacheRetention
 	t.ParallelTools = t.ParallelTools || e.Response.ParallelTools
+	if e.Response.Temperature != nil {
+		t.Temperature = *e.Response.Temperature
+	}
+	if e.Response.TopP != nil {
+		t.TopP = *e.Response.TopP
+	}
 	t.ServerCreatedAt = epoch(e.Response.CreatedAt)
 	t.ServerCompletedAt = epoch(e.Response.CompletedAt)
 	t.WebSearchRequests = e.Response.ToolUsage.WebSearch.NumRequests

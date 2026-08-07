@@ -140,6 +140,26 @@ func TestReducer_NoNegativeDeltas(t *testing.T) {
 				x.LogicalTurnID, x.RequestKind, x.FirstTS.Format("15:04:05"), x.EngineCallsDelta,
 				x.SampledTokensDelta, x.EnginePromptTokensDelta, x.EngineCachedTokensDelta)
 		}
+		// The nine cumulative fields #12's corpus comment added get the identical
+		// guard: a negative value here is the exact bug class #20 was (one series
+		// diffed against another's baseline), just on a field the original guard
+		// predates.
+		if x.EngineServiceInferenceMsDelta < 0 || x.EngineServiceSamplingMsDelta < 0 ||
+			x.EngineIapiInferenceMsDelta < 0 || x.EngineIapiSamplingMsDelta < 0 ||
+			x.ResponsesExclEngineAndToolMsDelta < 0 || x.ResponsesExclEngineWaitSamplingMsDelta < 0 ||
+			x.ResponsesExclEngineWaitSamplingIapiMsDelta < 0 || x.ResponsesAPIExclClientToolsMsDelta < 0 ||
+			x.EngineUncachedPromptTokensDelta < 0 {
+			t.Fatalf("negative delta in %s (kind %q) at %s: "+
+				"service_inference=%.2f service_sampling=%.2f iapi_inference=%.2f iapi_sampling=%.2f "+
+				"excl_engine_tool=%.2f excl_engine_wait_sampling=%.2f excl_engine_wait_sampling_iapi=%.2f "+
+				"excl_client_tools=%.2f uncached_prompt=%d",
+				x.LogicalTurnID, x.RequestKind, x.FirstTS.Format("15:04:05"),
+				x.EngineServiceInferenceMsDelta, x.EngineServiceSamplingMsDelta,
+				x.EngineIapiInferenceMsDelta, x.EngineIapiSamplingMsDelta,
+				x.ResponsesExclEngineAndToolMsDelta, x.ResponsesExclEngineWaitSamplingMsDelta,
+				x.ResponsesExclEngineWaitSamplingIapiMsDelta, x.ResponsesAPIExclClientToolsMsDelta,
+				x.EngineUncachedPromptTokensDelta)
+		}
 	}
 	t.Logf("checked %d turns across the whole corpus", len(turns))
 }
@@ -546,6 +566,74 @@ func TestReducer_InstructionsAreHashedNotRepeated(t *testing.T) {
 		len(hashes), chars, bodies)
 }
 
+// The tool catalogue gets the identical dedup-by-hash treatment as instructions
+// above, mirrored deliberately per #22 item 1. Corpus note: the wire protocol never
+// carries a top-level response.create "tools" field (measured against all 8,916
+// response.create events in the 2026-08-07 corpus) - the only tools[] is nested
+// inside an "additional_tools" input item, which is what this test constructs.
+func TestReducer_ToolCatalogueDedupedByHash(t *testing.T) {
+	const thread = "thread-tools"
+	r := New()
+	base := time.Date(2026, 8, 8, 9, 0, 0, 0, time.UTC)
+
+	create := func(req, toolsJSON string, ts time.Time) *Turn {
+		ev := fmt.Sprintf(`{"type":"response.create","model":"gpt-5.6-sol",`+
+			`"client_metadata":{"thread_id":%q},`+
+			`"input":[{"type":"additional_tools","role":"developer","tools":%s}]}`,
+			thread, toolsJSON)
+		var out *Turn
+		for i, e := range []string{ev,
+			`{"type":"response.completed","response":{"status":"completed","model":"gpt-5.6-sol"}}`,
+		} {
+			done, err := r.Add(&frame.Record{
+				RequestID: req,
+				Headers:   frame.Headers{"thread-id": thread, "originator": "codex-tui"},
+				Timestamp: ts.Add(time.Duration(i) * time.Millisecond),
+				Payload:   frame.Payload{Text: e},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if done != nil {
+				out = done
+			}
+		}
+		if out == nil {
+			t.Fatalf("%s: no turn emitted", req)
+		}
+		return out
+	}
+
+	toolsA := `[{"type":"custom","name":"exec","description":"run code","strict":true}]`
+	toolsB := `[{"type":"custom","name":"exec","description":"run code","strict":true},` +
+		`{"type":"custom","name":"wait","description":"pause"}]`
+
+	first := create("req-1", toolsA, base)
+	second := create("req-2", toolsA, base.Add(time.Second))  // identical catalogue, re-sent
+	third := create("req-3", toolsB, base.Add(2*time.Second)) // catalogue changed
+
+	if first.ToolsHash == "" {
+		t.Fatal("first response has no tools_hash; the catalogue was not decoded")
+	}
+	if len(first.Tools) != 1 || first.Tools[0].Name != "exec" || !first.Tools[0].Strict {
+		t.Fatalf("first response tools = %+v, want one ToolDef named exec, strict", first.Tools)
+	}
+	if second.ToolsHash != first.ToolsHash {
+		t.Errorf("second response tools_hash = %q, want %q (byte-identical catalogue)",
+			second.ToolsHash, first.ToolsHash)
+	}
+	if len(second.Tools) != 0 {
+		t.Errorf("second response repopulated Tools (%d entries) for an UNCHANGED catalogue; "+
+			"the dedup is not holding and every response would carry the full body", len(second.Tools))
+	}
+	if third.ToolsHash == first.ToolsHash {
+		t.Error("third response's changed catalogue hashed the same as the first")
+	}
+	if len(third.Tools) != 2 {
+		t.Errorf("third response tools = %d entries, want 2; a CHANGED catalogue must repopulate", len(third.Tools))
+	}
+}
+
 // The server runs memory-consolidation responses CONCURRENTLY with the user's turn on
 // the SAME thread_id, and each keeps its own logical-turn counter series starting at
 // num_engine_calls=1. A single per-thread baseline therefore diffs one series against
@@ -627,6 +715,83 @@ func TestReducer_InterleavedMemoryKeepsItsOwnBaseline(t *testing.T) {
 		t.Error("the memory response opened a new series with no baseline and must be " +
 			"flagged, or its delta reads as a measurement rather than an upper bound")
 	}
+}
+
+// The per-tool-call duration array is cumulative across a logical turn and only
+// grows, so Turn.ToolCallDurationsMs must carry a SUFFIX DIFF - entries newly added
+// since the previous response of the same series - and never re-emit anything a
+// prior response of the same series already reported.
+//
+// The third response also exercises the independent safety net: #12's corpus
+// comment measured the array shrinking in exactly the responses where the
+// engine-calls turn-boundary detector also fires (300/8,663 pairs, matching
+// exactly), but that is an empirical property of THIS corpus, not a protocol
+// guarantee - so a length decrease is treated as its own reset signal even while
+// num_engine_calls keeps climbing normally, which is what response 3 below does.
+func TestReducer_ToolCallDurationsAreSuffixDiffed(t *testing.T) {
+	const thread = "thread-suffix-diff"
+	r := New()
+	base := time.Date(2026, 8, 8, 9, 0, 0, 0, time.UTC)
+
+	respond := func(req string, calls int, arr []float64, ts time.Time) *Turn {
+		arrJSON, err := json.Marshal(arr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out *Turn
+		for i, ev := range []string{
+			fmt.Sprintf(`{"type":"response.create","model":"gpt-5.6-sol",`+
+				`"client_metadata":{"thread_id":%q}}`, thread),
+			fmt.Sprintf(`{"type":"responsesapi.websocket_timing","timing_metrics":{`+
+				`"timing_scope":"logical_turn","num_engine_calls":%d,`+
+				`"responsesapi_duration_excl_engine_per_tool_call_ms":%s}}`, calls, arrJSON),
+			`{"type":"response.completed","response":{"status":"completed","model":"gpt-5.6-sol"}}`,
+		} {
+			done, err := r.Add(&frame.Record{
+				RequestID: req,
+				Headers:   frame.Headers{"thread-id": thread, "originator": "codex-tui"},
+				Timestamp: ts.Add(time.Duration(i) * time.Millisecond),
+				Payload:   frame.Payload{Text: ev},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if done != nil {
+				out = done
+			}
+		}
+		if out == nil {
+			t.Fatalf("%s: no turn emitted", req)
+		}
+		return out
+	}
+
+	r1 := respond("req-1", 1, []float64{1, 2}, base)
+	r2 := respond("req-2", 2, []float64{1, 2, 3, 4}, base.Add(5*time.Second))
+	r3 := respond("req-3", 3, []float64{9}, base.Add(10*time.Second))
+
+	if got, want := r1.ToolCallDurationsMs, []float64{1, 2}; !floatSliceEqual(got, want) {
+		t.Errorf("response 1 durations = %v, want %v (first sighting, whole array)", got, want)
+	}
+	if got, want := r2.ToolCallDurationsMs, []float64{3, 4}; !floatSliceEqual(got, want) {
+		t.Errorf("response 2 durations = %v, want %v (suffix only - must not re-emit 1,2)", got, want)
+	}
+	if got, want := r3.ToolCallDurationsMs, []float64{9}; !floatSliceEqual(got, want) {
+		t.Errorf("response 3 durations = %v, want %v (array shrank while engine_calls kept "+
+			"advancing - the shrink itself must be treated as a reset)", got, want)
+	}
+}
+
+func floatSliceEqual(a, b []float64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // The HTTP family arrived in the 2026-08-07 capture, so it can finally be proven
@@ -773,6 +938,62 @@ func TestReducer_RequestKindsAreNamed(t *testing.T) {
 		}
 	}
 	t.Logf("request kinds present: %v", kinds.keys())
+}
+
+// The *float64/*int/*bool idiom on timingEvent exists so a genuinely missing
+// measurement is distinguishable from one reported as exactly zero - the trap is a
+// silently-absent field reading as 0ms and pulling an average toward zero for every
+// response that simply never populated it. This pins the decode layer directly:
+// omitting a key must leave the pointer nil, and an explicit zero/false must NOT.
+func TestTimingEvent_AbsentFieldsDecodeAsNilNotZero(t *testing.T) {
+	var absent timingEvent
+	raw := []byte(`{"timing_metrics":{"timing_scope":"logical_turn","num_engine_calls":1}}`)
+	if err := json.Unmarshal(raw, &absent); err != nil {
+		t.Fatal(err)
+	}
+	m := absent.M
+	if m.ServiceInferenceMs != nil {
+		t.Errorf("engine_service_inference_total_ms absent from the wire but decoded as %v, not nil", *m.ServiceInferenceMs)
+	}
+	if m.ServiceTBTMs != nil {
+		t.Errorf("engine_service_tbt_across_engine_calls_ms absent but decoded as %v, not nil", *m.ServiceTBTMs)
+	}
+	if m.ToolCallDurationsMs != nil {
+		t.Errorf("per-tool-call duration array absent but decoded as %v, not nil", *m.ToolCallDurationsMs)
+	}
+	if m.ToolCallDurationsTruncated != nil {
+		t.Errorf("truncation flag absent but decoded as %v, not nil", *m.ToolCallDurationsTruncated)
+	}
+	if m.UncachedPromptTokensTotal != nil {
+		t.Errorf("engine_uncached_prompt_tokens_total absent but decoded as %v, not nil", *m.UncachedPromptTokensTotal)
+	}
+
+	// Contrast: an explicit zero/false DOES decode to a non-nil pointer holding that
+	// value. If this half failed instead, the pointer idiom would not be doing
+	// anything - both cases would look identical and "absent" would be meaningless.
+	var explicit timingEvent
+	raw2 := []byte(`{"timing_metrics":{"timing_scope":"logical_turn","num_engine_calls":1,` +
+		`"engine_service_inference_total_ms":0,` +
+		`"responsesapi_duration_excl_engine_per_tool_call_truncated":false}}`)
+	if err := json.Unmarshal(raw2, &explicit); err != nil {
+		t.Fatal(err)
+	}
+	if explicit.M.ServiceInferenceMs == nil || *explicit.M.ServiceInferenceMs != 0 {
+		t.Errorf("explicit 0 must decode to a non-nil pointer holding 0, got %v", explicit.M.ServiceInferenceMs)
+	}
+	if explicit.M.ToolCallDurationsTruncated == nil || *explicit.M.ToolCallDurationsTruncated {
+		t.Errorf("explicit false must decode to a non-nil pointer holding false, got %v", explicit.M.ToolCallDurationsTruncated)
+	}
+
+	// And the reducer must not crash or fabricate a value when applyTiming sees the
+	// all-absent case end to end.
+	tn := &Turn{ThreadID: "t-absent", ItemCounts: map[string]int{}}
+	r := New()
+	r.applyTiming(tn, frame.Event{Raw: raw})
+	if tn.EngineServiceTBTMs != 0 || tn.ToolCallDurationsMs != nil || tn.ToolCallDurationsTruncated {
+		t.Errorf("applyTiming fabricated a value from an absent field: tbt=%v durations=%v truncated=%v",
+			tn.EngineServiceTBTMs, tn.ToolCallDurationsMs, tn.ToolCallDurationsTruncated)
+	}
 }
 
 type set map[string]bool
