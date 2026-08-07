@@ -1,0 +1,94 @@
+name: publish
+
+# Container publish, delegated to the shared fleet pipeline
+# (rknightion/.github's container-publish.yml) rather than hand-rolled here, so
+# this repo behaves like every other *2otel service: native per-arch amd64+arm64
+# runners with a manifest-list merge (no QEMU - emulated arm64 mis-resolves native
+# libs), cosign keyless signing, build-provenance attestation, SBOM, and a Trivy
+# scan into this repo's Security tab.
+#
+# TWO publishing modes, and the shared workflow picks the tags from which one it is:
+#
+#   * EDGE - every push to main, release-tag empty. Produces :main (and a
+#     :main-<sha>). This is the tag camden pins, with watchtower pulling updates,
+#     so a merge to main is what reaches the host - NOT a release.
+#   * RELEASE - called by release-please.yml once it actually cuts a release,
+#     release-tag set. Produces :X.Y.Z, :X.Y, :X and :latest.
+#
+# THE CROSS-REPO BOT-PR TRAP NOW APPLIES TO THIS REPO, and is already handled.
+# `uses: rknightion/.github/...` pulls a workflow from ANOTHER repository, and
+# GitHub will not auto-run one of those on a bot-authored pull request - it parks
+# at action_required behind a manual "Approve and run" gate. release-please.yml
+# therefore opens its release PR under RELEASE_PLEASE_TOKEN, a PAT identity, which
+# is a trusted author. That secret is provisioned. Do not "simplify" that step back
+# to the default GITHUB_TOKEN or release PRs will silently stop running CI.
+
+on:
+  push:
+    branches: [main]
+    # Docs and dashboards do not change the image. Skipping them keeps a README
+    # tweak from pushing a new :main that watchtower then rolls out to camden for
+    # no reason.
+    paths-ignore:
+      - "**/*.md"
+      - "dashboards/**"
+      - "docs/**"
+  workflow_call:
+    inputs:
+      release-tag:
+        description: "Release tag (vX.Y.Z) from release-please; empty for an edge :main build"
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: "vX.Y.Z to republish; empty = edge :main build"
+        required: false
+        type: string
+        default: ""
+
+permissions: {}
+
+jobs:
+  # The Dockerfile takes GO_VERSION as a build arg with a hardcoded fallback, and a
+  # fallback is exactly the kind of thing that silently drifts from go.mod. Reading
+  # the real value here and passing it in means the image is always built with the
+  # toolchain the module declares - the same rule ci.yml follows with
+  # setup-go's go-version-file.
+  go-version:
+    name: resolve go version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pin.outputs.version }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release-tag || github.ref }}
+          persist-credentials: false
+      - name: read the go directive from go.mod
+        id: pin
+        run: |
+          v="$(awk '/^go /{print $2; exit}' go.mod)"
+          if [ -z "$v" ]; then
+            echo '::error::no go directive found in go.mod'
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "building with Go $v"
+
+  image:
+    name: build and publish
+    needs: go-version
+    permissions:
+      contents: write # attach SBOMs to the GitHub Release on a release build
+      packages: write # push to this repo's GHCR package
+      id-token: write # cosign keyless signing
+      attestations: write # build provenance
+      security-events: write # Trivy SARIF into the Security tab
+    uses: rknightion/.github/.github/workflows/container-publish.yml@0228d8b9f1e36ff3a1d0906574d70fa174ddc7bf # v1.5.1
+    with:
+      release-tag: ${{ inputs.release-tag || '' }}
+      build-args: |
+        GO_VERSION=${{ needs.go-version.outputs.version }}
