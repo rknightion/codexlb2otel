@@ -57,6 +57,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
+      # BOTH are required, and contents: read is the one that is easy to lose. A
+      # job-level permissions block REPLACES the workflow-level one rather than
+      # merging with it, so listing only packages: write silently set contents to
+      # none - and this repo is private, so actions/checkout then failed with
+      # "Repository not found", which reads like a typo in the repo name rather
+      # than a permissions problem. That is exactly how the v0.1.0 publish failed
+      # after the release itself had already been tagged.
+      contents: read
       packages: write
     steps:
       - name: checkout the released commit
