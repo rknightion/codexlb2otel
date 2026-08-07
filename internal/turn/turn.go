@@ -38,6 +38,11 @@ type Turn struct {
 	// Authoritative where present; LogicalTurnID falls back to counter inference when
 	// it is absent, which prewarm responses legitimately are.
 	TurnID string `json:"turn_id,omitempty"`
+	// ParentTurnID is the turn that spawned this one. Thread-level parenting only says
+	// which conversation a subagent came from; this says which TURN did, which is what
+	// lets the span model attach a spawned agent to the exact parent span rather than
+	// to the whole thread.
+	ParentTurnID string `json:"parent_turn_id,omitempty"`
 	// TurnStart is the CLIENT's turn start, so a turn can be measured end to end
 	// rather than from when the server began work.
 	TurnStart time.Time `json:"turn_start,omitempty"`

@@ -150,9 +150,13 @@ type TurnMeta struct {
 	// does no engine work and reports no counters.
 	RequestKind string `json:"request_kind"`
 	// ThreadSource is "user" or "subagent".
-	ThreadSource        string `json:"thread_source"`
-	Sandbox             string `json:"sandbox"`
-	ParentThreadID      string `json:"parent_thread_id"`
+	ThreadSource   string `json:"thread_source"`
+	Sandbox        string `json:"sandbox"`
+	ParentThreadID string `json:"parent_thread_id"`
+	// ParentTurnID gives turn-level parenting rather than only thread-level, so a
+	// spawned agent's work can be attached to the exact turn that spawned it instead of
+	// to its whole parent thread. Observed first on the 2026-08-07 corpus.
+	ParentTurnID        string `json:"parent_turn_id"`
 	ForkedFromThreadID  string `json:"forked_from_thread_id"`
 	SubagentKind        string `json:"subagent_kind"`
 	TurnStartedAtUnixMs int64  `json:"turn_started_at_unix_ms"`
