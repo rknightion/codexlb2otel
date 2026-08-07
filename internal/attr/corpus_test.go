@@ -36,10 +36,21 @@ var (
 // reporting "the corpus reduced to no turns" instead of the real cause.
 func corpusTurns(t *testing.T) []*turn.Turn {
 	t.Helper()
+
+	// fixture.All is called OUTSIDE the memo deliberately. It is what SKIPS the test
+	// when no corpus is present (CLB_NO_CORPUS, which is exactly how CI runs), and a
+	// skip is a runtime.Goexit - inside the Once it would mark the Once done while
+	// leaving the cache empty, so the first test would skip correctly and every later
+	// one would run against zero turns and fail with a misleading "the corpus reduced
+	// to no turns". That is precisely how this repo's first CI run failed. Same Goexit
+	// hazard the error path below already guards against, arriving through the skip
+	// path instead. Listing the directory is cheap; only the reduction is memoized.
+	paths := fixture.All(t)
+
 	corpusOnce.Do(func() {
 		r := turn.New()
 		var out []*turn.Turn
-		for _, path := range fixture.All(t) {
+		for _, path := range paths {
 			res, err := archive.DecodeMembers(fixture.Load(t, path))
 			if err != nil {
 				corpusErr = fmt.Errorf("%s: %w", fixture.Name(path), err)

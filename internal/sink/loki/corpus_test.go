@@ -38,10 +38,19 @@ var (
 // turns reduced" instead of the real cause.
 func corpusTurns(t *testing.T) []*turn.Turn {
 	t.Helper()
+
+	// fixture.All is called OUTSIDE the memo deliberately - see the identical note in
+	// internal/attr/corpus_test.go. It is what SKIPS the test when no corpus is
+	// present (CLB_NO_CORPUS, which is how CI runs), and a skip is a runtime.Goexit
+	// that would otherwise mark the Once done with an empty cache, leaving every test
+	// after the first to fail against zero turns. This repo's first CI run failed
+	// exactly that way.
+	paths := fixture.All(t)
+
 	corpusOnce.Do(func() {
 		r := turn.New()
 		var out []*turn.Turn
-		for _, path := range fixture.All(t) {
+		for _, path := range paths {
 			res, err := archive.DecodeMembers(fixture.Load(t, path))
 			if err != nil {
 				corpusErr = fmt.Errorf("%s: %w", fixture.Name(path), err)
@@ -301,5 +310,167 @@ func TestCorpus_ForcedTruncation_MarksAndPreservesLength(t *testing.T) {
 	}
 	if !found {
 		t.Skipf("no tool output in this slice of the corpus was large enough to force truncation at a %d-byte budget", budget)
+	}
+}
+
+// TestCorpus_WorkedExample_Issue15 is issue #15's acceptance test: the exact
+// response id from the issue's worked example, run through buildLines, checked
+// against the same fields the issue lists. The id was live-verified in the corpus
+// before writing this test (`zgrep -c resp_052b6a1e...118909
+// corpus/processed/2026-08-07T10.jsonl.gz` -> 4 frame matches) and cmd/clbfind's
+// own -json output against that archive matches the issue's worked example field
+// for field, so no substitute turn was needed.
+//
+// What this test proves is NOT the whole of #15 - most of it was already true
+// before this test existed. buildLines computes ONE baseMeta (guard.Metadata) per
+// Turn and reuses it, unmodified, as every record type's metadata (record.go's
+// emit closure) - so "all four ids on every record" and "content lines carry the
+// thread id" hold structurally for any turn, not because of anything specific to
+// this one. This test is what turns that structural argument into a corpus-backed
+// measurement for the id the issue actually names, and pins the two genuine gaps
+// found while validating it (see the GAP block below).
+func TestCorpus_WorkedExample_Issue15(t *testing.T) {
+	const wantResponseID = "resp_052b6a1e90eb18d3016a75b032be90819198bd170a3e118909"
+	const wantThread = "019fdb99-a66a-7841-a420-e9f8602d4034"
+	const wantParentThread = "019fdb97-294e-7d52-af76-399e39413bce"
+	const wantPrevResponseID = "resp_052b6a1e90eb18d3016a75b026c8288191b4fa31ee48e0c46b"
+
+	turns := corpusTurns(t)
+	var tn *turn.Turn
+	for _, c := range turns {
+		if c.ResponseID == wantResponseID {
+			tn = c
+			break
+		}
+	}
+	if tn == nil {
+		t.Fatalf("response id %s named in issue #15's worked example is not in the corpus under %s "+
+			"any more; substitute a turn selected by property (a subagent turn with a parent_thread_id) "+
+			"and say so explicitly rather than silently changing what this test pins", wantResponseID, fixture.Root(t))
+	}
+
+	// Pin turn identity against the worked example before trusting anything derived
+	// from it below - this confirms it is the SAME response the issue describes, not
+	// a coincidental response_id match with different content.
+	if tn.Model != "gpt-5.6-sol" || tn.Effort != "xhigh" || tn.Verbosity != "low" || tn.ServiceTier != "default" {
+		t.Fatalf("worked-example turn model/effort/verbosity/service_tier = %s/%s/%s/%s, want gpt-5.6-sol/xhigh/low/default",
+			tn.Model, tn.Effort, tn.Verbosity, tn.ServiceTier)
+	}
+	if tn.ThreadSource != "subagent" || tn.SubagentKind != "thread_spawn" {
+		t.Fatalf("worked-example turn thread_source/subagent_kind = %s/%s, want subagent/thread_spawn",
+			tn.ThreadSource, tn.SubagentKind)
+	}
+	if tn.ThreadID != wantThread || tn.ParentThreadID != wantParentThread {
+		t.Fatalf("worked-example turn thread_id/parent_thread_id = %s/%s, want %s/%s",
+			tn.ThreadID, tn.ParentThreadID, wantThread, wantParentThread)
+	}
+	if tn.InputTokens != 208010 || tn.OutputTokens != 490 || tn.ReasoningTokens != 153 {
+		t.Fatalf("worked-example turn token counts = in=%d out=%d reasoning=%d, want in=208010 out=490 reasoning=153",
+			tn.InputTokens, tn.OutputTokens, tn.ReasoningTokens)
+	}
+
+	guard := attr.NewGuard()
+	rej := newFakeRejecter()
+	lines := buildLines(tn, guard, "codexlb2otel", attr.DefaultLabels, 192<<10, nil, rej)
+	if len(lines) == 0 {
+		t.Fatal("buildLines produced no lines for the worked-example turn")
+	}
+
+	// kvMap applies the same dot->underscore translation the real Loki push does
+	// (push.go's kvMap doc comment), so checking under attr.LokiKey(...) is checking
+	// what a LogQL query against real structured metadata would actually see.
+	want := map[string]string{
+		attr.LokiKey(attr.GenAIResponseID): tn.ResponseID,
+		attr.LokiKey(attr.RequestID):       tn.RequestID,
+		attr.LokiKey(attr.ThreadID):        tn.ThreadID,
+		attr.LokiKey(attr.SessionID):       tn.SessionID,
+	}
+
+	// --- acceptance: "all four ids are queryable structured metadata on every
+	// emitted record" - checked on every record type this turn actually produced,
+	// not only RecordTurn. ---
+	recordTypesSeen := map[string]bool{}
+	for _, l := range lines {
+		recordTypesSeen[l.recordType] = true
+		md := kvMap(l.metadata)
+		for k, v := range want {
+			if got := md[k]; got != v {
+				t.Errorf("record_type=%s structured metadata[%s] = %q, want %q", l.recordType, k, got, v)
+			}
+		}
+	}
+	// The turn produced tool_call and tool_output content in the corpus (per
+	// cmd/clbfind's own output for this id) - confirm both record types were
+	// actually exercised above, so the loop's pass is not vacuously true from
+	// RecordTurn alone.
+	for _, rt := range []string{attr.RecordToolCall, attr.RecordToolOutput} {
+		if !recordTypesSeen[rt] {
+			t.Errorf("worked-example turn produced no %s line; the all-record-types assertion above did not "+
+				"exercise this content type", rt)
+		}
+	}
+
+	// --- acceptance: "the routing fields that explain the parameters are present
+	// on every turn" - checked on the turn-metadata record specifically, since
+	// that is what the worked example itself lists them against. ---
+	var turnMD map[string]string
+	for _, l := range lines {
+		if l.recordType == attr.RecordTurn {
+			turnMD = kvMap(l.metadata)
+		}
+	}
+	if turnMD == nil {
+		t.Fatal("no turn-metadata line was emitted for the worked-example turn")
+	}
+	for k, v := range map[string]string{
+		attr.LokiKey(attr.ThreadSource):   "subagent",
+		attr.LokiKey(attr.SubagentKind):   "thread_spawn",
+		attr.LokiKey(attr.ParentThreadID): wantParentThread,
+	} {
+		if got := turnMD[k]; got != v {
+			t.Errorf("turn metadata[%s] = %q, want %q", k, got, v)
+		}
+	}
+
+	// --- GAP, NOT fixable in this package: internal/attr's registry (attr.go) has
+	// no Field entry for turn.Turn.PrevResponseID or turn.Turn.ForkedFromThreadID -
+	// grepped 2026-08-07, no "previous_response_id" or "forked_from_thread_id"
+	// anywhere under internal/attr. Guard.Metadata walks the registry, so a field
+	// absent from it is absent from EVERY Loki line's structured metadata,
+	// including the turn line, and from all five content record types.
+	//
+	// Both values ARE captured correctly by the reducer (asserted below) and DO
+	// reach the turn-metadata line's own JSON BODY, because turnLine (record.go)
+	// marshals the whole Turn struct's scalars and Turn carries both fields
+	// (turn.go:22 and :55) untouched by the content-array strip - so a reader who
+	// parses that one line's body can still find them. What is missing is
+	// specifically the structured-metadata routing the issue's other three ids
+	// already have, and their presence on the four non-turn content record types.
+	// Fixing this needs two new Identity Field entries in attr.go's registry (same
+	// shape as the existing ParentThreadID entry) - that file is issue #3's frozen
+	// attribute contract and is not owned by this lane.
+	if tn.PrevResponseID != wantPrevResponseID {
+		t.Errorf("worked-example turn previous_response_id = %q, want %q (reducer-captured value, unrelated to the metadata gap above)",
+			tn.PrevResponseID, wantPrevResponseID)
+	}
+	if tn.ForkedFromThreadID != wantParentThread {
+		t.Errorf("worked-example turn forked_from_thread_id = %q, want %q (reducer-captured value, unrelated to the metadata gap above)",
+			tn.ForkedFromThreadID, wantParentThread)
+	}
+	var turnBody turn.Turn
+	for _, l := range lines {
+		if l.recordType == attr.RecordTurn {
+			if err := json.Unmarshal(l.body, &turnBody); err != nil {
+				t.Fatalf("turn-metadata line body is not valid JSON: %v", err)
+			}
+		}
+	}
+	if turnBody.PrevResponseID != wantPrevResponseID {
+		t.Errorf("turn-metadata line BODY previous_response_id = %q, want %q - it reaches the line body today even though it is absent from structured metadata",
+			turnBody.PrevResponseID, wantPrevResponseID)
+	}
+	if turnBody.ForkedFromThreadID != wantParentThread {
+		t.Errorf("turn-metadata line BODY forked_from_thread_id = %q, want %q - it reaches the line body today even though it is absent from structured metadata",
+			turnBody.ForkedFromThreadID, wantParentThread)
 	}
 }
