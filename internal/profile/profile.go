@@ -22,8 +22,22 @@ import (
 const (
 	maxDistinctValues = 200 // per histogram
 	maxPathsPerType   = 600 // per event type
-	sampleDepth       = 400 // full schema induction per event type, then count only
-	maxSampleLen      = 220 // truncation for example values
+	// sampleDepth is how many occurrences of an event type are fully induced before
+	// striding kicks in. It bounds cost; it used to be a flat cap of 400, which
+	// quietly made "FULL scan" a lie.
+	sampleDepth = 2000
+	// inductionStride keeps inducing one event in N past sampleDepth, so induction
+	// covers the WHOLE file instead of only its first few hundred events.
+	//
+	// This fixes a real miss, not a theoretical one. With the flat cap, a full scan of
+	// 1.6GB reported 5 findings while a SAMPLED scan of the same corpus reported 14 -
+	// including a BREAKING type change on response.completed safety_buffering. The
+	// sampled scan won because its budget was spread across each file while the full
+	// scan spent all of its at the start, which made the tool's central promise - "use
+	// a full scan before concluding a shape is absent" - false. Striding costs a couple
+	// of seconds on 1.6GB and finds everything sampling found.
+	inductionStride = 64
+	maxSampleLen    = 220 // truncation for example values
 )
 
 // Hist counts the values of one low-cardinality field.
@@ -347,7 +361,10 @@ func (p *Profile) induce(t string, raw json.RawMessage) {
 		p.Events[t] = ep
 	}
 	ep.Count++
-	if ep.Sampled >= sampleDepth {
+	// Past the depth budget, induce one event in inductionStride rather than stopping.
+	// A shape that first appears late in a busy hour is exactly what this tool exists
+	// to catch, and a flat cap cannot see one.
+	if ep.Sampled >= sampleDepth && ep.Count%inductionStride != 0 {
 		return
 	}
 	ep.Sampled++

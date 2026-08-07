@@ -38,21 +38,21 @@ clean:
 sync: bin/clbsync
 	./bin/clbsync
 
-# Fast drift check against the committed baseline. Exits 1 on anything new.
+# Drift check against the committed baseline. Full by default. Exits 1 on anything new.
 .PHONY: probe
 probe: bin/clbprobe
 	./bin/clbprobe $(CORPUS)
 
-# Exhaustive drift check. Required before concluding a shape is absent.
-.PHONY: probe-full
-probe-full: bin/clbprobe
-	./bin/clbprobe -full $(CORPUS)
+# Sampled drift check. Faster, and cannot prove a shape is absent.
+.PHONY: probe-sampled
+probe-sampled: bin/clbprobe
+	./bin/clbprobe -sampled $(CORPUS)
 
 # Accept the current shape as the baseline. Deliberate act - always from a FULL
 # scan, or the baseline silently omits every rare shape the sample missed.
 .PHONY: baseline
 baseline: bin/clbprobe
-	./bin/clbprobe -full -update corpus.sig.json $(CORPUS)
+	./bin/clbprobe -update corpus.sig.json $(CORPUS)
 
 .PHONY: test
 test:
