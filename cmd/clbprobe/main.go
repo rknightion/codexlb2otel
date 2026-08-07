@@ -12,9 +12,9 @@
 // real and stated in the output: sampling detects drift in common shapes and proves
 // nothing about rare ones. Use -full before concluding something is absent.
 //
-//	clbprobe corpus/                          # drift check against the baseline
-//	clbprobe -update corpus/                  # accept current shape as the baseline
-//	clbprobe -full -fail-on breaking corpus/  # exhaustive, CI-style
+//	clbprobe corpus/processed                  # drift check against the baseline
+//	clbprobe -full -update corpus/processed    # accept current shape as the baseline
+//	clbprobe -full -fail-on breaking corpus/   # exhaustive, CI-style
 package main
 
 import (
@@ -381,7 +381,7 @@ func usage() {
 Paths may be archive files or directories; directories are walked for *.jsonl.gz.
 
   clbprobe corpus/                          drift check against `+DefaultBaseline+`
-  clbprobe -full corpus/camden-2026-08-06   exhaustive scan of one source
+  clbprobe -full corpus/processed           exhaustive scan; needed to prove absence
   clbprobe -update corpus/                  accept the current shape as baseline
 
 exit: 0 clean, 1 drift at or above -fail-on, 2 error, 3 nothing to do

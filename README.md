@@ -51,6 +51,30 @@ corpus **fails**; CI sets `CLB_NO_CORPUS=1` to opt out explicitly. Two guards ba
 
 `corpus/` is ignored, so **`git clean -xdf` will delete it.** Keep the originals elsewhere.
 
+## Running the tools
+
+Everything runs from the repo root. `go run` needs no build step but recompiles each time, which is
+noticeable on a tool you use interactively:
+
+```sh
+go run ./cmd/clbfind resp_052b6a...        # no build step
+make build && ./bin/clbfind resp_052b6a... # faster to re-run; bin/ is gitignored
+```
+
+Every tool prints its own `-h`. Common tasks have Make targets:
+
+| | |
+|---|---|
+| `make build` | build all five tools into `bin/` |
+| `make sync` | pull new archives off the codex-lb host |
+| `make probe` | fast drift check against the baseline (exit 1 on anything new) |
+| `make probe-full` | exhaustive drift check |
+| `make baseline` | accept the current shape as the baseline (always from a full scan) |
+| `make check` | gofmt + vet + tests |
+| `make test-short` | tests without the corpus, the fast inner loop |
+
+`make probe CORPUS=some/other/dir` overrides the directory.
+
 ## Tools
 
 | | |
