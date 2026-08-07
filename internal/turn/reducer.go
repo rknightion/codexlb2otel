@@ -349,13 +349,19 @@ func flattenText(raw json.RawMessage) string {
 // image part has no text field - but it dropped them so completely that an image-only
 // message vanished with no trace that an image was ever sent. The count is the signal.
 //
+// The MIME type is the one thing worth recovering from the payload, and it is free:
+// a data URI declares it in the first 30 bytes, before the base64 begins. Without it a
+// consumer knows only "an image was here", which is barely worth emitting; with it the
+// sigil Media part and the Loki line can say what kind. It is read from the URI's own
+// declaration rather than sniffed from the bytes, so it is bounded by construction.
+//
 // The fingerprint exists only to keep the dedup key distinct between different images,
 // and is deliberately bounded to a prefix and a length: the same image is re-sent in
 // the conversation history on every later turn of the thread, so hashing the whole
 // payload each time would cost more than the fact is worth.
-func imageParts(raw json.RawMessage) (int, string) {
+func imageParts(raw json.RawMessage) (n int, mime, fingerprint string) {
 	if len(raw) == 0 {
-		return 0, ""
+		return 0, "", ""
 	}
 	// image_url is held raw rather than as a string: it is a bare data URI today, but
 	// the same field is an object elsewhere in OpenAI's API, and a typed string here
@@ -365,9 +371,8 @@ func imageParts(raw json.RawMessage) (int, string) {
 		ImageURL json.RawMessage `json:"image_url"`
 	}
 	if json.Unmarshal(raw, &parts) != nil {
-		return 0, ""
+		return 0, "", ""
 	}
-	n := 0
 	var fp strings.Builder
 	for _, p := range parts {
 		if len(p.ImageURL) == 0 {
@@ -378,9 +383,32 @@ func imageParts(raw json.RawMessage) (int, string) {
 		if len(head) > 48 {
 			head = head[:48]
 		}
+		if mime == "" {
+			mime = dataURIMediaType(head)
+		}
 		fmt.Fprintf(&fp, "%s:%d;", head, len(p.ImageURL))
 	}
-	return n, fp.String()
+	return n, mime, fp.String()
+}
+
+// dataURIMediaType reads the media type out of the head of a data URI, tolerating
+// anything that is not one.
+//
+// s is a JSON-quoted prefix, so the leading quote is expected: `"data:image/png;base64,`.
+// Only the declared type is returned and nothing is inferred from the payload - a URI
+// with no media type, or a plain https:// link, yields "" rather than a guess.
+func dataURIMediaType(s string) string {
+	const prefix = `"data:`
+	rest, ok := strings.CutPrefix(s, prefix)
+	if !ok {
+		return ""
+	}
+	// The media type runs to the first ";" (parameters, including ";base64") or ","
+	// (the payload). Whichever comes first ends it.
+	if i := strings.IndexAny(rest, ";,"); i >= 0 {
+		return rest[:i]
+	}
+	return ""
 }
 
 func (r *Reducer) applyCreate(t *Turn, ev frame.Event) {
@@ -497,7 +525,7 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 				continue
 			}
 			body := flattenText(it.Content)
-			images, imageFP := imageParts(it.Content)
+			images, imageMIME, imageFP := imageParts(it.Content)
 			if body == "" && images == 0 {
 				continue
 			}
@@ -517,7 +545,8 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 			}
 			text, _ := truncate(body, r.opts.MaxPromptChars)
 			t.Prompts = append(t.Prompts, Prompt{
-				Role: it.Role, Chars: len(body), Text: text, Images: images,
+				Role: it.Role, Chars: len(body), Text: text,
+				Images: images, ImageMIME: imageMIME,
 			})
 			t.InputImages += images
 

@@ -77,12 +77,13 @@ func (s Secret) Resolve() (string, error) {
 
 // Config is the whole service configuration.
 type Config struct {
-	Service Service `yaml:"service" json:"service"`
-	Archive Archive `yaml:"archive" json:"archive"`
-	Loki    Loki    `yaml:"loki" json:"loki"`
-	OTLP    OTLP    `yaml:"otlp" json:"otlp"`
-	Health  Health  `yaml:"health" json:"health"`
-	Log     Log     `yaml:"log" json:"log"`
+	Service   Service   `yaml:"service" json:"service"`
+	Archive   Archive   `yaml:"archive" json:"archive"`
+	Loki      Loki      `yaml:"loki" json:"loki"`
+	OTLP      OTLP      `yaml:"otlp" json:"otlp"`
+	AgentO11y AgentO11y `yaml:"agento11y" json:"agento11y"`
+	Health    Health    `yaml:"health" json:"health"`
+	Log       Log       `yaml:"log" json:"log"`
 }
 
 // Service identifies this deployment.
@@ -173,6 +174,35 @@ type OTLPSignal struct {
 	SampleRatio float64 `yaml:"sample_ratio" json:"sample_ratio"`
 }
 
+// AgentO11y configures the Grafana agent-observability (sigil) generation sink - a
+// separate, additive destination from OTLP.Traces. It speaks sigil's own
+// ExportGenerations wire contract, not OTLP: sigil's product surface (conversations,
+// generations, agent catalog) is populated ONLY by that ingest endpoint or by its
+// tolerant OTLP-span decoder, and forwarding plain spans to a generic trace backend -
+// which is exactly what OTLP.Traces already does, unchanged, to Tempo - lands nowhere
+// in sigil's database. See issue #19.
+type AgentO11y struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// URL is the full ExportGenerations HTTP endpoint
+	// (.../api/v1/generations:export), not just a host.
+	URL string `yaml:"url" json:"url"`
+	// User is the Grafana Cloud instance id, sent as the basic-auth username - same
+	// credentials already used for Loki and OTLP, per instance 1217581.
+	User string `yaml:"user" json:"user"`
+	// Token is the access-policy token.
+	Token Secret `yaml:"token" json:"token"`
+	// BatchSize and BatchWait bound how many generations are held before a push, same
+	// shape as Loki's batching.
+	BatchSize int           `yaml:"batch_size" json:"batch_size"`
+	BatchWait time.Duration `yaml:"batch_wait" json:"batch_wait"`
+	// Timeout bounds one export call.
+	Timeout time.Duration `yaml:"timeout" json:"timeout"`
+	// MaxRetries bounds retries of a retryable failure (429/5xx/transport). A
+	// permanent 4xx that indicts the request itself (bad_request, unauthorized) is
+	// never retried - see agento11y.configFault.
+	MaxRetries int `yaml:"max_retries" json:"max_retries"`
+}
+
 // Health configures the readiness endpoint. Loopback by default: it reports config
 // including endpoint URLs, and nothing about it wants to be reachable off the box.
 type Health struct {
@@ -221,6 +251,16 @@ func Default() Config {
 			Metrics:  OTLPSignal{Interval: 30 * time.Second},
 			Traces:   OTLPSignal{SampleRatio: 1},
 			Timeout:  30 * time.Second,
+		},
+		AgentO11y: AgentO11y{
+			URL: "https://agento11y-prod-gb-south-1.grafana.net/api/v1/generations:export",
+			// Generations carry full message content, not just metadata - smaller
+			// batches than Loki's 1000 line-per-push default so one push failure
+			// re-sends less on retry.
+			BatchSize:  200,
+			BatchWait:  5 * time.Second,
+			Timeout:    30 * time.Second,
+			MaxRetries: 5,
 		},
 		Health: Health{Enabled: true, Listen: "127.0.0.1:9464"},
 		Log:    Log{Level: "info", Format: "text"},
@@ -296,7 +336,22 @@ func (c Config) Validate() error {
 		add("otlp.traces.sample_ratio must be in [0,1], got %v", c.OTLP.Traces.SampleRatio)
 	}
 
-	if !c.Loki.Enabled && !c.OTLP.Metrics.Enabled && !c.OTLP.Traces.Enabled {
+	if c.AgentO11y.Enabled {
+		if c.AgentO11y.URL == "" {
+			add("agento11y.url is empty but agento11y.enabled is true")
+		}
+		if c.AgentO11y.User == "" {
+			add("agento11y.user is empty; Grafana Cloud uses it as the basic-auth username")
+		}
+		if _, err := c.AgentO11y.Token.Resolve(); err != nil {
+			add("agento11y.token: %v", err)
+		}
+		if c.AgentO11y.BatchSize <= 0 {
+			add("agento11y.batch_size must be positive, got %d", c.AgentO11y.BatchSize)
+		}
+	}
+
+	if !c.Loki.Enabled && !c.OTLP.Metrics.Enabled && !c.OTLP.Traces.Enabled && !c.AgentO11y.Enabled {
 		add("every sink is disabled; the service would tail the archive and discard it")
 	}
 
