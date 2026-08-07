@@ -76,6 +76,21 @@ func plausibleHeader(data []byte) bool {
 	return data[3]&0xE0 == 0
 }
 
+// DecodeMember decompresses exactly ONE member and reports how many input bytes it
+// covered.
+//
+// DecodeMembers consumes every complete member in its buffer, which is right for
+// streaming but wrong at a boundary: a reader that owns the members starting inside
+// a byte range needs to stop after the one that straddles the end, and that requires
+// per-member offsets. Returns consumed=0 with no error when the member is incomplete.
+func DecodeMember(data []byte) (out []byte, consumed int, err error) {
+	out, consumed, err = decodeOne(data)
+	if err != nil && isIncomplete(err) {
+		return nil, 0, nil
+	}
+	return out, consumed, err
+}
+
 // decodeOne decompresses exactly one member and reports how many input bytes it
 // covered.
 func decodeOne(data []byte) (out []byte, consumed int, err error) {
