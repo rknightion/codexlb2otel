@@ -84,6 +84,13 @@ type Field struct {
 	IDLike bool
 	// Of extracts the value. Empty means the field does not apply to this turn and is
 	// omitted rather than emitted blank.
+	//
+	// NIL means the field is caller-supplied rather than Turn-derived: a tool name
+	// belongs to one ToolCall and a token type to one counter, so neither can be
+	// extracted from the Turn as a whole. They are still registered here, and still
+	// capped, because Guard.With routes them through the same guard - which is the
+	// hole this closes. Both were name constants with no registry entry, so every
+	// value flowed through uncapped, and codexlb.tool_name is genuinely open-ended.
 	Of func(t *turn.Turn) string
 }
 
@@ -155,6 +162,27 @@ var registry = []Field{
 	{Key: BaselineReset, Class: Bounded, Cap: 4,
 		Observed: []string{"true", "false"},
 		Of:       func(t *turn.Turn) string { return strconv.FormatBool(t.BaselineReset) }},
+	{Key: FrameType, Class: Bounded, Cap: 8,
+		Observed: []string{"close", "error"},
+		// Derived rather than carried. Turn.TransportEvent holds the server's
+		// plain-text reason ("no close frame received or sent"), which is prose, not an
+		// enum - so the frame class is reconstructed from what the reducer did record.
+		// Error wins over close: a connection that errored and then closed is an error.
+		Of: func(t *turn.Turn) string {
+			switch {
+			case t.FrameErrors > 0:
+				return "error"
+			case t.CloseCode != nil:
+				return "close"
+			}
+			return ""
+		}},
+
+	// --- caller-supplied: registered so Guard.With caps them, see Field.Of ---
+	{Key: ToolName, Class: Bounded, Cap: 64,
+		Observed: []string{"exec", "spawn_agent", "request_user_input", "wait", "functions"}},
+	{Key: GenAITokenType, Class: Bounded, Cap: 8,
+		Observed: []string{TokenInput, TokenOutput, TokenReasoning, TokenCached, TokenCacheWrite}},
 
 	// --- identity: structured metadata and span attributes ---
 	{Key: GenAIResponseID, Class: Identity, Of: func(t *turn.Turn) string { return t.ResponseID }},
@@ -172,6 +200,10 @@ var registry = []Field{
 	{Key: EngineIDs, Class: Identity, Of: func(t *turn.Turn) string { return t.EngineIDs }},
 	{Key: InstructionsHash, Class: Identity, Of: func(t *turn.Turn) string { return t.InstructionsHash }},
 	{Key: ErrorMessage, Class: Identity, Of: func(t *turn.Turn) string { return t.ErrorMessage }},
+	// Identity rather than bounded: it is the server's own prose reason for a transport
+	// event, and prose is not an enum however few distinct strings a capture happens to
+	// hold. FrameType above is the bounded classification of the same event.
+	{Key: TransportEvent, Class: Identity, Of: func(t *turn.Turn) string { return t.TransportEvent }},
 
 	// --- sensitive ---
 	{Key: SafetyID, Class: Sensitive, Of: func(t *turn.Turn) string { return t.SafetyID }},
@@ -317,7 +349,7 @@ func (g *Guard) MetricAttrs(t *turn.Turn) []KV {
 		KV{GenAIOperation, GenAIOperationValue},
 	)
 	for _, f := range registry {
-		if f.Class != Bounded {
+		if f.Class != Bounded || f.Of == nil {
 			continue
 		}
 		if v := g.value(f, f.Of(t)); v != "" {
@@ -345,7 +377,7 @@ func (g *Guard) Labels(t *turn.Turn, serviceName, recordType string, promoted []
 		out = append(out, KV{RecordType, recordType})
 	}
 	for _, f := range registry {
-		if f.Class != Bounded || !want[f.Key] {
+		if f.Class != Bounded || f.Of == nil || !want[f.Key] {
 			continue
 		}
 		if v := g.value(f, f.Of(t)); v != "" {
@@ -369,8 +401,8 @@ func (g *Guard) Metadata(t *turn.Turn, promoted []string) []KV {
 	}
 	out := make([]KV, 0, len(registry))
 	for _, f := range registry {
-		if label[f.Key] {
-			continue // already a stream label; repeating it wastes bytes on every line
+		if label[f.Key] || f.Of == nil {
+			continue // a stream label already, or not Turn-derived at all
 		}
 		v := f.Of(t)
 		if v == "" {
@@ -392,7 +424,7 @@ func (g *Guard) Metadata(t *turn.Turn, promoted []string) []KV {
 func (g *Guard) SpanAttrs(t *turn.Turn) []KV {
 	out := make([]KV, 0, len(registry))
 	for _, f := range registry {
-		if f.Class == Sensitive {
+		if f.Class == Sensitive || f.Of == nil {
 			continue
 		}
 		v := f.Of(t)
@@ -423,15 +455,28 @@ func Only(kvs []KV, keys ...string) []KV {
 }
 
 // With appends one-off attributes that are not Turn-derived - a token type on a token
-// counter, a tool name on a tool counter. The key must still be on the contract.
-func With(kvs []KV, extra ...KV) []KV {
+// counter, a tool name on a tool counter.
+//
+// A method on Guard, not a bare function, because these values need capping just as
+// much as the Turn-derived ones and are in fact the likelier source of an explosion:
+// a tool name is whatever the model's tool catalogue happens to contain. As a bare
+// function this was the one path around the guard, and it took two of the three sinks
+// with it. A key that is not on the contract at all is dropped and counted.
+func (g *Guard) With(kvs []KV, extra ...KV) []KV {
 	out := make([]KV, 0, len(kvs)+len(extra))
 	out = append(out, kvs...)
 	for _, kv := range extra {
 		if kv.Value == "" {
 			continue
 		}
-		out = append(out, kv)
+		f, known := byKey[kv.Key]
+		if !known {
+			g.mu.Lock()
+			g.rejected[kv.Key]++
+			g.mu.Unlock()
+			continue
+		}
+		out = append(out, KV{kv.Key, g.value(f, kv.Value)})
 	}
 	return out
 }

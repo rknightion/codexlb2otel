@@ -315,7 +315,7 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 	}
 	base := attr.Only(raw, attr.GenAIResponseID, attr.ThreadID, attr.GenAIRequestModel, attr.Status)
 	for i, tc := range calls {
-		attrs := toAttrs(attr.With(base, attr.KV{Key: attr.ToolName, Value: tc.Name}))
+		attrs := toAttrs(s.guard.With(base, attr.KV{Key: attr.ToolName, Value: tc.Name}))
 		if tc.CallID != "" {
 			attrs = append(attrs, attribute.String(traceAttrToolCallID, tc.CallID))
 		}

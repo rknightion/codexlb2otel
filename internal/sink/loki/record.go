@@ -51,7 +51,7 @@ func buildLines(t *turn.Turn, guard *attr.Guard, serviceName string, labelKeys [
 		}
 		md := baseMeta
 		if len(extra) > 0 {
-			md = attr.With(baseMeta, extra...)
+			md = guard.With(baseMeta, extra...)
 		}
 		out = append(out, outLine{
 			recordType: recordType,

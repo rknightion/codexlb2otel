@@ -4,7 +4,7 @@
 #
 # bin/ is gitignored.
 
-TOOLS := clbsync clbfind clbprobe clbprofile clbstat
+TOOLS := codexlb2otel clbsync clbfind clbprobe clbprofile clbstat
 BINS  := $(addprefix bin/,$(TOOLS))
 
 CORPUS ?= corpus/processed
@@ -21,6 +21,13 @@ build: $(BINS)
 bin/%: $(GO_FILES)
 	@mkdir -p bin
 	go build -o $@ ./cmd/$*
+
+# Run the service against a config file. Live push - see config.example.yaml.
+.PHONY: run
+run: bin/codexlb2otel
+	./bin/codexlb2otel -config $(CONFIG)
+
+CONFIG ?= config.yaml
 
 .PHONY: clean
 clean:

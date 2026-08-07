@@ -109,6 +109,11 @@ const (
 	InstructionsHash = "codexlb.instructions_hash"
 	ErrorMessage     = "codexlb.error_message"
 	SafetyID         = "codexlb.safety_identifier"
+	// TransportEvent is the server's plain-text reason for a websocket lifecycle event
+	// - "no close frame received or sent", "received 1012 (service restart)". Prose,
+	// so it is identity-class; FrameType is the bounded classification of the same
+	// event and is what a metric groups by.
+	TransportEvent = "codexlb.transport_event"
 )
 
 // GenAIProviderValue is emitted on every GenAI metric, as the convention requires it.

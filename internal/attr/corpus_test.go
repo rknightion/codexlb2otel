@@ -53,7 +53,9 @@ func TestCorpus_BoundedFieldsStayWithinTheirCaps(t *testing.T) {
 	values := map[string]map[string]bool{}
 	for _, tn := range turns {
 		for _, f := range Fields() {
-			if f.Class != Bounded {
+			// Of == nil is a caller-supplied field (tool name, token type): not derivable
+			// from a Turn, so there is nothing to sample here. Guard.With caps those.
+			if f.Class != Bounded || f.Of == nil {
 				continue
 			}
 			v := f.Of(tn)
@@ -68,7 +70,7 @@ func TestCorpus_BoundedFieldsStayWithinTheirCaps(t *testing.T) {
 	}
 
 	for _, f := range Fields() {
-		if f.Class != Bounded {
+		if f.Class != Bounded || f.Of == nil {
 			continue
 		}
 		seen := values[f.Key]
@@ -90,7 +92,7 @@ func TestCorpus_BoundedFieldsStayWithinTheirCaps(t *testing.T) {
 
 	// Not an assertion, but the number that matters when reading a failure above.
 	for _, f := range Fields() {
-		if f.Class == Bounded && len(values[f.Key]) > 0 {
+		if f.Class == Bounded && f.Of != nil && len(values[f.Key]) > 0 {
 			t.Logf("%-38s %2d/%d distinct  %v", f.Key, len(values[f.Key]), f.Cap, sorted(values[f.Key]))
 		}
 	}
@@ -110,7 +112,7 @@ func TestCorpus_NoIdentityValueReachesAMetricAttribute(t *testing.T) {
 	for _, tn := range turns {
 		ids := map[string]string{}
 		for _, f := range Fields() {
-			if f.Class == Bounded {
+			if f.Class == Bounded || f.Of == nil {
 				continue
 			}
 			if v := f.Of(tn); v != "" {
