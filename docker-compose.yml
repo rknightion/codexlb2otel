@@ -1,0 +1,112 @@
+# codexlb2otel compose fragment for codex-lb's own stack (issue #10's binding
+# decision, 2026-08-07): docker image + compose fragment ADDED to codex-lb's own
+# services section, so codexlb2otel starts and stops with codex-lb on camden.
+# Explicitly NOT a systemd unit, and NOT a standalone stack of its own.
+#
+# NOT RUNNABLE ON ITS OWN. This is a `services:`/`volumes:` block meant to be
+# merged into codex-lb's own docker-compose.yml (or docker-compose.prod.yml) on
+# camden - either paste the `codexlb2otel:` service and the
+# `codexlb2otel-checkpoint` volume directly into that file's own sections, or run
+# this file alongside it via
+# `docker compose -f docker-compose.yml -f codexlb2otel/docker-compose.yml up`
+# from codex-lb's checkout. It declares no `build:` context (ships as a released
+# GHCR image - see .github/workflows/docker.yml) and no network of its own:
+# merged into codex-lb's compose project it shares that project's default network
+# automatically, which this service does not even need - it never talks to
+# codex-lb over the network, only reads its archive directory from disk and talks
+# out to Grafana Cloud.
+#
+# DO NOT `docker compose up` THIS FILE AGAINST CAMDEN OR ANY REAL HOST. Per issue
+# #10's binding decision, deployment is deliberately the LAST step, not this one -
+# this fragment is packaging only.
+#
+# UNRESOLVED - NEEDS A HUMAN before this can be deployed for real:
+#   1. ARCHIVE HOST PATH: the bind-mount source below is copied verbatim from
+#      config.example.yaml / internal/config.Default's own archive.dir default
+#      (/opt/codex-lb/data/codex-lb/conversation-archive) - that reads as a host
+#      bind-mount path, but codex-lb's OWN checked-in docker-compose.yml and
+#      docker-compose.prod.yml both mount codex-lb's data through a NAMED Docker
+#      volume instead (`codex-lb-data:/var/lib/codex-lb`), not a host bind mount
+#      at that path. Those are not obviously the same thing, and nothing in this
+#      repo can tell which one is true on camden. Before deploying, check the
+#      real mount with `docker inspect <codex-lb server container>
+#      --format '{{json .Mounts}}'`: if camden actually uses the named volume,
+#      replace the bind mount below with
+#      `codex-lb-data:/opt/codex-lb/data/codex-lb/conversation-archive:ro` and
+#      declare that volume `external: true` in the volumes: section instead of
+#      the host path.
+#   2. GRAFANA_TOKEN below is this fragment's guess at the single env var name
+#      codex-lb's real .env already resolves both tokens from, per issue #10's
+#      binding decision text ("The lab already resolves both tokens from a single
+#      GRAFANA_TOKEN"). Confirm the actual variable name in codex-lb's real
+#      .env.local on camden before relying on it.
+#   3. CONFIG FILE PATH: the bind mount source below
+#      (./codexlb2otel/config.yaml) assumes a sibling directory next to wherever
+#      codex-lb's own compose file lives. Confirm/adjust to wherever the real
+#      config actually lives on camden - copy config.example.yaml there and edit
+#      it, never edit config.example.yaml itself in place.
+#   4. IMAGE TAG: the version below is maintained by release-please
+#      (x-release-please-version, see release-please-config.json's extra-files) -
+#      it will read 0.0.0 until the first real release exists. Do not deploy
+#      against 0.0.0; wait for a real vX.Y.Z release, per the binding decision.
+
+services:
+  codexlb2otel:
+    # Version kept in sync with the released image tag by release-please - do not
+    # bump by hand, and do not deploy before a real release exists (see item 4
+    # above).
+    image: ghcr.io/rknightion/codexlb2otel:0.0.0 # x-release-please-version
+    container_name: codexlb2otel
+    restart: unless-stopped
+    command: ["-config", "/etc/codexlb2otel/config.yaml"]
+    environment:
+      # codex-lb's own .env pattern resolves both Loki and OTLP tokens from a
+      # single GRAFANA_TOKEN (issue #10's binding decision). config.example.yaml
+      # instead names its own per-sink env vars
+      # (CODEXLB2OTEL_LOKI_TOKEN / CODEXLB2OTEL_OTLP_TOKEN, resolved at startup by
+      # config.Secret.Resolve) - point THOSE at GRAFANA_TOKEN here so the config
+      # file's ${...} indirections resolve without inventing a second credential.
+      # Variable NAME only, referenced by name below - never a literal value, and
+      # never written into the config file itself. See UNRESOLVED item 2 above.
+      CODEXLB2OTEL_LOKI_TOKEN: "${GRAFANA_TOKEN}"
+      CODEXLB2OTEL_OTLP_TOKEN: "${GRAFANA_TOKEN}"
+    volumes:
+      # Archive: READ-ONLY - the hard constraint from issue #10. This directory is
+      # the only copy of the raw capture; codexlb2otel must never be able to
+      # write to, move, or delete anything under it (contrast the checkpoint
+      # volume below, the one thing this service IS allowed to write). Container
+      # path mirrors the host path deliberately, so config.example.yaml's own
+      # archive.dir default works unedited - one less place for the two to drift
+      # apart. See UNRESOLVED item 1 above before trusting the host path itself.
+      - /opt/codex-lb/data/codex-lb/conversation-archive:/opt/codex-lb/data/codex-lb/conversation-archive:ro
+      # Config file: read-only single-file bind mount. config.example.yaml is the
+      # documented starting point - copy it to the path below and edit before
+      # first run. See UNRESOLVED item 3 above.
+      - ./codexlb2otel/config.yaml:/etc/codexlb2otel/config.yaml:ro
+      # Checkpoint: the ONLY writable mount, and it holds nothing but byte offsets
+      # and reducer state - never archive content. A separate named volume so a
+      # misconfigured checkpoint path can never collide with, or silently fall
+      # back to writing into, the read-only archive mount above. Path matches
+      # config.Default's own checkpoint default, same reasoning as the archive
+      # mount.
+      - codexlb2otel-checkpoint:/var/lib/codexlb2otel
+    healthcheck:
+      # Redundant with the image's own Dockerfile HEALTHCHECK by default - stated
+      # explicitly here anyway so this compose file owns the interval/timing
+      # rather than that being something only the image controls, and so
+      # `docker compose ps`'s health column keeps working even if a future image
+      # ever drops its built-in HEALTHCHECK.
+      #
+      # The probe is the service binary itself. The image is distroless and has no
+      # shell and no HTTP client on purpose, and -healthcheck reads the same
+      # config file mounted below - so overriding health.listen there does not
+      # leave this probing a stale port and restart-looping the container.
+      test: ["CMD", "/codexlb2otel", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  codexlb2otel-checkpoint:
+    name: codexlb2otel-checkpoint

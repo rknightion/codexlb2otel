@@ -1,0 +1,29 @@
+# Build context hygiene, plus one deliberate leak guard.
+#
+# corpus/processed can hold REAL captured archive content on disk (`make sync`
+# pulls it from camden) even though it is gitignored and never committed - see
+# README.md's Content warning and .gitignore's own corpus guard. If it exists on
+# the machine running `docker build .`, it must never enter the build context, or
+# it could reach an image layer and ship real conversation content inside an
+# image forever. The Dockerfile's builder stage only COPYs cmd/ and internal/
+# anyway, so this is belt-and-braces, not load-bearing - but the belt costs
+# nothing and the braces are exactly the failure mode worth not trusting to a
+# single Dockerfile COPY line staying correct forever.
+/corpus/
+/corpus.sig.json
+shapes*.json
+*.profile.json
+*.jsonl
+*.jsonl.gz
+*.jsonl.zst
+
+.git
+.github
+docs
+testdata
+
+/bin
+/dist
+config.yaml
+.env
+*.md
