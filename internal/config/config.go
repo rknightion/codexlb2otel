@@ -136,6 +136,16 @@ type Loki struct {
 	MaxRetries int `yaml:"max_retries" json:"max_retries"`
 	// RecordTypes selects which line kinds are emitted. Empty means all of them.
 	RecordTypes []string `yaml:"record_types" json:"record_types"`
+	// MaxLineAge drops lines older than this before pushing, counting them.
+	//
+	// Grafana Cloud silently discards over-age samples: measured 2026-08-07, a 3h-old
+	// push returns 204 and is queryable, and 4h and older return 204 and are queryable
+	// nowhere - no error, no rejection body, nothing. Without a local check, replaying
+	// an old archive looks like a clean run that delivered everything and in fact
+	// delivered none of it.
+	//
+	// Zero disables the check, which is right only against a tenant with no such limit.
+	MaxLineAge time.Duration `yaml:"max_line_age" json:"max_line_age"`
 }
 
 // OTLP configures the metric and trace sinks. One endpoint serves both.
@@ -198,10 +208,13 @@ func Default() Config {
 			// not truncated. 192KB leaves room for the structured metadata and the
 			// stream labels that ride alongside the body in the push payload.
 			MaxLineBytes: 192 << 10,
-			BatchSize:    1000,
-			BatchWait:    2 * time.Second,
-			Timeout:      30 * time.Second,
-			MaxRetries:   5,
+			// Measured boundary on this tenant is between 3h and 4h. 3h leaves headroom
+			// for a batch that waits, without discarding anything Loki would have taken.
+			MaxLineAge: 3 * time.Hour,
+			BatchSize:  1000,
+			BatchWait:  2 * time.Second,
+			Timeout:    30 * time.Second,
+			MaxRetries: 5,
 		},
 		OTLP: OTLP{
 			Endpoint: "https://otlp-gateway-prod-gb-south-1.grafana.net/otlp",

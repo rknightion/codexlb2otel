@@ -114,11 +114,15 @@ type Rejection struct {
 // Reasons a sink reports. The first four are Loki's own validation errors, spelled as
 // Loki spells them so a metric value can be matched against its documentation.
 const (
-	ReasonLineTooLong  = "line_too_long"
-	ReasonRateLimited  = "rate_limited"
-	ReasonOutOfOrder   = "out_of_order"
-	ReasonStreamLimit  = "stream_limit"
-	ReasonBadRequest   = "bad_request"
+	ReasonLineTooLong = "line_too_long"
+	ReasonRateLimited = "rate_limited"
+	ReasonOutOfOrder  = "out_of_order"
+	ReasonStreamLimit = "stream_limit"
+	ReasonBadRequest  = "bad_request"
+	// ReasonTooOld is a line older than the tenant's maximum sample age. It is
+	// detected locally and never sent, because Loki does not report it: an over-age
+	// push returns 204 and the line is then queryable nowhere. See loki.dropTooOld.
+	ReasonTooOld       = "too_old"
 	ReasonUnauthorized = "unauthorized"
 	ReasonServerError  = "server_error"
 	ReasonTransport    = "transport"

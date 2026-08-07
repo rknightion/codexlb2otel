@@ -1,5 +1,7 @@
 package attr
 
+import "strings"
+
 // Attribute keys, frozen. Every emitter reads them from here; none invents its own.
 //
 // The split is deliberate. Where OpenTelemetry's GenAI conventions define a concept,
@@ -115,6 +117,27 @@ const (
 	// event and is what a metric groups by.
 	TransportEvent = "codexlb.transport_event"
 )
+
+// LokiKey converts an attribute key into a Loki label or structured-metadata name.
+//
+// The keys above are OpenTelemetry attribute names, and OTel's convention is dotted -
+// gen_ai.request.model, codexlb.family. Loki's is not: its label grammar is
+// Prometheus's, [a-zA-Z_][a-zA-Z0-9_]*, and a dot inside braces is a PARSE ERROR.
+//
+// Live-verified against Grafana Cloud on 2026-08-07, because this cost a silent
+// delivery failure. A push carrying `codexlb.record_type` returns
+//
+//	400  couldn't parse labels: 1:9: parse error: unexpected character inside braces: '.'
+//
+// and the sink's own rule - a permanent 4xx is counted and dropped so the checkpoint
+// can advance past unfixable data - then discarded every line without an error. The
+// service ran to completion, consumed a whole archive, wrote a checkpoint, and
+// delivered nothing. The same push with underscores returns 204.
+//
+// So: dots become underscores, here and in exactly one place, so a LogQL query and
+// the emitter cannot disagree about what a label is called. Metric and span
+// attributes keep their dotted OTel names, which is correct for those backends.
+func LokiKey(key string) string { return strings.ReplaceAll(key, ".", "_") }
 
 // GenAIProviderValue is emitted on every GenAI metric, as the convention requires it.
 // codex-lb proxies OpenAI, so the provider is openai regardless of which account
