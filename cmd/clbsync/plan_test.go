@@ -114,3 +114,41 @@ func TestPlan_EmptyLocal(t *testing.T) {
 		}
 	}
 }
+
+// bytesH gains a decimal at gigabyte scale precisely so a fetch of tens of megabytes
+// is visible against a corpus already past 1GB - which is the case the totals exist
+// for, and the one a single decimal rounds away.
+func TestBytesH(t *testing.T) {
+	for in, want := range map[int64]string{
+		0:             "0B",
+		999:           "999B",
+		1 << 10:       "1.0KB",
+		1536:          "1.5KB",
+		15_900_000:    "15.2MB",
+		1_331_000_000: "1.24GB",
+		1_396_000_000: "1.30GB",
+	} {
+		if got := bytesH(in); got != want {
+			t.Errorf("bytesH(%d) = %q, want %q", in, got, want)
+		}
+	}
+
+	// The whole point: a 65MB fetch on top of a 1.2GB corpus must not round away.
+	const corpus, fetch = 1_331_000_000, 65_300_000
+	if before, after := bytesH(corpus), bytesH(corpus+fetch); before == after {
+		t.Errorf("a %s fetch shows as %s -> %s; the totals hide the change they exist to show",
+			bytesH(fetch), before, after)
+	}
+}
+
+// A build-tag mistake would make diskFree silently report nothing on the platform
+// this actually runs on, and the free-space column would just quietly vanish.
+func TestDiskFree(t *testing.T) {
+	n, ok := diskFree(t.TempDir())
+	if !ok {
+		t.Skip("diskFree unsupported on this platform")
+	}
+	if n <= 0 {
+		t.Errorf("diskFree reported %d bytes free", n)
+	}
+}
