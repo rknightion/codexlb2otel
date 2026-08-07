@@ -59,6 +59,15 @@ jobs:
   go-version:
     name: resolve go version
     runs-on: ubuntu-latest
+    # Required because `permissions: {}` above grants NOTHING by default, and a job
+    # with no block of its own inherits that. This repo is private, so a job
+    # without contents: read cannot even check itself out - actions/checkout fails
+    # with "Repository not found", which reads like a wrong repo name rather than a
+    # permissions problem. Same trap that broke the v0.1.0 publish; it recurred
+    # here immediately because the deny-by-default at the top is easy to satisfy
+    # for the reusable call and easy to forget for a plain job beside it.
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.pin.outputs.version }}
     steps:
