@@ -3,14 +3,13 @@
 # services section, so codexlb2otel starts and stops with codex-lb on camden.
 # Explicitly NOT a systemd unit, and NOT a standalone stack of its own.
 #
-# NOT RUNNABLE ON ITS OWN. This is a `services:`/`volumes:` block meant to be
-# merged into codex-lb's own docker-compose.yml (or docker-compose.prod.yml) on
-# camden - either paste the `codexlb2otel:` service and the
-# `codexlb2otel-checkpoint` volume directly into that file's own sections, or run
-# this file alongside it via
-# `docker compose -f docker-compose.yml -f codexlb2otel/docker-compose.yml up`
-# from codex-lb's checkout. It declares no `build:` context (ships as a released
-# GHCR image - see .github/workflows/docker.yml) and no network of its own:
+# NOT RUNNABLE ON ITS OWN. This is a `services:` block meant to be merged into
+# codex-lb's own compose file on camden (/opt/codex-lb/compose.yml) - paste the
+# `codexlb2otel:` service straight into that file's own `services:` section. It
+# declares no top-level `volumes:` (the checkpoint is a relative bind, so it
+# resolves against whichever compose file it ends up in), no `build:` context
+# (ships as a published GHCR image - see .github/workflows/publish.yml), and no
+# network of its own:
 # merged into codex-lb's compose project it shares that project's default network
 # automatically, which this service does not even need - it never talks to
 # codex-lb over the network, only reads its archive directory from disk and talks
@@ -50,8 +49,37 @@
 #
 #   It is a copy of this repo's config.example.yaml, which needs no edits for this
 #   host: archive.dir and archive.checkpoint already match the mounts below, and
-#   both tokens are ${...} references satisfied by /opt/codexlb2otel/.env. Never
+#   all three tokens are ${...} references satisfied by /opt/codexlb2otel/.env. Never
 #   edit config.example.yaml in place to configure a host.
+#
+#   IT MUST BE READABLE BY uid 1000, and root:root 0640 is not - the sibling files
+#   in that directory are root-only and copying their mode is the obvious mistake.
+#   Unlike env_file, which the DAEMON reads as root before the container exists, a
+#   bind-mounted config file is read by the process itself. Owned root, grouped 1000:
+#       sudo install -o root -g 1000 -m 0640 config.example.yaml \
+#            /opt/codex-lb/codexlb2otel.config.yaml
+#   Get this wrong and the container exits immediately with
+#   "config: read ...: permission denied" - loud, at least, unlike the archive
+#   permission trap above.
+#
+# RUNS AS uid 1000, NOT the image's default 65532 - MEASURED, not assumed.
+#   The archive directory is `drwx------ rob rob` and every file in it is
+#   `-rw------- rob rob` (0600), because codex-lb writes it as its own uid. There is
+#   no group or other bit to fall back on, so the ONLY uid that can read it is 1000.
+#   Verified directly on camden 2026-08-07 with a throwaway container against the
+#   real bind mount: uid 1000 lists 20 files and reads gzip magic (1f8b) off the
+#   newest; uid 65532 gets `ls: can't open '/a': Permission denied`. Left at the
+#   image default, this service would start cleanly, find nothing, and report an
+#   empty archive forever - a silent no-op, not a crash.
+#
+#   Note the host permissions on the PARENT path (/opt/codex-lb is root-only) do not
+#   matter: a bind mount attaches the source directory itself, so only that
+#   directory's own mode is consulted inside the container.
+#
+#   This is still a non-root, no-shell, static distroless container - 1000 rather
+#   than 65532 changes which unprivileged uid, nothing else. Do not "fix" this by
+#   loosening the archive's permissions: they are codex-lb's, on the only copy of the
+#   raw capture, and this service is the one that has to fit around them.
 #
 # IMAGE TAG - :main on purpose, not a pinned version.
 #   camden runs watchtower, so pinning :main is what makes a merge to main reach
@@ -68,6 +96,9 @@ services:
     container_name: codexlb2otel
     restart: unless-stopped
     command: ["-config", "/etc/codexlb2otel/config.yaml"]
+    # See the "RUNS AS uid 1000" block above. Numeric on purpose: the image has no
+    # /etc/passwd worth speaking of, so a name would not resolve.
+    user: "1000:1000"
     # Credentials come from this service's OWN .env, following camden's actual
     # convention - verified 2026-08-07, and it is NOT what issue #10 assumed.
     #
@@ -110,12 +141,21 @@ services:
       # codex-lb's own compose file. See the CONFIG FILE block above.
       - ./codexlb2otel.config.yaml:/etc/codexlb2otel/config.yaml:ro
       # Checkpoint: the ONLY writable mount, and it holds nothing but byte offsets
-      # and reducer state - never archive content. A separate named volume so a
-      # misconfigured checkpoint path can never collide with, or silently fall
-      # back to writing into, the read-only archive mount above. Path matches
-      # config.Default's own checkpoint default, same reasoning as the archive
-      # mount.
-      - codexlb2otel-checkpoint:/var/lib/codexlb2otel
+      # and per-series cumulative counters - no archive content (see
+      # internal/turn/state.go: every persisted field is an int or a float, and the
+      # map keys are thread ids). Kept at a path of its own so a misconfigured
+      # checkpoint can never collide with, or silently fall back to writing into,
+      # the read-only archive mount above. Container path matches config.Default's
+      # checkpoint default, same reasoning as the archive mount.
+      #
+      # A BIND, not a named volume, BECAUSE the service runs as uid 1000 (above). A
+      # fresh named volume takes its ownership from the image's directory at the
+      # mount point, and this image deliberately creates no such directory - so
+      # Docker would create it root:root 0755 and the first checkpoint write would
+      # fail with EACCES. A host directory can simply be chowned to the uid that has
+      # to write it. Create it before first start:
+      #     sudo install -d -o 1000 -g 1000 -m 0750 /opt/codex-lb/data/codexlb2otel
+      - ./data/codexlb2otel:/var/lib/codexlb2otel
     healthcheck:
       # Redundant with the image's own Dockerfile HEALTHCHECK by default - stated
       # explicitly here anyway so this compose file owns the interval/timing
@@ -132,7 +172,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-
-volumes:
-  codexlb2otel-checkpoint:
-    name: codexlb2otel-checkpoint
+    # Watchtower on camden runs with no --label-enable, so it watches every
+    # container by default and needs no opt-in label here - that is what makes
+    # :main above roll out on its hourly pass. codex-lb itself carries
+    # watchtower.enable=false because it is built locally from ./src and has no
+    # registry to pull from; this service is the opposite case, so it stays in.

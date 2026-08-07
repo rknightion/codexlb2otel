@@ -5,7 +5,8 @@
 # on top of Default() rather than replacing it - an absent key keeps its default
 # rather than becoming a zero value.
 #
-# Secrets (loki.token, otlp.token) NEVER go inline here. Two forms are supported:
+# Secrets (loki.token, otlp.token, agento11y.token) NEVER go inline here. Two forms
+# are supported:
 #   ${ENV_VAR_NAME}   read from an environment variable at startup
 #   file:/some/path   read from a file's contents (trailing whitespace trimmed)
 # An unset ${ENV_VAR_NAME} or an unreadable file: is a startup error, not a silent
@@ -88,6 +89,39 @@ otlp:
     sample_ratio: 1
   # timeout bounds a single export, for either signal.
   timeout: 30s
+
+agento11y:
+  # enabled turns on the Grafana agent-observability (sigil) generation sink. This is
+  # ADDITIVE to otlp.traces above, not an alternative to it: the OTLP trace export to
+  # Tempo keeps running unchanged, and this pushes the same turns a second time in
+  # sigil's own ExportGenerations wire format. Sigil's product surface -
+  # conversations, generations, the agent catalog - is populated ONLY by this
+  # endpoint (or by sigil's own tolerant OTLP-span decoder), so spans that reach
+  # Tempo land nowhere in sigil's database. See issue #19.
+  enabled: true
+  # url is the full ExportGenerations endpoint, not just a host. Region must match
+  # the stack's - gb-south-1 for instance 654321, same as the OTLP gateway above.
+  url: https://agento11y-prod-gb-south-1.grafana.net/api/v1/generations:export
+  # user is the Grafana Cloud instance id, sent as the basic-auth username - the same
+  # instance that serves OTLP above.
+  user: "654321"
+  # token is the access-policy token, resolved from the environment.
+  token: "${CODEXLB2OTEL_AGENTO11Y_TOKEN}"
+  # batch_size is deliberately far below loki.batch_size: a generation carries full
+  # message content rather than a metadata line, so a failed push re-sends much more.
+  batch_size: 200
+  batch_wait: 5s
+  # timeout bounds one export call.
+  timeout: 30s
+  # max_retries bounds retries of a RETRYABLE failure (429/5xx/transport). A permanent
+  # 4xx that indicts the request itself is counted and dropped, never retried.
+  #
+  # Note that a 2xx here is NOT proof of delivery: ExportGenerations can accept the
+  # request and still refuse individual generations inside it, reporting that per
+  # generation in the response body. The sink always parses that body and counts the
+  # refusals - see codexlb.selfobs.* / the sink rejection metrics rather than the
+  # absence of errors in the log.
+  max_retries: 5
 
 health:
   # enabled turns on the readiness + config-dump HTTP endpoint. The config dump is
