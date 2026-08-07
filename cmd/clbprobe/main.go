@@ -97,7 +97,14 @@ func run() int {
 	sig := total.Signature(cov)
 
 	if !*quiet {
-		summarise(os.Stdout, total, cov, files)
+		// -json makes stdout a machine channel. Printing the human summary in front
+		// of the document leaves stdout unparseable - `clbprobe -json | jq` fails on
+		// line 1 - so under -json the summary goes to stderr and a human still sees it.
+		out := io.Writer(os.Stdout)
+		if *asJSON {
+			out = os.Stderr
+		}
+		summarise(out, total, cov, files)
 	}
 
 	if updating {
@@ -250,6 +257,12 @@ func summarise(w io.Writer, p *profile.Profile, cov profile.Coverage, files []st
 	fmt.Fprintf(w, "\npayload framing: %s\n", inlineCounts(p.PayloadFraming))
 	if p.PayloadUnparsed > 0 {
 		fmt.Fprintf(w, "  %d payloads did not parse as JSON\n", p.PayloadUnparsed)
+	}
+	// Reported separately because they are not protocol payloads at all: a control
+	// frame's text is a close reason, and counting it as unparseable reads as damage.
+	if p.TransportFrames > 0 {
+		fmt.Fprintf(w, "  %d websocket control frames (close/error; text is a reason string, not JSON)\n",
+			p.TransportFrames)
 	}
 
 	// Event types the typed decoders do not name are data on the floor. This is the

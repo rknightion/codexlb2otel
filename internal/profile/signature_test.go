@@ -296,6 +296,119 @@ func TestSignature_ToolSchemasAreOpaqueButToolIdentityIsNot(t *testing.T) {
 	}
 }
 
+// controlRecord wraps a websocket CONTROL frame. Its payload.text is a close reason
+// written for a human - or empty on a clean close - not a protocol event.
+func controlRecord(frameType, text string) string {
+	inner, err := json.Marshal(text)
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf(`{"kind":"responses","direction":"server_to_codex","transport":"websocket",`+
+		`"extra":{"frame_type":%q,"close_code":1000},"payload":{"text":%s}}`, frameType, inner)
+}
+
+// Control frames must not reach the framing classifier. 20 of them in 1.5M lines
+// were enough to hold a permanent BREAKING finding open - "an SSE or chunked
+// transport would look like this" - against a transport that has never existed.
+func TestProfile_ControlFramesAreNotProtocolPayloads(t *testing.T) {
+	p := profileOf(t,
+		record(`{"type":"response.completed"}`),
+		controlRecord("close", ""),
+		controlRecord("error", "no close frame received or sent"),
+	)
+
+	if p.TransportFrames != 2 {
+		t.Errorf("counted %d control frames, want 2", p.TransportFrames)
+	}
+	if p.PayloadUnparsed != 0 {
+		t.Errorf("%d control frame(s) counted as unparseable payloads", p.PayloadUnparsed)
+	}
+	if got := p.PayloadFraming; len(got) != 1 || got[FramingJSONObject] != 1 {
+		t.Errorf("framing histogram = %v, want only one %s from the protocol frame",
+			got, FramingJSONObject)
+	}
+
+	// Excluded from framing, but their vocabulary still has to be tracked: a new
+	// control frame type is a real finding, just not a transport change.
+	vals := p.Signature(Coverage{Files: 1}).Record.Fields["extra.frame_type"]
+	for _, want := range []string{"close", "error"} {
+		if !strings.Contains(strings.Join(vals, ","), want) {
+			t.Errorf("extra.frame_type enum = %v, missing %q", vals, want)
+		}
+	}
+}
+
+func TestDiff_AFirstControlFrameIsNotATransportChange(t *testing.T) {
+	base := sigOf(t, record(`{"type":"response.completed"}`))
+	cur := sigOf(t,
+		record(`{"type":"response.completed"}`),
+		controlRecord("close", ""),
+		controlRecord("error", "received 1012 (service restart)"),
+	)
+
+	f := Diff(base, cur)
+	for _, x := range f {
+		if x.Severity == SevBreaking {
+			t.Errorf("a websocket control frame reported as breaking: %s %s", x.Kind, x.Subject)
+		}
+	}
+	if len(findingsFor(f, "record.field")) == 0 {
+		t.Errorf("control frames appeared and nothing was reported at all; got %v", kinds(f))
+	}
+}
+
+// A field turning nullable loses no data, so it must not spend the budget of the one
+// severity that has to stay believable. See PathSig.
+func TestDiff_AFieldTurningNullableIsNotBreaking(t *testing.T) {
+	base := sigOf(t, record(`{"type":"codex.rate_limits","rate_limits":{"used_percent":1}}`))
+	cur := sigOf(t,
+		record(`{"type":"codex.rate_limits","rate_limits":{"used_percent":1}}`),
+		record(`{"type":"codex.rate_limits","rate_limits":null}`),
+	)
+
+	f := Diff(base, cur)
+	nullable := findingsFor(f, "event.path.nullable")
+	if len(nullable) != 1 {
+		t.Fatalf("a field that started arriving as null produced %d nullable finding(s); got %v",
+			len(nullable), kinds(f))
+	}
+	if nullable[0].Severity != SevNew {
+		t.Errorf("nullable reported as %s, want NEW", nullable[0].Level)
+	}
+	for _, x := range f {
+		if x.Severity == SevBreaking {
+			t.Errorf("null addition reported as breaking: %s %s", x.Kind, x.Subject)
+		}
+	}
+}
+
+// The reason the case above is not breaking, pinned rather than left on trust: the
+// string-vs-array case abandons the whole event, and null simply does not.
+func TestNullDecodesIntoAnyTypeWithoutAbandoningTheEvent(t *testing.T) {
+	var v struct {
+		RateLimits map[string]float64 `json:"rate_limits"`
+		Balance    string             `json:"balance"`
+		Model      string             `json:"model"`
+	}
+	v.Balance = "kept"
+
+	err := json.Unmarshal([]byte(`{"rate_limits":null,"balance":null,"model":"gpt-5.6-sol"}`), &v)
+	if err != nil {
+		t.Fatalf("null broke the decode: %v", err)
+	}
+	if v.Model != "gpt-5.6-sol" {
+		t.Errorf("model = %q; a null sibling discarded the rest of the event", v.Model)
+	}
+	if v.Balance != "kept" {
+		t.Errorf("balance = %q, want the value untouched - null into a non-pointer is a no-op", v.Balance)
+	}
+
+	// The genuine breaking case, for contrast.
+	if err := json.Unmarshal([]byte(`{"balance":["a"],"model":"gpt-5.6-sol"}`), &v); err == nil {
+		t.Error("a type mismatch decoded cleanly; the breaking grading would be unjustified")
+	}
+}
+
 func TestOpaque(t *testing.T) {
 	for path, want := range map[string]bool{
 		"response.tools[].parameters":          true,
