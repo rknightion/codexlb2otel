@@ -1,0 +1,140 @@
+# Builds the packaged image (Dockerfile, issue #10) and pushes it to this
+# PRIVATE repo's own GHCR package, tagged by version AND recorded by digest.
+#
+# Called by release-please.yml's publish-image job, which passes tag_name/version
+# straight from release-please's own outputs - never inferred from github.ref,
+# so this always builds exactly the commit release-please tagged even if main has
+# moved on by the time this runs. workflow_dispatch exists only as a manual
+# re-run escape hatch for a failed publish; it is not how this is meant to be
+# triggered day to day.
+#
+# GITHUB_TOKEN, not the RELEASE_PLEASE_TOKEN PAT: this job only pushes to THIS
+# repo's own GHCR package, which the default token can already do with
+# packages: write. The PAT exists solely for the cross-repo/bot-authored-PR trap
+# release-please.yml's own comment explains - unrelated to what this job does.
+#
+# The repo is private, so this workflow does not assume public pull access
+# anywhere - GHCR inherits the repo's visibility by default, and nothing here
+# changes the package's visibility setting.
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: "release tag to check out and publish, e.g. v1.2.3"
+        required: true
+        type: string
+      version:
+        description: "semantic version for the image tag, e.g. 1.2.3"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "release tag to check out and publish, e.g. v1.2.3"
+        required: true
+        type: string
+      version:
+        description: "semantic version for the image tag, e.g. 1.2.3"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Keyed on the tag, not the ref: two different releases must never be
+  # serialized against each other, but a re-run of the same failed publish should
+  # queue behind, not race, an earlier attempt at the same tag.
+  group: publish-image-${{ inputs.tag_name }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  publish:
+    name: build and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      packages: write
+    steps:
+      - name: checkout the released commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag_name }}
+          persist-credentials: false
+
+      # GO_VERSION is read straight out of go.mod's `go` directive rather than
+      # hardcoded here or left to the Dockerfile's own fallback default - see the
+      # Dockerfile's ARG GO_VERSION comment for why that default exists and why
+      # it is not the source of truth. sed rather than grep -oP: -P is a GNU
+      # extension not guaranteed on every runner image.
+      - name: read Go version from go.mod
+        id: go
+        run: |
+          version="$(sed -n 's/^go //p' go.mod)"
+          if [ -z "$version" ]; then
+            echo "::error::could not read a go directive out of go.mod"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: set up docker buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: log in to GHCR
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: build and push
+        id: push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          build-args: |
+            GO_VERSION=${{ steps.go.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=codexlb2otel-publish
+          cache-to: type=gha,mode=max,scope=codexlb2otel-publish
+
+      # "tagged by version and by digest" (issue #10): the version tags above are
+      # human-friendly and mutable (`latest` moves, and even a semver tag could in
+      # principle be re-pushed); the digest push output is the immutable
+      # content-address of exactly what got built. Recording
+      # IMAGE@sha256:<digest> in the job summary is what makes that digest
+      # actually discoverable after the fact, rather than only living in
+      # buildx's own transient step output.
+      - name: record the pushed digest
+        env:
+          # Passed through env: rather than interpolated straight into the run:
+          # body - both values are trusted here (release-please's own output, or
+          # a maintainer-supplied workflow_dispatch input; either way pushing
+          # this image already required packages: write) but quoting via env is
+          # the cheap, uniform habit that keeps this workflow safe even if a
+          # future edit adds a less-trusted source for either value.
+          IMAGE_VERSION: ${{ inputs.version }}
+          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          {
+            echo "### codexlb2otel image published"
+            echo
+            echo "- \`${IMAGE}:${IMAGE_VERSION}\`"
+            echo "- \`${IMAGE}@${IMAGE_DIGEST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,74 @@
+# Release automation for codexlb2otel (issue #10). release-please maintains a
+# standing "release PR" from Conventional Commits on every push to main; merging
+# that PR is what actually cuts a GitHub Release and tag. Once that happens, the
+# publish-image job below builds the packaged image (Dockerfile, issue #10) and
+# pushes it to GHCR - see docker.yml for that half.
+#
+# Why the release step below passes a PAT (secrets.RELEASE_PLEASE_TOKEN) instead
+# of the default GITHUB_TOKEN, written out rather than left as cargo-cult: a
+# release PR opened with the default GITHUB_TOKEN is authored by
+# github-actions[bot], and GitHub will NOT auto-run, on a bot-authored PR, any
+# workflow step that pulls code from ANOTHER repository (a `uses:
+# <owner>/<repo>/...@ref` reference to a shared/reusable workflow). Such runs park
+# at `action_required` behind a manual "Approve and run" gate, and the release PR
+# sits with stuck checks indefinitely. A PAT identity is a trusted author, so CI
+# runs on the release PR unattended, same as any other PR. This repo's own ci.yml
+# deliberately uses only first-party actions/* today, so that trap does not bite
+# yet - written correctly now anyway, rather than left as a landmine for whenever
+# a shared workflow is added later. See docker.yml's own comment for why its
+# GHCR push job does NOT need this PAT.
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+# Least-privilege default; each job below widens only what it needs.
+permissions:
+  contents: read
+
+concurrency:
+  # Serialize releases on rapid main pushes rather than racing two release PRs
+  # against each other; never cancel one mid-flight.
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: maintain release PR / cut release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the GitHub Release + tag, and update the release PR
+      pull-requests: write # open/maintain the release PR
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Builds and pushes the packaged image (Dockerfile, .dockerignore - issue #10)
+  # to GHCR once release-please actually cuts a release. Only runs on a real
+  # release, never on the ordinary "release PR updated" pushes that release-please
+  # also produces - release_created is false on every one of those.
+  #
+  # This does NOT deploy anything: it publishes an image to this PRIVATE repo's
+  # GHCR package. Per issue #10's binding decision, deployment onto camden is a
+  # deliberate, separate, later step - nothing in this workflow touches camden.
+  publish-image:
+    name: publish image to GHCR
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/docker.yml
+    permissions:
+      contents: read
+      packages: write # push the image to this repo's own GHCR package
+    with:
+      tag_name: ${{ needs.release-please.outputs.tag_name }}
+      version: ${{ needs.release-please.outputs.version }}

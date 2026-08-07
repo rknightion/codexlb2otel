@@ -26,6 +26,8 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "/etc/codexlb2otel/config.yaml", "path to the config file")
+	healthcheck := flag.Bool("healthcheck", false,
+		"probe the health endpoint of an already-running instance and exit 0 if ready; for a container HEALTHCHECK")
 	flag.Parse()
 
 	// Config errors, including an invalid config, are reported before any logger
@@ -36,6 +38,26 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "codexlb2otel: %v\n", err)
 		os.Exit(1)
+	}
+
+	// -healthcheck exists so the container image needs no HTTP client of its own.
+	//
+	// The alternative was copying busybox's wget applet into the distroless final
+	// layer, and that quietly defeats the "no shell in the final layer" requirement:
+	// busybox is one multi-call binary that dispatches on argv[0], so anything able
+	// to exec it can ask for the sh applet no matter what the file is named.
+	// Shipping the probe inside the binary that is already there costs nothing and
+	// leaves the image with genuinely no shell to reach.
+	//
+	// It reads the same config the server does, so it probes whatever health.listen
+	// is actually configured rather than a port baked into the Dockerfile at build
+	// time.
+	if *healthcheck {
+		if err := health.Probe(cfg.Health); err != nil {
+			fmt.Fprintf(os.Stderr, "codexlb2otel: healthcheck: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	log := newLogger(cfg.Log)

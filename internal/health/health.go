@@ -71,6 +71,41 @@ func (s *Server) handle(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+// probeTimeout bounds the client side of Probe. A container HEALTHCHECK has its own
+// timeout and will kill this process anyway; failing first with a clear message beats
+// being killed with none.
+const probeTimeout = 3 * time.Second
+
+// Probe asks an already-running instance whether it is ready, and is what the
+// container image's HEALTHCHECK runs (`codexlb2otel -healthcheck`).
+//
+// It exists so the image needs no HTTP client of its own. The obvious alternative -
+// copying busybox's wget applet into the distroless final layer - quietly defeats
+// "no shell in the final layer": busybox is a single multi-call binary that
+// dispatches on argv[0], so anything that can exec it can ask for the sh applet
+// however the file is named. Reusing the binary already in the image costs nothing.
+//
+// A non-200 is a failure, which covers the 503 the handler returns while not ready
+// (during startup, and again during a graceful drain) as well as any other status.
+// The body is deliberately not read: it is the full config dump, and a health probe
+// has no business pulling that into a container's log stream on every interval.
+func Probe(cfg config.Health) error {
+	if cfg.Listen == "" {
+		return errors.New("health.listen is empty; nothing to probe")
+	}
+	client := &http.Client{Timeout: probeTimeout}
+	url := "http://" + cfg.Listen + "/healthz"
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("probing %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s returned %s; the service is running but not ready", url, resp.Status)
+	}
+	return nil
+}
+
 // Run serves until ctx is cancelled, then shuts down within shutdownGrace. A bind
 // failure (most likely the port already in use) is returned immediately rather than
 // only logged, so main treats a health endpoint that never started as the startup

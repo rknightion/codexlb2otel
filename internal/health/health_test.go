@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -83,5 +85,48 @@ func TestServer_ReadinessGatesTheStatusCode(t *testing.T) {
 	}
 	if !decoded.Ready {
 		t.Error("decoded body says ready=false after SetReady(true)")
+	}
+}
+
+// TestProbe_MirrorsReadinessAndFailsClosed covers the container HEALTHCHECK path
+// (`codexlb2otel -healthcheck`). The 503-while-draining case is the one that
+// matters: Docker restarts an unhealthy container, so a probe that treated
+// not-ready as success would report a service that has stopped polling as fine,
+// and one that treated an unreachable service as success would never restart
+// anything at all.
+func TestProbe_MirrorsReadinessAndFailsClosed(t *testing.T) {
+	srv := New(config.Config{Health: config.Health{Enabled: true, Listen: "127.0.0.1:0"}},
+		slog.New(slog.DiscardHandler))
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	go func() { _ = http.Serve(ln, srv.http.Handler) }()
+	t.Cleanup(func() { _ = ln.Close() })
+
+	cfg := config.Health{Enabled: true, Listen: addr}
+
+	// Not ready yet - the handler returns 503, and the probe must fail rather than
+	// report a still-starting service as healthy.
+	if err := Probe(cfg); err == nil {
+		t.Error("Probe succeeded against a not-ready server; a draining or still-starting " +
+			"service would report healthy")
+	}
+
+	srv.SetReady(true)
+	if err := Probe(cfg); err != nil {
+		t.Errorf("Probe failed against a ready server: %v", err)
+	}
+
+	// Nothing listening at all. Fails closed, which is what makes the container
+	// restart instead of sitting there dead and "healthy".
+	if err := Probe(config.Health{Enabled: true, Listen: "127.0.0.1:1"}); err == nil {
+		t.Error("Probe succeeded against a port with nothing on it")
+	}
+
+	if err := Probe(config.Health{Enabled: true}); err == nil {
+		t.Error("Probe succeeded with an empty listen address")
 	}
 }
