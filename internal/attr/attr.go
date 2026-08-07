@@ -119,10 +119,10 @@ var registry = []Field{
 		Observed: []string{"completed", "incomplete", "transport", "error"},
 		Of:       func(t *turn.Turn) string { return t.Status }},
 	{Key: RequestKind, Class: Bounded, Cap: 8,
-		Observed: []string{"turn", "prewarm", "compaction"},
+		Observed: []string{"turn", "prewarm", "compaction", "memory"},
 		Of:       func(t *turn.Turn) string { return t.RequestKind }},
 	{Key: Family, Class: Bounded, Cap: 8,
-		Observed: []string{"websocket", "http", "probe"},
+		Observed: []string{"websocket", "http", "probe", "unknown"},
 		Of:       func(t *turn.Turn) string { return t.Family }},
 	{Key: ReasoningEffort, Class: Bounded, Cap: 8,
 		Observed: []string{"low", "medium", "high", "xhigh"},
@@ -139,7 +139,8 @@ var registry = []Field{
 		Observed: []string{"user", "subagent"},
 		Of:       func(t *turn.Turn) string { return t.ThreadSource }},
 	{Key: SubagentKind, Class: Bounded, Cap: 8,
-		Of: func(t *turn.Turn) string { return t.SubagentKind }},
+		Observed: []string{"collab_spawn", "thread_spawn", "memory_consolidation"},
+		Of:       func(t *turn.Turn) string { return t.SubagentKind }},
 	{Key: Originator, Class: Bounded, Cap: 16,
 		Observed: []string{"codex-tui", "codex_exec", "codex_cli_rs"},
 		Of:       func(t *turn.Turn) string { return t.Originator }},
@@ -179,8 +180,13 @@ var registry = []Field{
 		}},
 
 	// --- caller-supplied: registered so Guard.With caps them, see Field.Of ---
+	// The full measured catalogue as of the 2026-08-07 corpus: nine names across
+	// 1.84M records, against a cap of 64. The margin is the point - a tool name is
+	// whatever the model's catalogue happens to contain, so this is the one bounded
+	// field with no upstream guarantee of being bounded at all.
 	{Key: ToolName, Class: Bounded, Cap: 64,
-		Observed: []string{"exec", "spawn_agent", "request_user_input", "wait", "functions"}},
+		Observed: []string{"exec", "spawn_agent", "wait_agent", "list_agents", "send_message",
+			"followup_task", "interrupt_agent", "request_user_input", "wait"}},
 	{Key: GenAITokenType, Class: Bounded, Cap: 8,
 		Observed: []string{TokenInput, TokenOutput, TokenReasoning, TokenCached, TokenCacheWrite}},
 

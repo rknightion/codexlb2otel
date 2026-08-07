@@ -64,12 +64,13 @@ type Turn struct {
 	PlanType    string `json:"plan_type,omitempty"`
 	IsSubagent  bool   `json:"is_subagent"`
 
-	// Family is websocket | http | probe. Label metrics with this, never with the
-	// record's Transport field, which reads "websocket" for every record including the
-	// HTTP ones and the synthetic health checks.
+	// Family is websocket | http | probe | unknown. Label metrics with this, never with
+	// the record's Transport field, which reads "websocket" for every record including
+	// the HTTP ones and the synthetic health checks.
 	Family string `json:"family,omitempty"`
-	// RequestKind is turn | prewarm. A prewarm is a speculative warmup that does no
-	// engine work and reports no counters; counting it as a turn inflates turn rates.
+	// RequestKind is turn | prewarm | compaction | memory, and is more than a label: it
+	// is half of the key the reducer diffs cumulative counters against, because the
+	// kinds run CONCURRENTLY on one thread with separate counter series. See seriesKey.
 	RequestKind    string `json:"request_kind,omitempty"`
 	ThreadSource   string `json:"thread_source,omitempty"`
 	SubagentKind   string `json:"subagent_kind,omitempty"`
@@ -154,10 +155,15 @@ type Turn struct {
 	ImageGenTokens    int `json:"image_gen_total_tokens,omitempty"`
 
 	// SafetyBuffering fires when the platform re-runs a response through a different
-	// model for safety reasons. Rare - 4 responses in 4000 - and worth seeing.
+	// model for safety reasons. Rare - 2 responses in 8,078 - and worth seeing.
 	SafetyBuffering  bool     `json:"safety_buffering,omitempty"`
 	SafetyRetryModel string   `json:"safety_retry_model,omitempty"`
 	SafetyUseCases   []string `json:"safety_use_cases,omitempty"`
+	// SafetyReasons is the platform's own account of WHY it buffered - the only field
+	// of the block that explains rather than describes. Captured empty on both observed
+	// occurrences, so it is carried on the strength of what it means rather than of
+	// what it has so far contained.
+	SafetyReasons []string `json:"safety_reasons,omitempty"`
 
 	// Rate limits, as reported alongside this response. codex-lb balances across
 	// several accounts, so these are per-account headroom readings and only mean
@@ -188,12 +194,17 @@ type Turn struct {
 	ToolOutputs   []ToolOutput   `json:"tool_outputs,omitempty"`
 	AgentMessages []AgentMessage `json:"agent_messages,omitempty"`
 	InputItems    int            `json:"input_items,omitempty"`
-	ItemCounts    map[string]int `json:"item_counts,omitempty"`
-	TextDeltas    int            `json:"text_deltas"`
-	ToolDeltas    int            `json:"tool_input_deltas"`
-	Frames        int            `json:"frames"`
-	Bytes         int            `json:"bytes"`
-	ReasoningEnc  int            `json:"reasoning_encrypted_chars,omitempty"`
+	// InputImages counts image parts newly seen on this response - multimodal input,
+	// which the capture proves exists and which nothing else in the pipeline records.
+	// Newly seen, not total: response.create re-sends the whole history every turn, so
+	// a running total would count one screenshot once per remaining turn of the thread.
+	InputImages  int            `json:"input_images,omitempty"`
+	ItemCounts   map[string]int `json:"item_counts,omitempty"`
+	TextDeltas   int            `json:"text_deltas"`
+	ToolDeltas   int            `json:"tool_input_deltas"`
+	Frames       int            `json:"frames"`
+	Bytes        int            `json:"bytes"`
+	ReasoningEnc int            `json:"reasoning_encrypted_chars,omitempty"`
 }
 
 // CriticalPath is the server's per-response timing breakdown.
@@ -264,6 +275,11 @@ type Prompt struct {
 	Role  string `json:"role"` // user | developer | assistant
 	Chars int    `json:"chars"`
 	Text  string `json:"text,omitempty"`
+	// Images counts image parts on this message. The images themselves are never
+	// carried: they arrive as base64 data URIs measured at up to 784 KB each, and a
+	// Loki line over the limit is discarded whole rather than truncated, so inlining
+	// one would destroy the message it belongs to. See turn.imageParts.
+	Images int `json:"images,omitempty"`
 }
 
 // ToolOutput is the result fed back for a tool call - command output, file contents,

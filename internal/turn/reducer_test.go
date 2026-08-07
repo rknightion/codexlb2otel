@@ -3,6 +3,7 @@ package turn
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -120,18 +121,27 @@ func TestReducer_DeltasTrackUsage(t *testing.T) {
 	}
 }
 
-// A negative delta means a logical-turn boundary was missed, which silently corrupts
-// every downstream counter.
+// A negative delta means a series boundary was missed, which silently corrupts every
+// downstream counter.
+//
+// This runs over the WHOLE corpus, not the three cheapest archives it used to read.
+// That is the reason it took until 2026-08-07 to catch the interleaved-memory bug
+// (see TestReducer_InterleavedMemoryKeepsItsOwnBaseline): the failure needs a memory
+// response to land inside a user turn, which happened in twelve turns out of 8,078,
+// none of them in the three smallest hours. A guard on the package's core correctness
+// property is worth the minute it costs; sampling it defeated the point.
 func TestReducer_NoNegativeDeltas(t *testing.T) {
-	for _, x := range corpusTurns(t, 3) {
+	turns := reduceFiles(t, fixture.All(t)...)
+	for _, x := range turns {
 		if x.EngineCallsDelta < 0 || x.SampledTokensDelta < 0 ||
 			x.EnginePromptTokensDelta < 0 || x.EngineCachedTokensDelta < 0 ||
 			x.TurnTimeSecondsDelta < 0 || x.ClientToolPauseMsDelta < 0 {
-			t.Fatalf("negative delta in %s at %s: calls=%d sampled=%d prompt=%d cached=%d",
-				x.LogicalTurnID, x.FirstTS.Format("15:04:05"), x.EngineCallsDelta,
+			t.Fatalf("negative delta in %s (kind %q) at %s: calls=%d sampled=%d prompt=%d cached=%d",
+				x.LogicalTurnID, x.RequestKind, x.FirstTS.Format("15:04:05"), x.EngineCallsDelta,
 				x.SampledTokensDelta, x.EnginePromptTokensDelta, x.EngineCachedTokensDelta)
 		}
 	}
+	t.Logf("checked %d turns across the whole corpus", len(turns))
 }
 
 // Guards the cardinality rules the metric pipeline depends on. Anything asserted here
@@ -536,6 +546,196 @@ func TestReducer_InstructionsAreHashedNotRepeated(t *testing.T) {
 		len(hashes), chars, bodies)
 }
 
+// The server runs memory-consolidation responses CONCURRENTLY with the user's turn on
+// the SAME thread_id, and each keeps its own logical-turn counter series starting at
+// num_engine_calls=1. A single per-thread baseline therefore diffs one series against
+// the other's last reading, and the response that follows an interleaved memory
+// response absorbs the whole of the memory series as its own delta.
+//
+// The numbers below are the measured shape of that failure on the 2026-08-07 corpus,
+// thread 019fdba7 at 11:06:04: the turn series went 731,429 -> 916,716 engine prompt
+// tokens (a true delta of 185,287) but was diffed against the memory series' 121,470,
+// reporting 795,246 - a 4.3x over-count. The only visible symptom was that sampled
+// tokens went NEGATIVE, which is why the guard test below is worth having at all.
+func TestReducer_InterleavedMemoryKeepsItsOwnBaseline(t *testing.T) {
+	const thread = "019fdba7-23e6-7bc1-96ec-7c30f4c1d3e5"
+
+	// One response: create (declaring its request_kind), timing (the cumulative
+	// reading), then completed.
+	respond := func(r *Reducer, req, kind string, calls, sampled, prompt int, ts time.Time) *Turn {
+		meta, err := json.Marshal(map[string]any{
+			"thread_id": thread, "request_kind": kind,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out *Turn
+		for i, ev := range []string{
+			fmt.Sprintf(`{"type":"response.create","model":"gpt-5.6-sol","client_metadata":`+
+				`{"thread_id":%q,"x-codex-turn-metadata":%q}}`, thread, meta),
+			fmt.Sprintf(`{"type":"responsesapi.websocket_timing","timing_metrics":{`+
+				`"timing_scope":"logical_turn","num_engine_calls":%d,`+
+				`"num_sampled_tokens_total":%d,"engine_total_prompt_tokens_total":%d}}`,
+				calls, sampled, prompt),
+			`{"type":"response.completed","response":{"status":"completed","model":"gpt-5.6-sol"}}`,
+		} {
+			done, err := r.Add(&frame.Record{
+				RequestID: req,
+				Headers:   frame.Headers{"thread-id": thread, "originator": "codex-tui"},
+				Timestamp: ts.Add(time.Duration(i) * time.Millisecond),
+				Payload:   frame.Payload{Text: ev},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if done != nil {
+				out = done
+			}
+		}
+		if out == nil {
+			t.Fatalf("%s: no turn emitted", req)
+		}
+		return out
+	}
+
+	base := time.Date(2026, 8, 7, 11, 5, 51, 0, time.UTC)
+	r := New()
+
+	// The user's turn, mid-flight: engine call 4.
+	respond(r, "ws_169efba", frame.KindTurn, 4, 1509, 731429, base)
+	// A memory response interleaves, on the same thread, with its own series at call 1.
+	mem := respond(r, "ws_a784f96", frame.KindMemory, 1, 2600, 121470, base.Add(10*time.Second))
+	// The user's turn continues at engine call 5.
+	turn := respond(r, "ws_edfb8e1", frame.KindTurn, 5, 2115, 916716, base.Add(13*time.Second))
+
+	if got, want := turn.EnginePromptTokensDelta, 916716-731429; got != want {
+		t.Errorf("engine prompt delta = %d, want %d; the turn series was diffed against "+
+			"the interleaved memory series", got, want)
+	}
+	if got, want := turn.SampledTokensDelta, 2115-1509; got != want {
+		t.Errorf("sampled delta = %d, want %d", got, want)
+	}
+	if turn.BaselineReset {
+		t.Error("the turn series had a baseline; it must not be flagged as a cold start")
+	}
+	// The memory response is genuinely the first of its own series, so its full
+	// cumulative reading IS its delta - and it must say so.
+	if got, want := mem.EnginePromptTokensDelta, 121470; got != want {
+		t.Errorf("memory prompt delta = %d, want %d", got, want)
+	}
+	if !mem.BaselineReset {
+		t.Error("the memory response opened a new series with no baseline and must be " +
+			"flagged, or its delta reads as a measurement rather than an upper bound")
+	}
+}
+
+// The HTTP family arrived in the 2026-08-07 capture, so it can finally be proven
+// against real records rather than constructed ones.
+//
+// The worry it settles is id-space collision. Both families key the reducer on
+// request_id, but the HTTP family's is a UUID where the websocket family's is
+// "ws_<hex32>" - and #3 records that Postgres uses request_id for something else
+// again. A collision would not error; it would merge two unrelated responses into one
+// turn, which is why this asserts the shapes are disjoint rather than trusting them to
+// be. It also checks the turns are genuinely reduced and not merely classified: an
+// HTTP turn with no model or no tokens is the silent-degradation failure.
+func TestReducer_HTTPFamilyReducesLikeAnyOther(t *testing.T) {
+	turns := reduceUntil(t, "HTTP-family traffic (a UUID request id)", haveHTTPFamily)
+
+	byShape := map[string]set{}
+	var http, degraded int
+	for _, x := range turns {
+		if x.RequestID == "" {
+			continue
+		}
+		shape := "uuid"
+		if strings.HasPrefix(x.RequestID, "ws_") {
+			shape = "ws_"
+		}
+		if byShape[shape] == nil {
+			byShape[shape] = set{}
+		}
+		byShape[shape].add(x.RequestID)
+
+		if x.Family != frame.FamilyHTTP {
+			continue
+		}
+		http++
+		if x.Status != "completed" {
+			continue // an error or an interrupted response legitimately has neither
+		}
+		if x.Model == "" || x.TotalTokens == 0 || x.ThreadID == "" {
+			degraded++
+			t.Errorf("HTTP turn %s completed but reduced to model=%q tokens=%d thread=%q",
+				x.RequestID, x.Model, x.TotalTokens, x.ThreadID)
+		}
+	}
+
+	for id := range byShape["uuid"] {
+		if byShape["ws_"][id] {
+			t.Errorf("request id %q appears in both id spaces; the two families would "+
+				"merge into one turn", id)
+		}
+	}
+	t.Logf("%d HTTP turns (%d degraded); %d distinct uuid ids vs %d ws_ ids, disjoint",
+		http, degraded, len(byShape["uuid"]), len(byShape["ws_"]))
+}
+
+// Multimodal input must be COUNTED and never CARRIED.
+//
+// An image arrives as an inline base64 data URI - 784 KB for one screenshot in the
+// captured traffic. Loki discards an over-long line whole rather than truncating it,
+// so a single inlined screenshot would destroy the user message it belongs to. Before
+// 2026-08-07 the opposite failure was live: flattenText finds no text field on an
+// image part, so an image-only message flattened to "" and was dropped entirely, with
+// nothing recording that an image had ever been sent.
+func TestReducer_ImagesAreCountedNotCarried(t *testing.T) {
+	turns := reduceUntil(t, "multimodal input (an image part on response.create)", haveImages)
+
+	var withImages, images int
+	for _, x := range turns {
+		if x.InputImages == 0 {
+			continue
+		}
+		withImages++
+		images += x.InputImages
+		for _, p := range x.Prompts {
+			if p.Images == 0 {
+				continue
+			}
+			// The prefix is enough: a data URI declares itself before the payload, and
+			// asserting on the whole body would put a copy of it in the failure output.
+			if strings.Contains(p.Text, "data:image") || strings.Contains(p.Text, ";base64,") {
+				t.Errorf("prompt text carries image payload (%d chars) - a Loki line over "+
+					"the limit is dropped whole, taking the message with it", len(p.Text))
+			}
+		}
+	}
+	t.Logf("%d turns carried %d newly-seen image parts", withImages, images)
+}
+
+// The corpus proves the request kinds the reducer's series key depends on, and any
+// kind it does NOT name is one whose counter series is being diffed against another's.
+func TestReducer_RequestKindsAreNamed(t *testing.T) {
+	kinds := set{}
+	for _, x := range reduceFiles(t, fixture.All(t)...) {
+		kinds.add(x.RequestKind)
+	}
+	known := map[string]bool{
+		frame.KindTurn: true, frame.KindPrewarm: true,
+		frame.KindCompaction: true, frame.KindMemory: true,
+	}
+	for k := range kinds {
+		if !known[k] {
+			t.Errorf("request_kind %q is in the corpus but not named in internal/frame. "+
+				"Each kind runs its own cumulative counter series concurrently on the same "+
+				"thread, so an unnamed one is not a labelling gap - it is a series being "+
+				"diffed against the wrong baseline. Add it and re-check the deltas.", k)
+		}
+	}
+	t.Logf("request kinds present: %v", kinds.keys())
+}
+
 type set map[string]bool
 
 // add records k (ignoring empties) and reports whether it was new.
@@ -561,6 +761,26 @@ func (s set) keys() []string {
 // asserts about it. Keeping the two apart is what lets a missing shape be reported
 // as "the corpus no longer covers this" rather than as a failed assertion, which
 // would send the next reader looking for a bug in the reducer.
+
+func haveHTTPFamily(turns []*Turn) bool {
+	for _, x := range turns {
+		// A completed one: the transport-only turns are classified without ever being
+		// reduced, so they would satisfy the predicate without exercising anything.
+		if x.Family == frame.FamilyHTTP && x.Status == "completed" {
+			return true
+		}
+	}
+	return false
+}
+
+func haveImages(turns []*Turn) bool {
+	for _, x := range turns {
+		if x.InputImages > 0 {
+			return true
+		}
+	}
+	return false
+}
 
 func haveRoutingDimensions(turns []*Turn) bool {
 	var account, plan, safety, limits, perModel bool

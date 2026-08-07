@@ -1,14 +1,14 @@
 {
   "version": 2,
   "coverage": {
-    "files": 12,
-    "file_bytes": 1383128599,
-    "read_bytes": 1383128599,
+    "files": 14,
+    "file_bytes": 1730298562,
+    "read_bytes": 1730298562,
     "sampled": false
   },
   "storage": {
     "multi_member": true,
-    "lines_per_member": 1.2,
+    "lines_per_member": 1.19,
     "filename_patterns": [
       "N-N-NTN.jsonl.gz"
     ],
@@ -73,6 +73,7 @@
       "session-id",
       "thread-id",
       "traceparent",
+      "tracestate",
       "x-client-request-id",
       "x-codex-beta-features",
       "x-codex-installation-id",
@@ -81,7 +82,8 @@
       "x-codex-turn-state",
       "x-codex-window-id",
       "x-openai-memgen-request",
-      "x-openai-subagent"
+      "x-openai-subagent",
+      "x-request-id"
     ],
     "header_values": {
       "authorization": [
@@ -95,6 +97,9 @@
         "codex_exec"
       ],
       "traceparent": [
+        "\u003cset\u003e"
+      ],
+      "tracestate": [
         "\u003cset\u003e"
       ],
       "x-codex-beta-features": [
@@ -116,6 +121,7 @@
     },
     "request_id_shapes": [
       "\u003cempty\u003e",
+      "\u003cuuid\u003e",
       "ws_\u003chex32\u003e"
     ],
     "kind_events": {
@@ -973,10 +979,37 @@
         },
         "safety_buffering": {
           "types": [
-            "bool"
+            "bool",
+            "object"
           ],
           "values": [
             "false"
+          ]
+        },
+        "safety_buffering.reasons": {
+          "types": [
+            "array"
+          ]
+        },
+        "safety_buffering.retry_model": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "gpt-5.6-luna"
+          ]
+        },
+        "safety_buffering.use_cases": {
+          "types": [
+            "array"
+          ]
+        },
+        "safety_buffering.use_cases[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "bio"
           ]
         },
         "sequence_number": {
@@ -1187,7 +1220,8 @@
             "string"
           ],
           "values": [
-            "collab_spawn"
+            "collab_spawn",
+            "memory_consolidation"
           ]
         },
         "generate": {
@@ -1247,6 +1281,11 @@
           ]
         },
         "input[].content[].encrypted_content": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].content[].image_url": {
           "types": [
             "string"
           ]
@@ -2215,7 +2254,7 @@
       }
     },
     "response.function_call_arguments.delta": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "delta": {
           "types": [
@@ -2253,7 +2292,7 @@
       }
     },
     "response.function_call_arguments.done": {
-      "magnitude": 2,
+      "magnitude": 3,
       "paths": {
         "arguments": {
           "types": [
@@ -2908,6 +2947,7 @@
           "values": [
             "exec",
             "followup_task",
+            "interrupt_agent",
             "list_agents",
             "request_user_input",
             "send_message",
@@ -2946,6 +2986,7 @@
             "string"
           ],
           "values": [
+            "completed",
             "in_progress"
           ]
         },
@@ -3080,6 +3121,7 @@
           "values": [
             "exec",
             "followup_task",
+            "interrupt_agent",
             "list_agents",
             "request_user_input",
             "send_message",

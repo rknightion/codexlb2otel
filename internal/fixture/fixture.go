@@ -123,6 +123,17 @@ func Any(tb testing.TB, n int) []string {
 	return out
 }
 
+// All returns every archive, ordered CHRONOLOGICALLY.
+//
+// For tests that must see the whole corpus rather than a cheap sample. Note that this
+// is not Files: that one is size-ordered, and feeding a reducer in size order makes
+// a thread's frames arrive out of sequence, which turns its cumulative counters into
+// deltas that are wrong rather than merely different. See Any for the same distinction.
+func All(tb testing.TB) []string {
+	tb.Helper()
+	return Any(tb, len(Files(tb)))
+}
+
 // Load reads one archive.
 func Load(tb testing.TB, path string) []byte {
 	tb.Helper()

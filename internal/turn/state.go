@@ -4,22 +4,26 @@ import "encoding/json"
 
 // State is the Reducer's durable state.
 //
-// The per-thread cumulative baselines MUST outlive the process. The server's timing
-// metrics accumulate across a logical turn, so a Reducer that restarts mid-turn with
-// an empty baseline treats the next cumulative reading as if it were a delta - a
-// single response would then report the whole turn's tokens and wall time. On a busy
-// thread that is a several-hundred-percent overcount on one data point.
+// The cumulative baselines MUST outlive the process. The server's timing metrics
+// accumulate across a logical turn, so a Reducer that restarts mid-turn with an empty
+// baseline treats the next cumulative reading as if it were a delta - a single
+// response would then report the whole turn's tokens and wall time. On a busy thread
+// that is a several-hundred-percent overcount on one data point.
 //
 // In-flight (open) responses are deliberately NOT persisted. A response interrupted
 // by a restart never sees its response.completed frame, so it can never be completed
 // correctly; carrying it forward would only leak memory. Losing it costs one turn.
 type State struct {
-	Version int                   `json:"version"`
-	Prev    map[string]cumulative `json:"prev"`
-	Seq     map[string]int        `json:"seq"`
+	Version int `json:"version"`
+	// Prev is keyed by turn.seriesKey, NOT by thread id. Version 1 checkpoints keyed it
+	// by thread alone; those keys cannot be migrated because the request_kind half was
+	// never recorded, so a v1 snapshot is discarded rather than reinterpreted. The cost
+	// is one cold-start turn per thread, and cold starts are already flagged.
+	Prev map[string]cumulative `json:"prev"`
+	Seq  map[string]int        `json:"seq"`
 }
 
-const stateVersion = 1
+const stateVersion = 2
 
 // cumulative needs exported JSON field names to round-trip through the checkpoint.
 func (c cumulative) MarshalJSON() ([]byte, error) {
