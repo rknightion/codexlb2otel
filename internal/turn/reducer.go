@@ -21,10 +21,10 @@ import (
 // a bogus delta - see Snapshot/Restore.
 type Reducer struct {
 	open map[string]*Turn      // request_id -> in-flight turn
-	prev map[string]cumulative // thread_id -> last cumulative snapshot
+	prev map[string]cumulative // series key -> last cumulative snapshot
 	seq  map[string]int        // thread_id -> logical turn counter
 	// lastSeen guards against diffing a new reading against a baseline old enough
-	// that unobserved traffic has advanced it. See applyTiming.
+	// that unobserved traffic has advanced it. Keyed like prev. See applyTiming.
 	lastSeen map[string]time.Time
 	seen     *seenSet // content already emitted, bounded
 	opts     Options
@@ -338,6 +338,51 @@ func flattenText(raw json.RawMessage) string {
 	return b.String()
 }
 
+// imageParts counts the image parts of a polymorphic content field and fingerprints
+// them WITHOUT carrying any pixels.
+//
+// Images arrive inline as {"type":"input_image","image_url":"data:image/png;base64,..."}
+// - measured at 784 KB for a single screenshot on the 2026-08-07 corpus. That payload
+// is the one thing that must never reach a Loki line, and not for tidiness: Loki
+// discards an over-long line WHOLE rather than truncating it, so one pasted screenshot
+// would take the user's message with it. flattenText already drops these, because an
+// image part has no text field - but it dropped them so completely that an image-only
+// message vanished with no trace that an image was ever sent. The count is the signal.
+//
+// The fingerprint exists only to keep the dedup key distinct between different images,
+// and is deliberately bounded to a prefix and a length: the same image is re-sent in
+// the conversation history on every later turn of the thread, so hashing the whole
+// payload each time would cost more than the fact is worth.
+func imageParts(raw json.RawMessage) (int, string) {
+	if len(raw) == 0 {
+		return 0, ""
+	}
+	// image_url is held raw rather than as a string: it is a bare data URI today, but
+	// the same field is an object elsewhere in OpenAI's API, and a typed string here
+	// would fail the WHOLE array decode on that shape and silently count zero images.
+	var parts []struct {
+		Type     string          `json:"type"`
+		ImageURL json.RawMessage `json:"image_url"`
+	}
+	if json.Unmarshal(raw, &parts) != nil {
+		return 0, ""
+	}
+	n := 0
+	var fp strings.Builder
+	for _, p := range parts {
+		if len(p.ImageURL) == 0 {
+			continue
+		}
+		n++
+		head := string(p.ImageURL)
+		if len(head) > 48 {
+			head = head[:48]
+		}
+		fmt.Fprintf(&fp, "%s:%d;", head, len(p.ImageURL))
+	}
+	return n, fp.String()
+}
+
 func (r *Reducer) applyCreate(t *Turn, ev frame.Event) {
 	var c createEvent
 	if ev.Decode(&c) != nil {
@@ -452,7 +497,8 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 				continue
 			}
 			body := flattenText(it.Content)
-			if body == "" {
+			images, imageFP := imageParts(it.Content)
+			if body == "" && images == 0 {
 				continue
 			}
 			// Developer messages are harness boilerplate, identical across every
@@ -464,11 +510,16 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 			if it.Role == "developer" {
 				scope = "global"
 			}
-			if !r.seen.add(scope, "msg", it.Role, body) {
+			// The fingerprint is part of the key so two image-only messages, which both
+			// flatten to an empty body, do not dedup to each other.
+			if !r.seen.add(scope, "msg", it.Role, body, imageFP) {
 				continue
 			}
 			text, _ := truncate(body, r.opts.MaxPromptChars)
-			t.Prompts = append(t.Prompts, Prompt{Role: it.Role, Chars: len(body), Text: text})
+			t.Prompts = append(t.Prompts, Prompt{
+				Role: it.Role, Chars: len(body), Text: text, Images: images,
+			})
+			t.InputImages += images
 
 		// agent_message is one agent talking to another, addressed by task path. It is
 		// the only record of the multi-agent topology anywhere in the capture, so it is
@@ -757,6 +808,24 @@ func applyCriticalPath(t *Turn, e *timingEvent) {
 	}
 }
 
+// seriesKey identifies the cumulative counter series a response belongs to.
+//
+// NOT the thread alone, which is what this was until 2026-08-07 and which was wrong.
+// A thread runs more than one logical-turn series AT THE SAME TIME: the platform fires
+// memory-consolidation responses (request_kind "memory") concurrently with the user's
+// turn, on the same thread_id, and each keeps its own counters starting from
+// num_engine_calls=1. Prewarm and compaction are separate series for the same reason.
+//
+// Diffing them against one shared baseline attributed a whole series to a single
+// response of the other. Measured on the 2026-08-07 corpus, thread 019fdba7 at
+// 11:06:04: the turn series moved 731,429 -> 916,716 engine prompt tokens, a true
+// delta of 185,287, but was diffed against the interleaved memory series' 121,470 and
+// reported 795,246 - 4.3x too high. Twelve of 8,078 turns were affected, and the only
+// visible symptom was a negative sampled-token delta on those same twelve, because
+// sampled tokens happen to be the one counter where the memory series runs AHEAD of
+// the turn series. The token over-count, which is the damage, was silent.
+func seriesKey(t *Turn) string { return t.ThreadID + "\x00" + t.RequestKind }
+
 // applyTiming converts the cumulative logical-turn counters into per-response
 // deltas. This is the single most important correctness property in the package:
 // the raw values accumulate across a turn and reset at the next one, so summing
@@ -826,16 +895,17 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 		cur.toolPauseMs = *m.ClientToolPauseMs
 	}
 
-	prev, seen := r.prev[t.ThreadID]
+	key := seriesKey(t)
+	prev, seen := r.prev[key]
 
-	// A stale baseline is worse than none. If this thread was last seen long enough
+	// A stale baseline is worse than none. If this series was last seen long enough
 	// ago that the intervening traffic cannot have been observed - the service was
 	// down, or the archive has a gap - the counters have advanced unseen and diffing
 	// against the old baseline attributes all of that missing work to this one
 	// response. Treat a gap as a fresh turn instead: the cost is one under-counted
 	// response rather than an arbitrarily large over-count.
 	if seen && !t.FirstTS.IsZero() {
-		if last, ok := r.lastSeen[t.ThreadID]; ok && t.FirstTS.Sub(last) > r.opts.MaxThreadGap {
+		if last, ok := r.lastSeen[key]; ok && t.FirstTS.Sub(last) > r.opts.MaxThreadGap {
 			seen = false
 		}
 	}
@@ -868,8 +938,8 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 	// Only advance the baseline once the server actually reported engine work;
 	// prewarm responses report no counters and must not reset it.
 	if m.NumEngineCalls != nil {
-		r.prev[t.ThreadID] = cur
-		r.lastSeen[t.ThreadID] = t.LastTS
+		r.prev[key] = cur
+		r.lastSeen[key] = t.LastTS
 	}
 }
 
@@ -980,6 +1050,7 @@ func applySafetyBuffering(t *Turn, raw json.RawMessage) {
 	var o struct {
 		RetryModel string   `json:"retry_model"`
 		UseCases   []string `json:"use_cases"`
+		Reasons    []string `json:"reasons"`
 	}
 	if json.Unmarshal(raw, &o) != nil {
 		return
@@ -987,6 +1058,7 @@ func applySafetyBuffering(t *Turn, raw json.RawMessage) {
 	t.SafetyBuffering = true
 	t.SafetyRetryModel = o.RetryModel
 	t.SafetyUseCases = o.UseCases
+	t.SafetyReasons = o.Reasons
 }
 
 // Open reports how many responses are still streaming. A steadily growing value

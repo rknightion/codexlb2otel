@@ -45,7 +45,12 @@ func TestFamilyIgnoresTransport(t *testing.T) {
 		{"health probe", "e98e207b-f982-4396-b2b6-378e20bee028", OriginatorProbe, FamilyProbe},
 		// A probe is a probe whatever transport it arrives on.
 		{"probe over websocket", "ws_abc", OriginatorProbe, FamilyProbe},
-		{"absent id", "", "codex-tui", FamilyHTTP},
+		// An absent id says nothing about the family, so it must not be answered with a
+		// guess. This case asserted FamilyHTTP until 2026-08-07, which meant the
+		// connection-level close and error frames - which carry no request_id, and which
+		// exist precisely to report a websocket dying - were reported as an HTTP-family
+		// error rate. Every one of the seven such turns in the corpus was mislabelled.
+		{"absent id", "", "codex-tui", FamilyUnknown},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

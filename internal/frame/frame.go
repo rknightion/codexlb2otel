@@ -85,12 +85,31 @@ const (
 	// FamilyWebsocket is the Codex TUI over a multiplexed websocket: request_id is
 	// "ws_<hex32>", and turn metadata rides in x-codex-turn-metadata.
 	FamilyWebsocket = "websocket"
-	// FamilyHTTP is the same client over per-request HTTP: request_id is a UUID
-	// matching x-request-id, and x-codex-turn-state is prefixed "http_turn_".
+	// FamilyHTTP is the same client over per-request HTTP: request_id is a UUID, the
+	// x-request-id and tracestate headers are present where the websocket family has
+	// neither, and x-codex-turn-state is prefixed "http_turn_".
+	//
+	// Note what it is NOT: these records still carry transport "websocket" and a wss://
+	// URL, because the archive captures codex-lb's own UPSTREAM connection, which is a
+	// websocket whatever the client used. The family describes the client's request
+	// mode, and nothing on the record's own transport fields can tell you it.
+	//
+	// Do not read "request_id is a UUID matching x-request-id" into this, which an
+	// earlier version of this comment did say: the two agree on barely a quarter of
+	// records. See HdrRequestID.
 	FamilyHTTP = "http"
 	// FamilyProbe is codex-lb's own synthetic health check - originator codex_cli_rs,
 	// a tiny model, and the prompt "say OK". Real user metrics must exclude it.
 	FamilyProbe = "probe"
+	// FamilyUnknown is a record carrying no request_id at all, so nothing about it
+	// says which family it belongs to.
+	//
+	// These are NOT rare enough to ignore and not random either: they are the
+	// connection-level close and error frames, which arrive uncorrelated far more often
+	// than not. Folding them into FamilyHTTP - which is what a bare "not ws_ prefixed"
+	// test did until 2026-08-07 - invented an HTTP-family error rate out of websocket
+	// connections dying, in exactly the records that exist to report a connection dying.
+	FamilyUnknown = "unknown"
 )
 
 // OriginatorProbe identifies the synthetic health-check client.
@@ -102,8 +121,11 @@ func (r *Record) Family() string {
 	if r.Header(HdrOriginator) == OriginatorProbe {
 		return FamilyProbe
 	}
-	if strings.HasPrefix(r.RequestID, "ws_") {
+	switch {
+	case strings.HasPrefix(r.RequestID, "ws_"):
 		return FamilyWebsocket
+	case r.RequestID == "":
+		return FamilyUnknown
 	}
 	return FamilyHTTP
 }
@@ -122,10 +144,16 @@ const (
 	HdrBetaFeatures = "x-codex-beta-features"
 	HdrTurnMetadata = "x-codex-turn-metadata"
 	HdrTurnState    = "x-codex-turn-state"
-	HdrRequestID    = "x-request-id"
-	HdrClientReqID  = "x-client-request-id"
-	HdrVersion      = "version"
-	HdrAccountID    = "chatgpt-account-id"
+	// HdrRequestID is the CLIENT's request id, and is NOT the record's own request_id
+	// however identical the two look. Both are UUIDs on the HTTP family, which is what
+	// makes conflating them easy: measured across the corpus they agree on 5,685 of
+	// 22,837 records and disagree on the other 17,152, because the header - like
+	// HdrTurnMetadata - is captured when the connection opens and never refreshed while
+	// request_id advances per response. Correlate on Record.RequestID.
+	HdrRequestID   = "x-request-id"
+	HdrClientReqID = "x-client-request-id"
+	HdrVersion     = "version"
+	HdrAccountID   = "chatgpt-account-id"
 )
 
 // Header returns a header value, tolerating absence. Names must be lowercase; see
@@ -170,6 +198,14 @@ const (
 	// engine work but is not a user turn, so counting it as one overstates turn rates
 	// and understates cost per turn.
 	KindCompaction = "compaction"
+	// KindMemory is the platform distilling the thread into durable memory. Observed
+	// first on the 2026-08-07 corpus, on a tiny model with a json_schema output.
+	//
+	// It matters far beyond its 18 occurrences: a memory response runs CONCURRENTLY
+	// with the user's turn on the SAME thread_id while keeping its own logical-turn
+	// counter series. That is what makes request_kind part of the reducer's cumulative
+	// baseline key rather than a mere label - see turn.seriesKey.
+	KindMemory = "memory"
 )
 
 // IsTransport reports whether this frame is a websocket-level event rather than a
