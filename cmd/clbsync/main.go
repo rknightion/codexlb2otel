@@ -123,7 +123,7 @@ func run() int {
 	}
 
 	actions := plan(remote, local, *localDir)
-	report(remote, local, actions)
+	report(os.Stdout, remote, local, actions, *localDir)
 
 	todo := pending(actions)
 	if len(todo) == 0 {
@@ -312,26 +312,52 @@ func pendingBytes(actions []action) int64 {
 	return n
 }
 
-func report(remote []remoteFile, local []localFile, actions []action) {
-	var localBytes int64
+// report prints the inventory. Sizes are on every row and totalled, because the
+// corpus grows by roughly a gigabyte a day and the question "can I afford to keep
+// syncing" needs answering before the fetch, not after.
+func report(w io.Writer, remote []remoteFile, local []localFile, actions []action, dir string) {
+	var remoteBytes, localBytes int64
+	for _, r := range remote {
+		remoteBytes += r.Size
+	}
 	for _, l := range local {
 		localBytes += l.Size
 	}
-	fmt.Printf("remote: %d archives\nlocal:  %d archives, %s\n\n", len(remote), len(local), bytesH(localBytes))
+
+	fmt.Fprintf(w, "remote: %2d archives, %9s\n", len(remote), bytesH(remoteBytes))
+	fmt.Fprintf(w, "local:  %2d archives, %9s  in %s", len(local), bytesH(localBytes), dir)
+	if free, ok := diskFree(dir); ok {
+		fmt.Fprintf(w, " (%s free)", bytesH(free))
+	}
+	fmt.Fprintf(w, "\n\n")
 
 	for _, a := range actions {
-		switch a.kind {
-		case "current":
-			fmt.Printf("  %-30s current\n", a.remote.Name)
-		case "grown":
-			fmt.Printf("  %-30s GROWN     %s -> %s (codex-lb is still writing this hour)\n",
-				a.remote.Name, bytesH(a.from), bytesH(a.remote.Size))
-		case "replaced":
-			fmt.Printf("  %-30s REPLACED  same name, different capture - keeping both, fetching as %s\n",
-				a.remote.Name, filepath.Base(a.target))
-		default:
-			fmt.Printf("  %-30s NEW       %s\n", a.remote.Name, bytesH(a.remote.Size))
+		fmt.Fprintf(w, "  %-30s %9s  %s\n", a.remote.Name, bytesH(a.remote.Size), a.status())
+	}
+
+	if todo := pending(actions); len(todo) > 0 {
+		add := pendingBytes(todo)
+		fmt.Fprintf(w, "  %-30s %9s\n", "", strings.Repeat("-", 9))
+		fmt.Fprintf(w, "  %-30s %9s  (+%s)", "local after fetch", bytesH(localBytes+add), bytesH(add))
+		if free, ok := diskFree(dir); ok {
+			fmt.Fprintf(w, ", %s free remaining", bytesH(free-add))
 		}
+		fmt.Fprintln(w)
+	}
+}
+
+// status is the right-hand column: what will happen to this file and why.
+func (a action) status() string {
+	switch a.kind {
+	case "current":
+		return "current"
+	case "grown":
+		return fmt.Sprintf("GROWN     +%s (codex-lb is still writing this hour)", bytesH(a.transfer()))
+	case "replaced":
+		return fmt.Sprintf("REPLACED  same name, different capture - keeping both, fetching as %s",
+			filepath.Base(a.target))
+	default:
+		return "NEW"
 	}
 }
 
@@ -399,6 +425,9 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// bytesH gains a decimal place at gigabyte scale. The corpus passed 1GB on day two,
+// and at one decimal a 63MB fetch showed as "1.2GB -> 1.2GB" - hiding precisely the
+// change the totals exist to show.
 func bytesH(n int64) string {
 	const unit = 1024
 	if n < unit {
@@ -409,7 +438,11 @@ func bytesH(n int64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f%cB", float64(n)/float64(div), "KMGTP"[exp])
+	places := 1
+	if exp >= 2 { // GB and above
+		places = 2
+	}
+	return fmt.Sprintf("%.*f%cB", places, float64(n)/float64(div), "KMGTP"[exp])
 }
 
 func usage() {
