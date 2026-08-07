@@ -47,17 +47,19 @@
 #      codex-lb's own compose file lives. Confirm/adjust to wherever the real
 #      config actually lives on camden - copy config.example.yaml there and edit
 #      it, never edit config.example.yaml itself in place.
-#   2. IMAGE TAG: the version below is maintained by release-please
-#      (x-release-please-version, see release-please-config.json's extra-files) -
-#      it will read 0.0.0 until the first real release exists. Do not deploy
-#      against 0.0.0; wait for a real vX.Y.Z release, per the binding decision.
+#
+# IMAGE TAG - :main on purpose, not a pinned version.
+#   camden runs watchtower, so pinning :main is what makes a merge to main reach
+#   the host. The shared publish pipeline pushes :main on every push to main and
+#   :X.Y.Z/:X.Y/:X/:latest only on a release, so :main is the rolling edge tag and
+#   the semver tags exist for anyone who wants to hold still. Deliberately NOT
+#   maintained by release-please's x-release-please-version marker - a version
+#   pinned here would defeat watchtower and freeze the host at whatever the last
+#   release happened to be.
 
 services:
   codexlb2otel:
-    # Version kept in sync with the released image tag by release-please - do not
-    # bump by hand, and do not deploy before a real release exists (see item 2
-    # above).
-    image: ghcr.io/rknightion/codexlb2otel:0.1.0 # x-release-please-version
+    image: ghcr.io/rknightion/codexlb2otel:main
     container_name: codexlb2otel
     restart: unless-stopped
     command: ["-config", "/etc/codexlb2otel/config.yaml"]

@@ -65,10 +65,12 @@ jobs:
     name: publish image to GHCR
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
-    uses: ./.github/workflows/docker.yml
+    uses: ./.github/workflows/publish.yml
     permissions:
-      contents: read
-      packages: write # push the image to this repo's own GHCR package
+      contents: write # attach SBOMs to the GitHub Release
+      packages: write # push to this repo's GHCR package
+      id-token: write # cosign keyless signing
+      attestations: write # build provenance
+      security-events: write # Trivy SARIF into the Security tab
     with:
-      tag_name: ${{ needs.release-please.outputs.tag_name }}
-      version: ${{ needs.release-please.outputs.version }}
+      release-tag: ${{ needs.release-please.outputs.tag_name }}
