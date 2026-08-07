@@ -179,3 +179,38 @@ loki:
 		t.Errorf("error does not name loki.token: %v", err)
 	}
 }
+
+// config.example.yaml is not documentation: it is copied verbatim onto camden as the
+// deployed config (see docker-compose.yml's CONFIG FILE block), and nothing else
+// checks it. A typo in a yaml key is silent - the field keeps its Default() value and
+// the operator's setting is simply ignored, which for archive.retain_days means the
+// disk quietly never gets reclaimed.
+func TestLoad_ExampleConfigIsDeployable(t *testing.T) {
+	for _, env := range []string{
+		"CODEXLB2OTEL_LOKI_TOKEN",
+		"CODEXLB2OTEL_OTLP_TOKEN",
+		"CODEXLB2OTEL_AGENTO11Y_TOKEN",
+	} {
+		t.Setenv(env, "test-token")
+	}
+
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("the shipped example config does not load and validate: %v", err)
+	}
+
+	// Spot-check one key per section that Default() does NOT already supply, so a
+	// dropped or misspelled key cannot pass by falling back to the default.
+	if cfg.Service.Environment != "lab" {
+		t.Errorf("service.environment = %q, want lab", cfg.Service.Environment)
+	}
+	if cfg.Archive.RetainDays != 1 {
+		t.Errorf("archive.retain_days = %d, want 1 (yesterday and older are reclaimed)", cfg.Archive.RetainDays)
+	}
+	if !cfg.AgentO11y.Enabled {
+		t.Error("agento11y.enabled is false; the sigil sink would not run")
+	}
+	if cfg.Loki.User == "" || cfg.OTLP.InstanceID == "" || cfg.AgentO11y.User == "" {
+		t.Error("a basic-auth username is missing; that is a 401 at push time, not a startup error")
+	}
+}

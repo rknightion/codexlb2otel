@@ -108,6 +108,15 @@ type Archive struct {
 	// default deliberately: the archive is the only copy of the raw capture, and a
 	// reclaim that runs by accident is not recoverable.
 	DeleteAfter time.Duration `yaml:"delete_after" json:"delete_after"`
+	// RetainDays keeps that many UTC calendar days of archive, counting today, and
+	// reclaims fully ingested files from before that. 1 means today only. Zero
+	// disables it, on the same reasoning as DeleteAfter.
+	//
+	// A calendar rule rather than a second duration because the two are not the same
+	// thing: "delete yesterday and older" at 09:00 is not "delete anything over 24h
+	// old", which would keep half of yesterday. The day comes from the FILENAME,
+	// which codex-lb builds in UTC - see tail.archiveDay.
+	RetainDays int `yaml:"retain_days" json:"retain_days"`
 }
 
 // Loki configures the log sink. Native push, not OTLP: the label and structured
@@ -285,6 +294,9 @@ func (c Config) Validate() error {
 	}
 	if c.Archive.PollInterval <= 0 {
 		add("archive.poll_interval must be positive, got %s", c.Archive.PollInterval)
+	}
+	if c.Archive.RetainDays < 0 {
+		add("archive.retain_days cannot be negative, got %d", c.Archive.RetainDays)
 	}
 	if c.Archive.ChunkBytes <= 0 {
 		add("archive.chunk_bytes must be positive, got %d", c.Archive.ChunkBytes)

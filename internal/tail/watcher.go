@@ -36,8 +36,21 @@ type Config struct {
 	// deletion entirely, which is the default: this removes the only copy of the
 	// raw capture, so it is opt-in rather than something that happens by surprise.
 	DeleteAfter time.Duration
+	// RetainDays keeps that many UTC calendar days of archive, counting today, and
+	// reclaims fully ingested files from before that. 1 means "today only, yesterday
+	// and older go". Zero disables it, same as DeleteAfter.
+	//
+	// Separate from DeleteAfter rather than expressed as one, because a rolling
+	// duration and a calendar boundary are genuinely different things: "24h" at
+	// 09:00 keeps half of yesterday, which is not what "delete yesterday" means. The
+	// two compose - either rule firing is enough to reclaim a file.
+	RetainDays int
 	// Logger receives operational events. Defaults to slog.Default().
 	Logger *slog.Logger
+
+	// now is the clock, injectable so the calendar arithmetic in reclaim can be
+	// tested at a chosen instant instead of only at whatever time the suite runs.
+	now func() time.Time
 }
 
 func (c *Config) setDefaults() {
@@ -52,6 +65,9 @@ func (c *Config) setDefaults() {
 	}
 	if c.Logger == nil {
 		c.Logger = slog.Default()
+	}
+	if c.now == nil {
+		c.now = time.Now
 	}
 }
 
@@ -433,18 +449,55 @@ func (w *Watcher) save() error {
 	return nil
 }
 
+// archiveDayLayout is the date prefix of an archive filename. codex-lb builds the
+// name as datetime.now(UTC).strftime('%Y-%m-%dT%H') - read from its source on camden,
+// not inferred - so the date in the name is a UTC calendar day and RetainDays has to
+// do its arithmetic in UTC to match. Using the local day instead would be invisible
+// in Britain for half the year and would quietly delete the current day's early files
+// anywhere west of Greenwich.
+const archiveDayLayout = "2006-01-02"
+
+// archiveDay reads the UTC calendar day out of an archive filename. A name that does
+// not parse returns false and is never reclaimed by the RetainDays rule - an
+// unrecognised file in the archive directory is not something to delete on a guess.
+func archiveDay(name string) (time.Time, bool) {
+	if len(name) < len(archiveDayLayout) {
+		return time.Time{}, false
+	}
+	day, err := time.ParseInLocation(archiveDayLayout, name[:len(archiveDayLayout)], time.UTC)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return day, true
+}
+
 // reclaim deletes archive files that have been fully ingested.
 //
-// Three conditions, all required. The file must be fully consumed. It must not be
-// the newest file, which is the one codex-lb is currently appending to - offset
-// equalling size there only means we have caught up, not that it is finished. And
-// it must be older than DeleteAfter, which is the operator's margin for pulling a
-// copy before it goes.
+// Two conditions are always required, whichever retention rule fires. The file must
+// be fully consumed - so a restart that comes up behind a backlog reads the backlog
+// before deleting any of it, rather than dropping data it never shipped. And it must
+// not be the newest file, which is the one codex-lb is currently appending to, where
+// offset equalling size only means we have caught up, not that it is finished.
+//
+// On top of those, at least one retention rule must select it:
+//
+//   - RetainDays: the file's own UTC calendar day is older than the retained window.
+//   - DeleteAfter: the file's mtime is older than the operator's margin.
+//
+// Neither set means nothing is ever deleted, which is the default.
 func (w *Watcher) reclaim(files []string) {
-	if w.cfg.DeleteAfter <= 0 || len(files) < 2 {
+	if len(files) < 2 || (w.cfg.DeleteAfter <= 0 && w.cfg.RetainDays <= 0) {
 		return
 	}
-	cutoff := time.Now().Add(-w.cfg.DeleteAfter)
+	now := w.cfg.now()
+	cutoff := now.Add(-w.cfg.DeleteAfter)
+
+	// The oldest UTC day to keep. RetainDays counts today, so 1 keeps today alone.
+	var keepFrom time.Time
+	if w.cfg.RetainDays > 0 {
+		y, m, d := now.UTC().Date()
+		keepFrom = time.Date(y, m, d, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -(w.cfg.RetainDays - 1))
+	}
 
 	// Never the last entry: sorted chronologically, that is the live file.
 	for _, path := range files[:len(files)-1] {
@@ -453,10 +506,23 @@ func (w *Watcher) reclaim(files []string) {
 		if !ok || st.Deleted || st.Offset < st.Size || st.Size == 0 {
 			continue
 		}
-		fi, err := os.Stat(path)
-		if err != nil || fi.ModTime().After(cutoff) {
+
+		reason := ""
+		if w.cfg.RetainDays > 0 {
+			if day, parsed := archiveDay(name); parsed && day.Before(keepFrom) {
+				reason = "retain_days"
+			}
+		}
+		if reason == "" && w.cfg.DeleteAfter > 0 {
+			fi, err := os.Stat(path)
+			if err == nil && !fi.ModTime().After(cutoff) {
+				reason = "delete_after"
+			}
+		}
+		if reason == "" {
 			continue
 		}
+
 		if err := os.Remove(path); err != nil {
 			w.log.Error("could not delete ingested archive", "file", name, "err", err)
 			continue
@@ -464,8 +530,7 @@ func (w *Watcher) reclaim(files []string) {
 		st.Deleted = true
 		w.cp.Files[name] = st
 		w.Stats.FilesDeleted++
-		w.log.Info("deleted fully ingested archive",
-			"file", name, "bytes", st.Size, "age", time.Since(fi.ModTime()).Round(time.Minute))
+		w.log.Info("deleted fully ingested archive", "file", name, "bytes", st.Size, "reason", reason)
 	}
 	if err := w.save(); err != nil {
 		w.log.Error("checkpoint save after reclaim failed", "err", err)

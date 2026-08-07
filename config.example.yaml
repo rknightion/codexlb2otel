@@ -32,10 +32,27 @@ archive:
   # chunk_bytes bounds how much compressed data is read into memory per pass. Archive
   # files reach several hundred MB, so this must stay well below available memory.
   chunk_bytes: 16777216 # 16MiB
-  # delete_after reclaims fully-ingested archive files older than this. ZERO MEANS
-  # NEVER, and that is the default deliberately: the archive is the only copy of the
-  # raw capture, and deletion that runs by accident is not recoverable. Set this only
-  # once the raw archive is backed up elsewhere (see internal/tail's Watcher.reclaim).
+  # retain_days keeps that many UTC calendar days of archive, counting today, and
+  # deletes fully-ingested files from before that. 1 = today only, so yesterday and
+  # older go. Zero disables it.
+  #
+  # The day comes from the FILENAME, which codex-lb writes as
+  # datetime.now(UTC).strftime('%Y-%m-%dT%H') - so this is a UTC calendar boundary,
+  # not a local one, and not a rolling 24 hours either. At 09:00 "delete yesterday"
+  # and "delete anything over 24h old" are different answers; this is the first.
+  #
+  # THE ARCHIVE MOUNT MUST BE WRITABLE for this to do anything. Read-only, os.Remove
+  # returns EROFS and you get one error log per poll and no reclaimed bytes.
+  #
+  # Two guards apply regardless and are not configurable: a file is never deleted
+  # until it has been fully read (so a restart behind a backlog ingests the backlog
+  # before dropping any of it), and the newest file is never deleted at all (codex-lb
+  # is still appending to it).
+  retain_days: 1
+  # delete_after is the rolling-duration alternative, for keeping a fixed margin
+  # rather than a calendar day. Same two guards, same writable-mount requirement.
+  # ZERO MEANS NEVER. Either rule firing is enough to reclaim a file, so leaving this
+  # at zero alongside retain_days above is the normal case, not a contradiction.
   delete_after: 0s
 
 loki:

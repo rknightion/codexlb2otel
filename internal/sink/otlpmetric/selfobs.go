@@ -156,7 +156,9 @@ func newSelfInstruments(meter otelmetric.Meter) (selfInstruments, error) {
 
 	i.filesReclaimed, err = meter.Int64ObservableCounter(attr.MetricSelfFilesReclaimed,
 		otelmetric.WithDescription("Fully-ingested archive files deleted under the "+
-			"operator's opt-in retention window (tail.Config.DeleteAfter)."),
+			"operator's opt-in retention rules (archive.retain_days, archive.delete_after). "+
+			"Flat while retention is on means deletion is failing, not that nothing "+
+			"was due - a read-only archive mount returns EROFS on every attempt."),
 		otelmetric.WithUnit("{file}"))
 	must(attr.MetricSelfFilesReclaimed, err)
 
