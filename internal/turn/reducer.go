@@ -425,6 +425,9 @@ func (r *Reducer) applyClientMetadata(t *Turn, cm clientMetadata) {
 		t.ParentThreadID = m.ParentThreadID
 		t.IsSubagent = true
 	}
+	if m.ParentTurnID != "" {
+		t.ParentTurnID = m.ParentTurnID
+	}
 	if ts, ok := m.TurnStart(); ok {
 		t.TurnStart = ts
 	}
