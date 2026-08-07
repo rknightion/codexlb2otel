@@ -137,6 +137,40 @@ func TestGuardKeepsAdmittingValuesItAlreadyKnows(t *testing.T) {
 	}
 }
 
+// With was a bare function and therefore the one path around the guard - and two of
+// the three sinks took it, because a tool name and a token type are exactly the
+// attributes that cannot be extracted from a Turn. A tool name is whatever the model's
+// tool catalogue happens to contain, so it is the likelier explosion, not the safer one.
+func TestGuardWithCapsCallerSuppliedValues(t *testing.T) {
+	g := NewGuard()
+	f, ok := Lookup(ToolName)
+	if !ok {
+		t.Fatal("tool_name is not on the contract, so nothing caps it")
+	}
+
+	var other int
+	for i := range 500 {
+		got := g.With(nil, KV{ToolName, fmt.Sprintf("tool-%d", i)})
+		if len(got) != 1 {
+			t.Fatalf("With returned %d attributes for one input", len(got))
+		}
+		if got[0].Value == OtherValue {
+			other++
+		}
+	}
+	if want := 500 - f.Cap; other != want {
+		t.Errorf("%d tool names collapsed to %s, want %d", other, OtherValue, want)
+	}
+
+	// A key that is not on the contract at all must not ride along unchecked.
+	if got := g.With(nil, KV{"codexlb.invented_by_a_sink", "x"}); len(got) != 0 {
+		t.Errorf("an off-contract key was emitted: %+v", got)
+	}
+	if g.Rejected()["codexlb.invented_by_a_sink"] != 1 {
+		t.Error("an off-contract key was dropped without being counted")
+	}
+}
+
 func TestValidateLabels(t *testing.T) {
 	if err := ValidateLabels(DefaultLabels); err != nil {
 		t.Fatalf("the shipped default label set does not validate: %v", err)
@@ -227,8 +261,8 @@ func TestRegistryIsWellFormed(t *testing.T) {
 			t.Errorf("duplicate field key %q", f.Key)
 		}
 		seen[f.Key] = true
-		if f.Of == nil {
-			t.Errorf("%q has no extractor", f.Key)
+		if f.Of == nil && f.Class != Bounded {
+			t.Errorf("%q has no extractor and is not a caller-supplied bounded field", f.Key)
 		}
 		if f.Class == Bounded && f.Cap <= 0 {
 			t.Errorf("%q is bounded with no cap, so nothing stops it growing", f.Key)

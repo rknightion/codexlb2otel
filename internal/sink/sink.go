@@ -23,10 +23,16 @@ type Sink interface {
 	// Name identifies the sink in logs and in self-observability metrics.
 	Name() string
 
-	// Emit hands over a batch. Returning nil means the batch is durably accepted OR
-	// safely buffered for a later Flush that will report its own failure - it must not
-	// mean "queued and forgotten". Returning an error means the caller must not treat
-	// these turns as delivered.
+	// Emit hands over a batch. Returning an error means the caller must not treat these
+	// turns as delivered.
+	//
+	// A sink MAY buffer instead of pushing, but the caller cannot then treat nil as
+	// delivery: tail.Watcher persists its checkpoint after every successful poll, so a
+	// buffered batch would be checkpointed and then genuinely lost when the decoupled
+	// flush failed, with nothing left to hold the checkpoint back. cmd/codexlb2otel
+	// therefore pairs every Emit with an immediate Flush, and that pairing - not this
+	// interface - is what makes nil mean pushed. A sink's batch settings consequently
+	// bound the size of one push rather than how often pushes happen.
 	Emit(ctx context.Context, turns []*turn.Turn) error
 
 	// Flush blocks until everything previously handed to Emit has been delivered, and

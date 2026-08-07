@@ -119,7 +119,7 @@ func (s *Sink) recordTokens(ctx context.Context, t *turn.Turn, base []attr.KV) {
 		if v <= 0 {
 			continue
 		}
-		attrs := attr.With(narrowed, attr.KV{Key: attr.GenAITokenType, Value: tt.kind})
+		attrs := s.guard.With(narrowed, attr.KV{Key: attr.GenAITokenType, Value: tt.kind})
 		s.inst.tokens.Add(ctx, int64(v), otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 }
@@ -160,7 +160,7 @@ func (s *Sink) recordToolCalls(ctx context.Context, t *turn.Turn, base []attr.KV
 		if tc.Name == "" {
 			continue
 		}
-		attrs := attr.With(narrowed, attr.KV{Key: attr.ToolName, Value: tc.Name})
+		attrs := s.guard.With(narrowed, attr.KV{Key: attr.ToolName, Value: tc.Name})
 		s.inst.toolCalls.Add(ctx, 1, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 }
@@ -273,7 +273,7 @@ func (s *Sink) recordRateLimits(ctx context.Context, t *turn.Turn, base []attr.K
 		if model == "" {
 			continue
 		}
-		attrs := attr.With(accountAttrs, attr.KV{Key: attr.GenAIRequestModel, Value: model})
+		attrs := s.guard.With(accountAttrs, attr.KV{Key: attr.GenAIRequestModel, Value: model})
 		s.inst.rateLimitPerModel.Record(ctx, pct, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 

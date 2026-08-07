@@ -38,14 +38,18 @@ func main() {
 
 	log := newLogger(cfg.Log)
 
-	snk, err := buildSinks(cfg, log)
+	// The signal context is established BEFORE the sinks, because the OTLP sinks open
+	// exporters against it: built the other way round, a SIGTERM arriving during
+	// startup would leave those exporters running on a background context nothing ever
+	// cancels.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	snk, _, err := buildSinks(ctx, cfg, log)
 	if err != nil {
 		log.Error("build sinks", "err", err)
 		os.Exit(1)
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	if err := run(ctx, cfg, log, snk); err != nil && !errors.Is(err, context.Canceled) {
 		log.Error("exited with error", "err", err)
