@@ -279,12 +279,19 @@ func TestReducer_InputContentIsDeduplicated(t *testing.T) {
 // the request-id shape and the originator instead. Getting this wrong silently merges
 // codex-lb's own "say OK" probes into the user-facing latency and cost metrics.
 //
-// Split deliberately. The HTTP and probe families were only ever present in one
-// capture source, which no longer exists - the live corpus is pure websocket, with no
-// UUID request ids and no codex_cli_rs originator. Requiring them from the corpus is
-// therefore unsatisfiable, and a test that cannot pass is worse than no test. What the
-// corpus CAN prove is that everything real gets classified; the other two families are
-// proven against constructed records, where the input is known rather than hoped for.
+// Split deliberately, because corpus coverage of a family is not something a test can
+// rely on. The corpus currently holds no HTTP or probe traffic at all - no UUID request
+// ids, no codex_cli_rs originator - so requiring them would make this test unpassable.
+//
+// That is a COVERAGE gap, not a protocol change, and the distinction matters: codex-lb's
+// request_logs shows 199 HTTP requests in the same 48 hours, all between 16:00 and 18:42
+// on 2026-08-06, which is precisely the window whose captures were deleted. The family
+// will reappear in future captures.
+//
+// So the corpus proves what a corpus can prove - that every real turn gets classified -
+// and the families it happens not to contain are proven against constructed records,
+// where the input is known rather than hoped for. When HTTP and probe traffic returns,
+// the corpus test picks it up and applies the probe assertions automatically.
 func TestReducer_ClassifiesRecordFamilies(t *testing.T) {
 	turns := corpusTurns(t, 3)
 
