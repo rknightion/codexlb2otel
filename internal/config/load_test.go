@@ -207,8 +207,12 @@ func TestLoad_ExampleConfigIsDeployable(t *testing.T) {
 	if cfg.Archive.RetainDays != 1 {
 		t.Errorf("archive.retain_days = %d, want 1 (yesterday and older are reclaimed)", cfg.Archive.RetainDays)
 	}
-	if !cfg.AgentO11y.Enabled {
-		t.Error("agento11y.enabled is false; the sigil sink would not run")
+	// Deliberately false as shipped: the access policy has no sigil:write scope, and
+	// with it on, the 401 is a config fault that holds the checkpoint and stops every
+	// other signal. Asserted rather than ignored so flipping it is a decision someone
+	// makes with the credential in hand, not an accident.
+	if cfg.AgentO11y.Enabled {
+		t.Error("agento11y.enabled is true; without sigil:write on the token that 401s and holds the checkpoint")
 	}
 	if cfg.Loki.User == "" || cfg.OTLP.InstanceID == "" || cfg.AgentO11y.User == "" {
 		t.Error("a basic-auth username is missing; that is a 401 at push time, not a startup error")

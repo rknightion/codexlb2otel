@@ -115,7 +115,21 @@ agento11y:
   # conversations, generations, the agent catalog - is populated ONLY by this
   # endpoint (or by sigil's own tolerant OTLP-span decoder), so spans that reach
   # Tempo land nowhere in sigil's database. See issue #19.
-  enabled: true
+  #
+  # OFF because the CREDENTIAL is not ready, not because the sink is unfinished.
+  # ExportGenerations needs the `sigil:write` scope on the access policy, and the
+  # token in use carries only logs/metrics/traces. Enabled against it, the endpoint
+  # answers 401 "authentication error: invalid scope requested" - which this sink
+  # correctly classifies as a config fault, so it never retries and it HOLDS THE
+  # CHECKPOINT. One missing scope therefore stops every other signal too, which is
+  # why this ships off rather than left to fail loudly. Observed on the first
+  # production run, 2026-08-07.
+  #
+  # To turn on: add `sigil:write` to the access policy - in the Cloud UI `sigil` is
+  # not in the default resource list, add it via "Add scope" then tick Write (the
+  # Cloud resource keeps the old name) - or mint a token from the stack's
+  # grafana-agento11y-app plugin Connection tab. Then flip this to true.
+  enabled: false
   # url is the full ExportGenerations endpoint, not just a host. Region must match
   # the stack's - gb-south-1 for instance 654321, same as the OTLP gateway above.
   url: https://agento11y-prod-gb-south-1.grafana.net/api/v1/generations:export

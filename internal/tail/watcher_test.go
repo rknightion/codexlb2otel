@@ -370,6 +370,48 @@ func TestWatcher_RetainDaysSparesUnreadFile(t *testing.T) {
 	}
 }
 
+// Progress is read by an OTel async-instrument callback that the metrics SDK runs
+// from inside ForceFlush - which sinkEmit calls from inside the emit callback, which
+// Poll calls while holding the write lock. Reading Progress under mu.RLock there is a
+// self-deadlock, and it is not a theoretical one: it took the whole service down on
+// its first production run, presenting as an otlpmetric flush timing out at exactly
+// 30s (the PeriodicReader's default) on every poll forever, with nothing ingested and
+// the checkpoint correctly refusing to advance. Issue #29.
+//
+// The 10s bound is what makes this a test rather than a hang: the failure mode is
+// "never returns", so a plain call would wedge the suite instead of failing it.
+func TestWatcher_ProgressIsSafeFromInsideEmit(t *testing.T) {
+	data := loadFixture(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, archiveName), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newWatcher(t, dir, nil)
+	done := make(chan error, 1)
+	go func() {
+		done <- w.Poll(context.Background(), func(_ context.Context, _ []*turn.Turn) error {
+			// Exactly what internal/selfobs does from the SDK's collection callback.
+			_ = w.Progress()
+			return nil
+		})
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Poll: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Poll never returned: Progress blocked on the lock Poll itself holds")
+	}
+
+	// And the published snapshot is real, not merely non-blocking.
+	if got := w.Progress(); got.Stats.TurnsEmitted == 0 {
+		t.Error("Progress reports no turns emitted after a successful poll")
+	}
+}
+
 // A sink failure must not advance the checkpoint, or the rejected turns are lost.
 func TestWatcher_FailedEmitDoesNotAdvanceCheckpoint(t *testing.T) {
 	data := loadFixture(t)
