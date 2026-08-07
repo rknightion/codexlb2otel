@@ -1,0 +1,106 @@
+# codexlb2otel example configuration.
+#
+# Every key below has a default (see internal/config/config.go's Default()); a real
+# deployment only needs to set what differs from it, because Load overlays this file
+# on top of Default() rather than replacing it - an absent key keeps its default
+# rather than becoming a zero value.
+#
+# Secrets (loki.token, otlp.token) NEVER go inline here. Two forms are supported:
+#   ${ENV_VAR_NAME}   read from an environment variable at startup
+#   file:/some/path   read from a file's contents (trailing whitespace trimmed)
+# An unset ${ENV_VAR_NAME} or an unreadable file: is a startup error, not a silent
+# empty credential - see config.Secret.Resolve.
+
+service:
+  # name is the service_name Loki stream label and the OTel service.name resource
+  # attribute. Required.
+  name: codexlb2otel
+  # environment is an optional resource attribute distinguishing deployments, e.g.
+  # "lab" vs "prod". Leave empty if there is only one.
+  environment: lab
+
+archive:
+  # dir is the conversation-archive directory codex-lb writes into.
+  dir: /opt/codex-lb/data/codex-lb/conversation-archive
+  # checkpoint is where byte offsets and reducer state are persisted so a restart
+  # resumes exactly rather than re-shipping the whole archive. Must be on a volume
+  # that survives container/host restarts.
+  checkpoint: /var/lib/codexlb2otel/checkpoint.json
+  # poll_interval is how often the directory is rescanned for new data.
+  poll_interval: 5s
+  # chunk_bytes bounds how much compressed data is read into memory per pass. Archive
+  # files reach several hundred MB, so this must stay well below available memory.
+  chunk_bytes: 16777216 # 16MiB
+  # delete_after reclaims fully-ingested archive files older than this. ZERO MEANS
+  # NEVER, and that is the default deliberately: the archive is the only copy of the
+  # raw capture, and deletion that runs by accident is not recoverable. Set this only
+  # once the raw archive is backed up elsewhere (see internal/tail's Watcher.reclaim).
+  delete_after: 0s
+
+loki:
+  # enabled turns on the native Loki log push. This is the ONLY log transport this
+  # service has - there is deliberately no OTLP logs option, because label and
+  # structured-metadata control (which OTLP's log model does not have an equivalent
+  # of) is the entire reason this path was chosen over OTLP for logs.
+  enabled: true
+  # url is the full push endpoint, including /loki/api/v1/push.
+  url: https://logs-prod-035.grafana.net/loki/api/v1/push
+  # user is the Grafana Cloud Loki user id, sent as the basic-auth username.
+  user: "1175378"
+  # token is the access-policy token with logs:write, resolved from the environment
+  # so it never appears in this file or in version control.
+  token: "${CODEXLB2OTEL_LOKI_TOKEN}"
+  # labels are the Loki stream keys. Validated against internal/attr's bounded
+  # allowlist at startup: only fields with a small, known set of values may become a
+  # label, because each distinct value opens a new stream. Everything else about a
+  # record is still queryable, as structured metadata rather than a label. Leave
+  # unset for the minimal default set (service_name, family, record_type).
+  # labels: [service_name, family, record_type]
+  # max_line_bytes is the per-line budget, kept under Loki's max_line_size (256KiB).
+  # Loki DISCARDS an oversized line entirely rather than truncating it, so this must
+  # bite first, on this side, where the overflow is at least visible.
+  max_line_bytes: 196608 # 192KiB
+  # batch_size and batch_wait bound how much is buffered before a push.
+  batch_size: 1000
+  batch_wait: 2s
+  # timeout bounds a single push attempt.
+  timeout: 30s
+  # max_retries bounds retries of a RETRYABLE failure. A permanent 4xx is counted and
+  # dropped rather than retried forever, which would wedge the checkpoint behind it.
+  max_retries: 5
+  # record_types selects which line kinds are emitted. Empty means all of them.
+  # record_types: []
+
+otlp:
+  # endpoint is the OTLP gateway base URL. Serves both metrics and traces.
+  endpoint: https://otlp-gateway-prod-gb-south-1.grafana.net/otlp
+  # instance_id is the Grafana Cloud instance id, sent as the basic-auth username.
+  instance_id: "1217581"
+  # token is the access-policy token, resolved from the environment.
+  token: "${CODEXLB2OTEL_OTLP_TOKEN}"
+  metrics:
+    enabled: true
+    # interval is the metric export period.
+    interval: 30s
+  traces:
+    enabled: true
+    # sample_ratio is the head-sampling ratio in [0,1]. 1 means every trace.
+    sample_ratio: 1
+  # timeout bounds a single export, for either signal.
+  timeout: 30s
+
+health:
+  # enabled turns on the readiness + config-dump HTTP endpoint. The config dump is
+  # safe to expose as-is: config.Secret masks itself in every serialisation path, so
+  # loki.token/otlp.token never appear in it regardless of this setting.
+  enabled: true
+  # listen is loopback-only by default - nothing about this endpoint (which reports
+  # endpoint URLs and internal state) is meant to be reachable off the box.
+  listen: "127.0.0.1:9464"
+
+log:
+  # level is debug | info | warn | error.
+  level: info
+  # format is text | json. Use json when logs are collected by something that parses
+  # structured fields rather than a human reading a terminal.
+  format: text
