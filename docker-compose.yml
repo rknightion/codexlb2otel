@@ -41,12 +41,17 @@
 #   `Z` is inert - but if SELinux is ever enabled, this mount wants a lowercase
 #   `z` (shared) or no label flag at all, never `Z`.
 #
-# UNRESOLVED - NEEDS A HUMAN before this can be deployed for real:
-#   1. CONFIG FILE PATH: the bind mount source below
-#      (./codexlb2otel/config.yaml) assumes a sibling directory next to wherever
-#      codex-lb's own compose file lives. Confirm/adjust to wherever the real
-#      config actually lives on camden - copy config.example.yaml there and edit
-#      it, never edit config.example.yaml itself in place.
+# CONFIG FILE - RESOLVED against camden 2026-08-07:
+#   it sits beside codex-lb's own compose file, which is /opt/codex-lb/compose.yml,
+#   so the relative source below resolves to /opt/codex-lb/codexlb2otel.config.yaml.
+#   Named codexlb2otel.config.yaml rather than config.yaml because that directory
+#   already holds codex-lb's own compose.yml, .env and README - a bare config.yaml
+#   there would read as codex-lb's.
+#
+#   It is a copy of this repo's config.example.yaml, which needs no edits for this
+#   host: archive.dir and archive.checkpoint already match the mounts below, and
+#   both tokens are ${...} references satisfied by /opt/codexlb2otel/.env. Never
+#   edit config.example.yaml in place to configure a host.
 #
 # IMAGE TAG - :main on purpose, not a pinned version.
 #   camden runs watchtower, so pinning :main is what makes a merge to main reach
@@ -101,10 +106,9 @@ services:
       # archive.dir default works unedited - one less place for the two to drift
       # apart. The host path is verified - see the ARCHIVE MOUNT block above.
       - /opt/codex-lb/data/codex-lb/conversation-archive:/opt/codex-lb/data/codex-lb/conversation-archive:ro
-      # Config file: read-only single-file bind mount. config.example.yaml is the
-      # documented starting point - copy it to the path below and edit before
-      # first run. See UNRESOLVED item 1 above.
-      - ./codexlb2otel/config.yaml:/etc/codexlb2otel/config.yaml:ro
+      # Config file: read-only single-file bind mount, resolved relative to
+      # codex-lb's own compose file. See the CONFIG FILE block above.
+      - ./codexlb2otel.config.yaml:/etc/codexlb2otel/config.yaml:ro
       # Checkpoint: the ONLY writable mount, and it holds nothing but byte offsets
       # and reducer state - never archive content. A separate named volume so a
       # misconfigured checkpoint path can never collide with, or silently fall
