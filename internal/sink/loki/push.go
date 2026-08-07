@@ -72,10 +72,14 @@ func streamKey(labels []attr.KV) string {
 	return b.String()
 }
 
+// kvMap renders an attribute set for the wire, translating the dotted OTel key into
+// the underscored name Loki's label grammar requires. This is the only place a key
+// crosses into Loki, so attr.LokiKey is applied here and nowhere else - see its
+// comment for the 400 that made this necessary.
 func kvMap(kvs []attr.KV) map[string]string {
 	m := make(map[string]string, len(kvs))
 	for _, kv := range kvs {
-		m[kv.Key] = kv.Value
+		m[attr.LokiKey(kv.Key)] = kv.Value
 	}
 	return m
 }
@@ -136,7 +140,24 @@ func (s *Sink) push(ctx context.Context, lines []outLine) error {
 			}
 
 		case status >= 400:
-			s.addRejected(classify4xx(status, respBody), int64(len(lines)))
+			reason := classify4xx(status, respBody)
+			s.addRejected(reason, int64(len(lines)))
+			// Not every permanent 4xx is the same kind of permanent.
+			//
+			// line_too_long, out_of_order and stream_limit are verdicts on the DATA:
+			// resending is futile, the checkpoint should advance past it, and dropping
+			// is the decision issues #5 and #6 settled.
+			//
+			// A malformed request or an auth failure is a verdict on the SERVICE. It
+			// will reject every future push identically, so dropping silently means
+			// running forever and delivering nothing - which is exactly what happened
+			// on the first live run, when dotted label names 400'd the whole batch and
+			// the service still wrote a clean checkpoint. Those must surface as errors
+			// so the checkpoint holds and somebody sees it.
+			if configFault(reason) {
+				return fmt.Errorf("loki: push rejected as %s (this will not fix itself): %d: %s",
+					reason, status, snippet(respBody))
+			}
 			return nil
 
 		default:
@@ -235,4 +256,16 @@ func snippet(b []byte) string {
 		return string(b[:max]) + "…"
 	}
 	return string(b)
+}
+
+// configFault reports whether a rejection reason indicts the service's own
+// configuration rather than the data it happened to be carrying.
+//
+// The distinction decides whether a permanent 4xx is survivable. A data verdict is
+// dropped so the checkpoint can move past bytes that will always be rejected; a
+// configuration verdict is returned as an error, because every subsequent push will
+// fail the same way and silently advancing would deliver nothing for as long as
+// nobody looked.
+func configFault(reason string) bool {
+	return reason == sink.ReasonBadRequest || reason == sink.ReasonUnauthorized
 }

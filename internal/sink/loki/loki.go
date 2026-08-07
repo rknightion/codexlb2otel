@@ -129,7 +129,7 @@ func (s *Sink) Emit(ctx context.Context, turns []*turn.Turn) error {
 		if t == nil {
 			continue
 		}
-		lines := buildLines(t, s.guard, s.serviceName, s.cfg.Labels, s.cfg.MaxLineBytes, s.enabled, s)
+		lines := s.dropTooOld(buildLines(t, s.guard, s.serviceName, s.cfg.Labels, s.cfg.MaxLineBytes, s.enabled, s))
 		if len(s.buf) == 0 && len(lines) > 0 {
 			s.opened = time.Now()
 		}
@@ -205,4 +205,39 @@ func (s *Sink) addRejected(reason string, n int64) {
 	s.rejMu.Lock()
 	s.rejected[reason] += n
 	s.rejMu.Unlock()
+}
+
+// dropTooOld removes lines Loki will accept and then discard.
+//
+// Grafana Cloud enforces a maximum sample age, and it does NOT reject an older line -
+// measured 2026-08-07 against logs-prod-035, a push at 3h old returns 204 and is
+// queryable, while 4h, 5h, 8h, 15h and 26h all return 204 and are queryable NOWHERE.
+// There is no error, no rejection body and no counter; the line simply never exists.
+//
+// That is the worst failure this sink can have, and it is invisible by construction:
+// the first live run replayed a 15-hour-old archive, logged nothing, wrote a clean
+// checkpoint, and delivered not one line. Dropping locally converts silent loss into
+// counted loss - the same reasoning as every other rejection reason here.
+//
+// This does not affect the service's actual job. Tailing live traffic emits records
+// seconds old. It bites only on BACKFILL, which cannot work against this tenant at
+// all and should therefore fail loudly rather than appear to succeed.
+func (s *Sink) dropTooOld(lines []outLine) []outLine {
+	if s.cfg.MaxLineAge <= 0 {
+		return lines
+	}
+	cutoff := time.Now().Add(-s.cfg.MaxLineAge)
+	kept := lines[:0]
+	var dropped int64
+	for _, l := range lines {
+		if l.ts.Before(cutoff) {
+			dropped++
+			continue
+		}
+		kept = append(kept, l)
+	}
+	if dropped > 0 {
+		s.addRejected(sink.ReasonTooOld, dropped)
+	}
+	return kept
 }

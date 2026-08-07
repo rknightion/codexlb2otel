@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -231,8 +232,43 @@ func TestSink_WireFormat(t *testing.T) {
 	if err := json.Unmarshal(v[2], &meta); err != nil {
 		t.Fatalf("value[2] is not a JSON object: %s", v[2])
 	}
-	if meta["codexlb.request_id"] != "req-1" {
-		t.Fatalf("structured metadata = %+v, want codexlb.request_id=req-1", meta)
+	if meta["codexlb_request_id"] != "req-1" {
+		t.Fatalf("structured metadata = %+v, want codexlb_request_id=req-1", meta)
+	}
+}
+
+// Loki's label grammar is Prometheus's, so a dot inside braces is a parse error and
+// the whole push 400s. That cost a run that consumed an archive, wrote a clean
+// checkpoint and delivered nothing - the keys are OTel-dotted and nothing translated
+// them. Asserted on both label and metadata keys, since both are label-grammar names.
+func TestPushRequest_NoKeyCarriesADotIntoLoki(t *testing.T) {
+	lines := buildLines(sampleTurn(), attr.NewGuard(), "codexlb2otel",
+		attr.DefaultLabels, 192<<10, nil, &fakeRejecter{counts: map[string]int64{}})
+	if len(lines) == 0 {
+		t.Fatal("no lines built; this test asserts nothing")
+	}
+
+	req := buildPushRequest(lines)
+	if len(req.Streams) == 0 {
+		t.Fatal("no streams built")
+	}
+	for _, st := range req.Streams {
+		for k := range st.Stream {
+			if strings.Contains(k, ".") {
+				t.Errorf("stream label %q contains a dot; Loki 400s the whole push", k)
+			}
+		}
+		for _, v := range st.Values {
+			md, ok := v[2].(map[string]string)
+			if !ok {
+				t.Fatalf("value[2] is %T, want map[string]string", v[2])
+			}
+			for k := range md { //nolint:gocritic // key-shape assertion
+				if strings.Contains(k, ".") {
+					t.Errorf("structured metadata key %q contains a dot", k)
+				}
+			}
+		}
 	}
 }
 

@@ -141,6 +141,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 	// silently flushed would hide a failed flush behind what looks like a clean exit -
 	// so this must run first regardless of runErr.
 	flushErr := snk.Flush(context.WithoutCancel(ctx))
+	reportRejections(log, snk)
 	closeErr := snk.Close(context.WithoutCancel(ctx))
 
 	var healthErr error
@@ -175,4 +176,38 @@ func sinkEmit(s sink.Sink) tail.Emit {
 		}
 		return nil
 	}
+}
+
+// reportRejections logs what each sink refused to deliver, by reason.
+//
+// This is the signal whose absence let a whole run vanish: the first live deployment
+// consumed an archive, wrote a clean checkpoint, exited zero, and delivered nothing -
+// because every line was rejected for a reason nothing printed. A count that exists
+// only inside a sink's struct is not observability.
+//
+// Non-zero counts log at WARN. A rejection is never routine: every reason on
+// sink.Reason* means a line that will never exist in Loki.
+func reportRejections(log *slog.Logger, s sink.Sink) {
+	var walk func(sink.Sink)
+	walk = func(x sink.Sink) {
+		if m, ok := x.(sink.Multi); ok {
+			for _, inner := range m {
+				walk(inner)
+			}
+			return
+		}
+		r, ok := x.(sink.Reporter)
+		if !ok {
+			return
+		}
+		for _, rej := range r.Rejections() {
+			if rej.Count > 0 {
+				log.Warn("lines rejected", "sink", x.Name(), "reason", rej.Reason, "count", rej.Count)
+			}
+		}
+		if n := r.Pending(); n > 0 {
+			log.Warn("undelivered at exit", "sink", x.Name(), "pending", n)
+		}
+	}
+	walk(s)
 }
