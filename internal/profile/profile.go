@@ -339,7 +339,30 @@ func (p *Profile) induce(t string, raw json.RawMessage) {
 	walk(ep, "", v)
 }
 
+// opaque reports whether a subtree should be recorded as a single node rather than
+// walked.
+//
+// A tool's `parameters` is a JSON Schema written by the CLIENT, describing its own
+// tool config - it is not part of the archive protocol. Walking it induces one path
+// per property of every tool, and the first capture containing a tool that this one
+// did not produced 217 "new field" findings that buried the two that mattered: a new
+// client_metadata.parent_turn_id, and a new originator. A drift report nobody can
+// read is a drift report nobody reads.
+//
+// Tool identity is still tracked - tools[].name and tools[].type are enum-captured -
+// so a genuinely new tool appearing is still a finding, at the right granularity.
+func opaque(path string) bool {
+	if !strings.Contains(path, "tools[]") {
+		return false
+	}
+	return strings.HasSuffix(path, ".parameters") || strings.HasSuffix(path, ".format")
+}
+
 func walk(ep *EventProfile, prefix string, v any) {
+	if opaque(prefix) {
+		ep.note(prefix, "json-schema", "")
+		return
+	}
 	switch x := v.(type) {
 	case map[string]any:
 		if prefix != "" {

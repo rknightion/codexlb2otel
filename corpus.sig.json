@@ -1,19 +1,18 @@
 {
-  "version": 1,
+  "version": 2,
   "coverage": {
-    "files": 18,
-    "file_bytes": 1463729386,
-    "read_bytes": 1463729386,
+    "files": 11,
+    "file_bytes": 1110397063,
+    "read_bytes": 1110397063,
     "sampled": false
   },
   "storage": {
     "multi_member": true,
-    "lines_per_member": 1.23,
+    "lines_per_member": 1.21,
     "filename_patterns": [
       "N-N-NTN.jsonl.gz"
     ],
     "payload_framing": [
-      "empty",
       "json-object",
       "plain-text"
     ],
@@ -44,12 +43,10 @@
         "server_to_codex"
       ],
       "extra.close_code": [
-        "1000",
         "1012",
         "\u003cnil\u003e"
       ],
       "extra.frame_type": [
-        "close",
         "error",
         "text"
       ],
@@ -75,8 +72,6 @@
       "session-id",
       "thread-id",
       "traceparent",
-      "tracestate",
-      "version",
       "x-client-request-id",
       "x-codex-beta-features",
       "x-codex-installation-id",
@@ -84,8 +79,7 @@
       "x-codex-turn-metadata",
       "x-codex-turn-state",
       "x-codex-window-id",
-      "x-openai-subagent",
-      "x-request-id"
+      "x-openai-subagent"
     ],
     "header_values": {
       "authorization": [
@@ -96,16 +90,10 @@
       ],
       "originator": [
         "codex-tui",
-        "codex_cli_rs"
+        "codex_exec"
       ],
       "traceparent": [
         "\u003cset\u003e"
-      ],
-      "tracestate": [
-        "\u003cset\u003e"
-      ],
-      "version": [
-        "0.146.1"
       ],
       "x-codex-beta-features": [
         "remote_compaction_v2"
@@ -122,7 +110,6 @@
     },
     "request_id_shapes": [
       "\u003cempty\u003e",
-      "\u003cuuid\u003e",
       "ws_\u003chex32\u003e"
     ],
     "kind_events": {
@@ -154,7 +141,6 @@
       "paths": {
         "additional_rate_limits": {
           "types": [
-            "null",
             "object"
           ]
         },
@@ -216,13 +202,11 @@
         },
         "credits": {
           "types": [
-            "null",
             "object"
           ]
         },
         "credits.balance": {
           "types": [
-            "null",
             "string"
           ],
           "values": [
@@ -250,7 +234,6 @@
             "string"
           ],
           "values": [
-            "business",
             "pro"
           ]
         },
@@ -261,7 +244,6 @@
         },
         "rate_limits": {
           "types": [
-            "null",
             "object"
           ]
         },
@@ -356,7 +338,7 @@
       }
     },
     "error": {
-      "magnitude": 1,
+      "magnitude": 0,
       "paths": {
         "error": {
           "types": [
@@ -368,9 +350,7 @@
             "string"
           ],
           "values": [
-            "previous_response_not_found",
-            "server_is_overloaded",
-            "websocket_connection_limit_reached"
+            "previous_response_not_found"
           ]
         },
         "error.message": {
@@ -380,11 +360,9 @@
         },
         "error.param": {
           "types": [
-            "null",
             "string"
           ],
           "values": [
-            "input",
             "previous_response_id"
           ]
         },
@@ -393,13 +371,7 @@
             "string"
           ],
           "values": [
-            "invalid_request_error",
-            "service_unavailable_error"
-          ]
-        },
-        "sequence_number": {
-          "types": [
-            "number"
+            "invalid_request_error"
           ]
         },
         "status": {
@@ -497,7 +469,6 @@
             "string"
           ],
           "values": [
-            "gpt-5.3-codex-spark",
             "gpt-5.6-sol",
             "gpt-5.6-terra"
           ]
@@ -525,8 +496,7 @@
             "bool"
           ],
           "values": [
-            "false",
-            "true"
+            "false"
           ]
         },
         "response.presence_penalty": {
@@ -563,8 +533,7 @@
             "string"
           ],
           "values": [
-            "all_turns",
-            "current_turn"
+            "all_turns"
           ]
         },
         "response.reasoning.effort": {
@@ -736,28 +705,7 @@
         },
         "response.tools[].format": {
           "types": [
-            "object"
-          ]
-        },
-        "response.tools[].format.definition": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].format.syntax": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "lark"
-          ]
-        },
-        "response.tools[].format.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "grammar"
+            "json-schema"
           ]
         },
         "response.tools[].name": {
@@ -767,6 +715,7 @@
           "values": [
             "collaboration",
             "exec",
+            "functions",
             "request_user_input",
             "wait"
           ]
@@ -778,328 +727,7 @@
         },
         "response.tools[].parameters": {
           "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].parameters.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.autoResolutionMs": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.autoResolutionMs.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.autoResolutionMs.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].parameters.properties.cell_id": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.cell_id.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.cell_id.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.max_tokens": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.max_tokens.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.max_tokens.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].parameters.properties.questions": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.header": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.header.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.header.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.id": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.id.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.id.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "description",
-            "label"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.question": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.question.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.question.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "header",
-            "id",
-            "options",
-            "question"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.terminate": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.terminate.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.terminate.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "boolean"
-          ]
-        },
-        "response.tools[].parameters.properties.yield_time_ms": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.yield_time_ms.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.yield_time_ms.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].parameters.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "cell_id",
-            "questions"
-          ]
-        },
-        "response.tools[].parameters.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
+            "json-schema"
           ]
         },
         "response.tools[].strict": {
@@ -1125,16 +753,24 @@
             "string"
           ]
         },
+        "response.tools[].tools[].format": {
+          "types": [
+            "json-schema"
+          ]
+        },
         "response.tools[].tools[].name": {
           "types": [
             "string"
           ],
           "values": [
+            "exec",
             "followup_task",
             "interrupt_agent",
             "list_agents",
+            "request_user_input",
             "send_message",
             "spawn_agent",
+            "wait",
             "wait_agent"
           ]
         },
@@ -1145,189 +781,7 @@
         },
         "response.tools[].tools[].parameters": {
           "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.fork_turns": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.fork_turns.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.fork_turns.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message.encrypted": {
-          "types": [
-            "bool"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.model": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.model.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.model.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.path_prefix": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.path_prefix.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.path_prefix.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.reasoning_effort": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.reasoning_effort.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.reasoning_effort.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.target": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.target.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.target.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.task_name": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.task_name.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.task_name.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.timeout_ms": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.timeout_ms.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.timeout_ms.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].tools[].parameters.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].tools[].parameters.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "message",
-            "target",
-            "task_name"
-          ]
-        },
-        "response.tools[].tools[].parameters.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
+            "json-schema"
           ]
         },
         "response.tools[].tools[].strict": {
@@ -1343,6 +797,7 @@
             "string"
           ],
           "values": [
+            "custom",
             "function"
           ]
         },
@@ -1426,38 +881,10 @@
         },
         "safety_buffering": {
           "types": [
-            "bool",
-            "object"
+            "bool"
           ],
           "values": [
             "false"
-          ]
-        },
-        "safety_buffering.reasons": {
-          "types": [
-            "array"
-          ]
-        },
-        "safety_buffering.retry_model": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "gpt-5.6-luna"
-          ]
-        },
-        "safety_buffering.use_cases": {
-          "types": [
-            "array"
-          ]
-        },
-        "safety_buffering.use_cases[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "bio",
-            "cyber"
           ]
         },
         "sequence_number": {
@@ -1603,6 +1030,11 @@
         "client_metadata": {
           "types": [
             "object"
+          ]
+        },
+        "client_metadata.parent_turn_id": {
+          "types": [
+            "string"
           ]
         },
         "client_metadata.session_id": {
@@ -1820,22 +1252,7 @@
         },
         "input[].tools[].format": {
           "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].format.definition": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].format.syntax": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].format.type": {
-          "types": [
-            "string"
+            "json-schema"
           ]
         },
         "input[].tools[].name": {
@@ -1845,272 +1262,7 @@
         },
         "input[].tools[].parameters": {
           "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.additionalProperties": {
-          "types": [
-            "bool"
-          ]
-        },
-        "input[].tools[].parameters.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.autoResolutionMs": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.autoResolutionMs.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.autoResolutionMs.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.cell_id": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.cell_id.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.cell_id.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.max_tokens": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.max_tokens.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.max_tokens.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.additionalProperties": {
-          "types": [
-            "bool"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.header": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.header.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.header.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.id": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.id.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.id.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.additionalProperties": {
-          "types": [
-            "bool"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.description": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.description.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.description.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.label": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.label.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.label.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.required[]": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.items.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.options.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.question": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.question.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.properties.question.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.required[]": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.items.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.questions.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.terminate": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.terminate.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.terminate.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.yield_time_ms": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].parameters.properties.yield_time_ms.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.properties.yield_time_ms.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "input[].tools[].parameters.required[]": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].parameters.type": {
-          "types": [
-            "string"
+            "json-schema"
           ]
         },
         "input[].tools[].strict": {
@@ -2133,6 +1285,11 @@
             "string"
           ]
         },
+        "input[].tools[].tools[].format": {
+          "types": [
+            "json-schema"
+          ]
+        },
         "input[].tools[].tools[].name": {
           "types": [
             "string"
@@ -2140,157 +1297,7 @@
         },
         "input[].tools[].tools[].parameters": {
           "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].tools[].parameters.additionalProperties": {
-          "types": [
-            "bool"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.fork_turns": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.fork_turns.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.fork_turns.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.message": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.message.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.message.encrypted": {
-          "types": [
-            "bool"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.message.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.model": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.model.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.model.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.path_prefix": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.path_prefix.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.path_prefix.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.reasoning_effort": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.reasoning_effort.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.reasoning_effort.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.target": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.target.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.target.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.task_name": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.task_name.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.task_name.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.timeout_ms": {
-          "types": [
-            "object"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.timeout_ms.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.properties.timeout_ms.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "input[].tools[].tools[].parameters.required[]": {
-          "types": [
-            "string"
-          ]
-        },
-        "input[].tools[].tools[].parameters.type": {
-          "types": [
-            "string"
+            "json-schema"
           ]
         },
         "input[].tools[].tools[].strict": {
@@ -2323,9 +1330,7 @@
             "string"
           ],
           "values": [
-            "gpt-5.3-codex-spark",
             "gpt-5.6-sol",
-            "gpt-5.6-sol-wm",
             "gpt-5.6-terra"
           ]
         },
@@ -2487,7 +1492,6 @@
             "string"
           ],
           "values": [
-            "gpt-5.3-codex-spark",
             "gpt-5.6-sol",
             "gpt-5.6-terra"
           ]
@@ -2515,8 +1519,7 @@
             "bool"
           ],
           "values": [
-            "false",
-            "true"
+            "false"
           ]
         },
         "response.presence_penalty": {
@@ -2553,8 +1556,7 @@
             "string"
           ],
           "values": [
-            "all_turns",
-            "current_turn"
+            "all_turns"
           ]
         },
         "response.reasoning.effort": {
@@ -2725,28 +1727,7 @@
         },
         "response.tools[].format": {
           "types": [
-            "object"
-          ]
-        },
-        "response.tools[].format.definition": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].format.syntax": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "lark"
-          ]
-        },
-        "response.tools[].format.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "grammar"
+            "json-schema"
           ]
         },
         "response.tools[].name": {
@@ -2756,6 +1737,7 @@
           "values": [
             "collaboration",
             "exec",
+            "functions",
             "request_user_input",
             "wait"
           ]
@@ -2767,328 +1749,7 @@
         },
         "response.tools[].parameters": {
           "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].parameters.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.autoResolutionMs": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.autoResolutionMs.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.autoResolutionMs.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].parameters.properties.cell_id": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.cell_id.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.cell_id.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.max_tokens": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.max_tokens.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.max_tokens.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].parameters.properties.questions": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.header": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.header.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.header.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.id": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.id.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.id.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "description",
-            "label"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.question": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.question.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.question.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "header",
-            "id",
-            "options",
-            "question"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.terminate": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.terminate.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.terminate.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "boolean"
-          ]
-        },
-        "response.tools[].parameters.properties.yield_time_ms": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.yield_time_ms.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.yield_time_ms.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].parameters.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "cell_id",
-            "questions"
-          ]
-        },
-        "response.tools[].parameters.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
+            "json-schema"
           ]
         },
         "response.tools[].strict": {
@@ -3114,16 +1775,24 @@
             "string"
           ]
         },
+        "response.tools[].tools[].format": {
+          "types": [
+            "json-schema"
+          ]
+        },
         "response.tools[].tools[].name": {
           "types": [
             "string"
           ],
           "values": [
+            "exec",
             "followup_task",
             "interrupt_agent",
             "list_agents",
+            "request_user_input",
             "send_message",
             "spawn_agent",
+            "wait",
             "wait_agent"
           ]
         },
@@ -3134,189 +1803,7 @@
         },
         "response.tools[].tools[].parameters": {
           "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.fork_turns": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.fork_turns.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.fork_turns.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message.encrypted": {
-          "types": [
-            "bool"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.model": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.model.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.model.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.path_prefix": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.path_prefix.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.path_prefix.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.reasoning_effort": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.reasoning_effort.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.reasoning_effort.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.target": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.target.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.target.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.task_name": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.task_name.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.task_name.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.timeout_ms": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.timeout_ms.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.timeout_ms.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].tools[].parameters.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].tools[].parameters.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "message",
-            "target",
-            "task_name"
-          ]
-        },
-        "response.tools[].tools[].parameters.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
+            "json-schema"
           ]
         },
         "response.tools[].tools[].strict": {
@@ -3332,6 +1819,7 @@
             "string"
           ],
           "values": [
+            "custom",
             "function"
           ]
         },
@@ -3468,7 +1956,7 @@
       }
     },
     "response.function_call_arguments.delta": {
-      "magnitude": 4,
+      "magnitude": 3,
       "paths": {
         "delta": {
           "types": [
@@ -3506,7 +1994,7 @@
       }
     },
     "response.function_call_arguments.done": {
-      "magnitude": 3,
+      "magnitude": 2,
       "paths": {
         "arguments": {
           "types": [
@@ -3618,7 +2106,6 @@
             "string"
           ],
           "values": [
-            "gpt-5.3-codex-spark",
             "gpt-5.6-sol",
             "gpt-5.6-terra"
           ]
@@ -3646,8 +2133,7 @@
             "bool"
           ],
           "values": [
-            "false",
-            "true"
+            "false"
           ]
         },
         "response.presence_penalty": {
@@ -3684,8 +2170,7 @@
             "string"
           ],
           "values": [
-            "all_turns",
-            "current_turn"
+            "all_turns"
           ]
         },
         "response.reasoning.effort": {
@@ -3856,28 +2341,7 @@
         },
         "response.tools[].format": {
           "types": [
-            "object"
-          ]
-        },
-        "response.tools[].format.definition": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].format.syntax": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "lark"
-          ]
-        },
-        "response.tools[].format.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "grammar"
+            "json-schema"
           ]
         },
         "response.tools[].name": {
@@ -3887,6 +2351,7 @@
           "values": [
             "collaboration",
             "exec",
+            "functions",
             "request_user_input",
             "wait"
           ]
@@ -3898,328 +2363,7 @@
         },
         "response.tools[].parameters": {
           "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].parameters.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.autoResolutionMs": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.autoResolutionMs.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.autoResolutionMs.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].parameters.properties.cell_id": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.cell_id.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.cell_id.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.max_tokens": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.max_tokens.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.max_tokens.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].parameters.properties.questions": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.header": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.header.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.header.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.id": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.id.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.id.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "description",
-            "label"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.items.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.options.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.question": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.question.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.properties.question.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "header",
-            "id",
-            "options",
-            "question"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.items.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.questions.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.properties.terminate": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.terminate.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.terminate.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "boolean"
-          ]
-        },
-        "response.tools[].parameters.properties.yield_time_ms": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].parameters.properties.yield_time_ms.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].parameters.properties.yield_time_ms.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].parameters.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].parameters.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "cell_id",
-            "questions"
-          ]
-        },
-        "response.tools[].parameters.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
+            "json-schema"
           ]
         },
         "response.tools[].strict": {
@@ -4245,16 +2389,24 @@
             "string"
           ]
         },
+        "response.tools[].tools[].format": {
+          "types": [
+            "json-schema"
+          ]
+        },
         "response.tools[].tools[].name": {
           "types": [
             "string"
           ],
           "values": [
+            "exec",
             "followup_task",
             "interrupt_agent",
             "list_agents",
+            "request_user_input",
             "send_message",
             "spawn_agent",
+            "wait",
             "wait_agent"
           ]
         },
@@ -4265,189 +2417,7 @@
         },
         "response.tools[].tools[].parameters": {
           "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.additionalProperties": {
-          "types": [
-            "bool"
-          ],
-          "values": [
-            "false"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.fork_turns": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.fork_turns.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.fork_turns.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message.encrypted": {
-          "types": [
-            "bool"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.message.type": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.model": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.model.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.model.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.path_prefix": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.path_prefix.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.path_prefix.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.reasoning_effort": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.reasoning_effort.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.reasoning_effort.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.target": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.target.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.target.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.task_name": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.task_name.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.task_name.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.timeout_ms": {
-          "types": [
-            "object"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.timeout_ms.description": {
-          "types": [
-            "string"
-          ]
-        },
-        "response.tools[].tools[].parameters.properties.timeout_ms.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "number"
-          ]
-        },
-        "response.tools[].tools[].parameters.required": {
-          "types": [
-            "array"
-          ]
-        },
-        "response.tools[].tools[].parameters.required[]": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "message",
-            "target",
-            "task_name"
-          ]
-        },
-        "response.tools[].tools[].parameters.type": {
-          "types": [
-            "string"
-          ],
-          "values": [
-            "object"
+            "json-schema"
           ]
         },
         "response.tools[].tools[].strict": {
@@ -4463,6 +2433,7 @@
             "string"
           ],
           "values": [
+            "custom",
             "function"
           ]
         },
@@ -4528,7 +2499,7 @@
       }
     },
     "response.output_item.added": {
-      "magnitude": 4,
+      "magnitude": 3,
       "paths": {
         "item": {
           "types": [
@@ -4570,11 +2541,6 @@
             "object"
           ]
         },
-        "item.internal_chat_message_metadata_passthrough.create_time": {
-          "types": [
-            "number"
-          ]
-        },
         "item.internal_chat_message_metadata_passthrough.turn_id": {
           "types": [
             "string"
@@ -4597,7 +2563,6 @@
           "values": [
             "exec",
             "followup_task",
-            "interrupt_agent",
             "list_agents",
             "request_user_input",
             "send_message",
@@ -4676,7 +2641,7 @@
       }
     },
     "response.output_item.done": {
-      "magnitude": 4,
+      "magnitude": 3,
       "paths": {
         "item": {
           "types": [
@@ -4770,7 +2735,6 @@
           "values": [
             "exec",
             "followup_task",
-            "interrupt_agent",
             "list_agents",
             "request_user_input",
             "send_message",
@@ -4849,7 +2813,7 @@
       }
     },
     "response.output_text.delta": {
-      "magnitude": 5,
+      "magnitude": 4,
       "paths": {
         "content_index": {
           "types": [
@@ -5226,16 +3190,6 @@
           ],
           "values": [
             "true"
-          ]
-        },
-        "timing_metrics.taas_provider_start_to_first_token_total_ms": {
-          "types": [
-            "number"
-          ]
-        },
-        "timing_metrics.taas_request_to_provider_start_total_ms": {
-          "types": [
-            "number"
           ]
         },
         "timing_metrics.timing_scope": {

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Pull new conversation archives from the codex-lb host into corpus/processed/,
+# then offer to check them for format drift.
+#
+# Thin wrapper so the entry point sits next to the data it manages; all the logic
+# is in cmd/clbsync, which is versioned and testable.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+exec go run ./cmd/clbsync "$@"
