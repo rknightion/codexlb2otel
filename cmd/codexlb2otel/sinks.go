@@ -7,6 +7,7 @@ import (
 	"github.com/rknightion/codexlb2otel/internal/attr"
 	"github.com/rknightion/codexlb2otel/internal/config"
 	"github.com/rknightion/codexlb2otel/internal/sink"
+	"github.com/rknightion/codexlb2otel/internal/sink/agento11y"
 	"github.com/rknightion/codexlb2otel/internal/sink/loki"
 	"github.com/rknightion/codexlb2otel/internal/sink/otlpmetric"
 	"github.com/rknightion/codexlb2otel/internal/sink/otlptrace"
@@ -48,6 +49,18 @@ func buildSinks(ctx context.Context, cfg config.Config, log *slog.Logger) (sink.
 		}
 		log.Info("otlp traces sink enabled", "endpoint", cfg.OTLP.Endpoint,
 			"sample_ratio", cfg.OTLP.Traces.SampleRatio)
+		sinks = append(sinks, s)
+	}
+	if cfg.AgentO11y.Enabled {
+		// Additive, not a replacement for OTLP.Traces above: sigil's own product
+		// surface (conversations, generations, agent catalog) is populated only by
+		// this ExportGenerations wire contract, and the OTLP trace path to Tempo
+		// keeps running unchanged alongside it. See config.AgentO11y's doc comment.
+		s, err := agento11y.New(cfg.AgentO11y, guard)
+		if err != nil {
+			return nil, nil, err
+		}
+		log.Info("agento11y sink enabled", "url", cfg.AgentO11y.URL)
 		sinks = append(sinks, s)
 	}
 

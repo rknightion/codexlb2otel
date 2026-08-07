@@ -280,6 +280,11 @@ type Prompt struct {
 	// Loki line over the limit is discarded whole rather than truncated, so inlining
 	// one would destroy the message it belongs to. See turn.imageParts.
 	Images int `json:"images,omitempty"`
+	// ImageMIME is the media type the data URI declared for the FIRST image part, e.g.
+	// "image/png". Read from the URI's own declaration, never sniffed from the bytes,
+	// so it stays bounded. Empty when the images did not declare one - "an image was
+	// here" is worth little on its own, but a guessed type would be worth less.
+	ImageMIME string `json:"image_mime,omitempty"`
 }
 
 // ToolOutput is the result fed back for a tool call - command output, file contents,

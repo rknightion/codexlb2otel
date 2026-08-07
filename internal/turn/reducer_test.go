@@ -714,6 +714,45 @@ func TestReducer_ImagesAreCountedNotCarried(t *testing.T) {
 	t.Logf("%d turns carried %d newly-seen image parts", withImages, images)
 }
 
+// The media type is read from the data URI's own declaration, never sniffed from the
+// payload and never guessed - so it stays bounded, and an image that declares nothing
+// reports nothing rather than reporting a plausible lie.
+func TestImageParts_MediaTypeIsDeclaredNotGuessed(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		content  string
+		wantN    int
+		wantMIME string
+	}{
+		{"png data uri", `[{"type":"input_image","image_url":"data:image/png;base64,iVBORw0KGgo"}]`, 1, "image/png"},
+		{"jpeg data uri", `[{"type":"input_image","image_url":"data:image/jpeg;base64,/9j/4AAQ"}]`, 1, "image/jpeg"},
+		// No media type declared: RFC 2397 says that defaults to text/plain, but
+		// asserting a default the sender did not write is a guess like any other.
+		{"no media type", `[{"type":"input_image","image_url":"data:;base64,AAAA"}]`, 1, ""},
+		{"remote url", `[{"type":"input_image","image_url":"https://example.invalid/a.png"}]`, 1, ""},
+		{"text only", `[{"type":"input_text","text":"hi"}]`, 0, ""},
+		// An object-valued image_url must still COUNT. A typed string here would fail
+		// the whole array decode and silently report zero images.
+		{"object image_url", `[{"type":"input_image","image_url":{"url":"data:image/png;base64,AA"}}]`, 1, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			n, mime, fp := imageParts(json.RawMessage(tc.content))
+			if n != tc.wantN {
+				t.Errorf("count = %d, want %d", n, tc.wantN)
+			}
+			if mime != tc.wantMIME {
+				t.Errorf("mime = %q, want %q", mime, tc.wantMIME)
+			}
+			if tc.wantN > 0 && fp == "" {
+				t.Error("fingerprint is empty; two different images would dedup to each other")
+			}
+			if strings.Contains(fp, "base64,") && len(fp) > 80 {
+				t.Errorf("fingerprint is carrying payload, not a bounded prefix: %d bytes", len(fp))
+			}
+		})
+	}
+}
+
 // The corpus proves the request kinds the reducer's series key depends on, and any
 // kind it does NOT name is one whose counter series is being diffed against another's.
 func TestReducer_RequestKindsAreNamed(t *testing.T) {

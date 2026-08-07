@@ -126,6 +126,14 @@ const (
 	ReasonUnauthorized = "unauthorized"
 	ReasonServerError  = "server_error"
 	ReasonTransport    = "transport"
+	// ReasonRejected is a record a remote accepted the BATCH for (2xx) but refused
+	// individually, item by item - agento11y's ExportGenerationsResponse carries this
+	// per generation as `accepted: false` alongside an error string, which a
+	// status-code-only classifier (line_too_long, bad_request, ...) has no slot for:
+	// the HTTP call succeeded and the data was still refused. Always a data fault,
+	// never a config fault - see agento11y.configFault's doc comment for why that
+	// distinction still matters here.
+	ReasonRejected = "rejected"
 )
 
 // Reporter is implemented by sinks that can describe their own health. Optional: the

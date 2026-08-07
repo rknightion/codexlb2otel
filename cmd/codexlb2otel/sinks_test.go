@@ -28,6 +28,7 @@ func credentialed(t *testing.T, c *config.Config) {
 
 	c.Loki.URL, c.Loki.User, c.Loki.Token = srv.URL+"/loki/api/v1/push", "123456", "test-token"
 	c.OTLP.Endpoint, c.OTLP.InstanceID, c.OTLP.Token = srv.URL, "654321", "test-token"
+	c.AgentO11y.URL, c.AgentO11y.User, c.AgentO11y.Token = srv.URL+"/api/v1/generations:export", "654321", "test-token"
 }
 
 func TestBuildSinks_OneEntryPerEnabledDestination(t *testing.T) {
@@ -42,11 +43,13 @@ func TestBuildSinks_OneEntryPerEnabledDestination(t *testing.T) {
 		{"loki only", func(c *config.Config) { c.Loki.Enabled = true }, 1},
 		{"metrics only", func(c *config.Config) { c.OTLP.Metrics.Enabled = true }, 1},
 		{"traces only", func(c *config.Config) { c.OTLP.Traces.Enabled = true }, 1},
-		{"all three", func(c *config.Config) {
+		{"agento11y only", func(c *config.Config) { c.AgentO11y.Enabled = true }, 1},
+		{"all four", func(c *config.Config) {
 			c.Loki.Enabled = true
 			c.OTLP.Metrics.Enabled = true
 			c.OTLP.Traces.Enabled = true
-		}, 3},
+			c.AgentO11y.Enabled = true
+		}, 4},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -86,6 +89,7 @@ func TestBuildSinks_AllSinksShareOneGuard(t *testing.T) {
 	cfg := config.Default()
 	credentialed(t, &cfg)
 	cfg.Loki.Enabled, cfg.OTLP.Metrics.Enabled, cfg.OTLP.Traces.Enabled = true, true, true
+	cfg.AgentO11y.Enabled = true
 
 	snk, guard, err := buildSinks(t.Context(), cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
