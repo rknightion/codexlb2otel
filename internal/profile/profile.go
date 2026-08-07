@@ -119,6 +119,16 @@ type Profile struct {
 	// record is a {"text": "..."} websocket frame.
 	PayloadShapes map[string]int64 `json:"payload_shapes"`
 
+	// PayloadFraming counts how payload.text is framed on the wire.
+	//
+	// Today it is a bare JSON object for every record, because codex-lb multiplexes
+	// the Responses API over a websocket. The same API is also served over HTTP with
+	// server-sent events, and if codex-lb ever captures that path the payload becomes
+	// "data: {...}" lines instead - a change the record's transport field would NOT
+	// show, since it already reads "websocket" for the HTTP family too. Classifying
+	// the framing is therefore the only way a transport change surfaces at all.
+	PayloadFraming map[string]int64 `json:"payload_framing"`
+
 	// PayloadUnparsed counts payloads whose text was not JSON, with samples.
 	PayloadUnparsed int64    `json:"payload_text_not_json"`
 	UnparsedSamples []string `json:"payload_text_not_json_samples,omitempty"`
@@ -144,6 +154,7 @@ func New() *Profile {
 		RecordFields:    map[string]*Hist{},
 		Headers:         map[string]*Hist{},
 		PayloadShapes:   map[string]int64{},
+		PayloadFraming:  map[string]int64{},
 		Events:          map[string]*EventProfile{},
 		RequestIDShapes: map[string]int64{},
 		KindEvents:      map[string]map[string]int64{},
@@ -283,6 +294,7 @@ func (p *Profile) payload(rec map[string]json.RawMessage, kind string) {
 		p.PayloadShapes["text:not-a-string"]++
 		return
 	}
+	p.PayloadFraming[framing(s)]++
 	evRaw := json.RawMessage(s)
 	var probe struct {
 		Type string `json:"type"`
@@ -427,6 +439,7 @@ func (p *Profile) Merge(o *Profile) {
 
 	mergeCounts(p.RecordKeys, o.RecordKeys)
 	mergeCounts(p.PayloadShapes, o.PayloadShapes)
+	mergeCounts(p.PayloadFraming, o.PayloadFraming)
 	mergeCounts(p.RequestIDShapes, o.RequestIDShapes)
 	for k, v := range o.RecordFields {
 		p.field(k).merge(v)
@@ -489,6 +502,41 @@ func (p *Profile) Merge(o *Profile) {
 func mergeCounts(dst, src map[string]int64) {
 	for k, v := range src {
 		dst[k] += v
+	}
+}
+
+// Payload framing classes. Everything captured so far is JSONObject; the rest exist
+// so that a change to the wire format is reported as a new bucket rather than as a
+// flood of unparseable payloads with no explanation.
+const (
+	FramingJSONObject = "json-object"
+	FramingJSONArray  = "json-array"
+	FramingSSE        = "sse-event-stream"
+	FramingJSONScalar = "json-scalar"
+	FramingPlainText  = "plain-text"
+	FramingEmpty      = "empty"
+)
+
+// framing classifies the wire framing of a payload body.
+func framing(s string) string {
+	t := strings.TrimLeft(s, " \t\r\n")
+	switch {
+	case t == "":
+		return FramingEmpty
+	case strings.HasPrefix(t, "data:"), strings.HasPrefix(t, "event:"),
+		strings.HasPrefix(t, "id:"), strings.HasPrefix(t, "retry:"),
+		strings.HasPrefix(t, ":"):
+		// SSE field lines, per the WHATWG event-stream grammar. A leading ":" is a
+		// comment, which is how most servers send their keepalive.
+		return FramingSSE
+	case strings.HasPrefix(t, "{"):
+		return FramingJSONObject
+	case strings.HasPrefix(t, "["):
+		return FramingJSONArray
+	case strings.HasPrefix(t, `"`), t == "true", t == "false", t == "null":
+		return FramingJSONScalar
+	default:
+		return FramingPlainText
 	}
 }
 

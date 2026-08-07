@@ -1,0 +1,5282 @@
+{
+  "version": 1,
+  "coverage": {
+    "files": 18,
+    "file_bytes": 1463729386,
+    "read_bytes": 1463729386,
+    "sampled": false
+  },
+  "storage": {
+    "multi_member": true,
+    "lines_per_member": 1.23,
+    "filename_patterns": [
+      "N-N-NTN.jsonl.gz"
+    ],
+    "payload_framing": [
+      "empty",
+      "json-object",
+      "plain-text"
+    ],
+    "payload_shapes": [
+      "object{text}"
+    ],
+    "undecodable_line_share": 0,
+    "unparsed_payload_share": 0
+  },
+  "record": {
+    "keys": [
+      "account_id",
+      "direction",
+      "extra",
+      "headers",
+      "kind",
+      "method",
+      "payload",
+      "request_id",
+      "status_code",
+      "timestamp",
+      "transport",
+      "url"
+    ],
+    "fields": {
+      "direction": [
+        "codex_to_server",
+        "server_to_codex"
+      ],
+      "extra.close_code": [
+        "1000",
+        "1012",
+        "\u003cnil\u003e"
+      ],
+      "extra.frame_type": [
+        "close",
+        "error",
+        "text"
+      ],
+      "kind": [
+        "responses"
+      ],
+      "method": [
+        "GET"
+      ],
+      "status_code": [
+        ""
+      ],
+      "transport": [
+        "websocket"
+      ],
+      "url": null
+    },
+    "headers": [
+      "authorization",
+      "chatgpt-account-id",
+      "openai-beta",
+      "originator",
+      "session-id",
+      "thread-id",
+      "traceparent",
+      "tracestate",
+      "version",
+      "x-client-request-id",
+      "x-codex-beta-features",
+      "x-codex-installation-id",
+      "x-codex-parent-thread-id",
+      "x-codex-turn-metadata",
+      "x-codex-turn-state",
+      "x-codex-window-id",
+      "x-openai-subagent",
+      "x-request-id"
+    ],
+    "header_values": {
+      "authorization": [
+        "\u003cset\u003e"
+      ],
+      "openai-beta": [
+        "responses_websockets=2026-02-06"
+      ],
+      "originator": [
+        "codex-tui",
+        "codex_cli_rs"
+      ],
+      "traceparent": [
+        "\u003cset\u003e"
+      ],
+      "tracestate": [
+        "\u003cset\u003e"
+      ],
+      "version": [
+        "0.146.1"
+      ],
+      "x-codex-beta-features": [
+        "remote_compaction_v2"
+      ],
+      "x-codex-turn-metadata": [
+        "\u003cset\u003e"
+      ],
+      "x-codex-turn-state": [
+        "\u003cset\u003e"
+      ],
+      "x-openai-subagent": [
+        "collab_spawn"
+      ]
+    },
+    "request_id_shapes": [
+      "\u003cempty\u003e",
+      "\u003cuuid\u003e",
+      "ws_\u003chex32\u003e"
+    ],
+    "kind_events": {
+      "responses": [
+        "codex.rate_limits",
+        "codex.response.metadata",
+        "error",
+        "response.completed",
+        "response.content_part.added",
+        "response.content_part.done",
+        "response.create",
+        "response.created",
+        "response.custom_tool_call_input.delta",
+        "response.custom_tool_call_input.done",
+        "response.function_call_arguments.delta",
+        "response.function_call_arguments.done",
+        "response.in_progress",
+        "response.output_item.added",
+        "response.output_item.done",
+        "response.output_text.delta",
+        "response.output_text.done",
+        "responsesapi.websocket_timing"
+      ]
+    }
+  },
+  "events": {
+    "codex.rate_limits": {
+      "magnitude": 3,
+      "paths": {
+        "additional_rate_limits": {
+          "types": [
+            "null",
+            "object"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark": {
+          "types": [
+            "object"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.allowed": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "true"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.limit_reached": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.primary": {
+          "types": [
+            "object"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.primary.reset_after_seconds": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.primary.reset_at": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.primary.used_percent": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.primary.window_minutes": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.secondary": {
+          "types": [
+            "null"
+          ]
+        },
+        "code_review_rate_limits": {
+          "types": [
+            "null"
+          ]
+        },
+        "credits": {
+          "types": [
+            "null",
+            "object"
+          ]
+        },
+        "credits.balance": {
+          "types": [
+            "null",
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "credits.has_credits": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "credits.unlimited": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "plan_type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "business",
+            "pro"
+          ]
+        },
+        "promo": {
+          "types": [
+            "null"
+          ]
+        },
+        "rate_limits": {
+          "types": [
+            "null",
+            "object"
+          ]
+        },
+        "rate_limits.allowed": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "true"
+          ]
+        },
+        "rate_limits.limit_reached": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "rate_limits.primary": {
+          "types": [
+            "object"
+          ]
+        },
+        "rate_limits.primary.reset_after_seconds": {
+          "types": [
+            "number"
+          ]
+        },
+        "rate_limits.primary.reset_at": {
+          "types": [
+            "number"
+          ]
+        },
+        "rate_limits.primary.used_percent": {
+          "types": [
+            "number"
+          ]
+        },
+        "rate_limits.primary.window_minutes": {
+          "types": [
+            "number"
+          ]
+        },
+        "rate_limits.secondary": {
+          "types": [
+            "null"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "codex.rate_limits"
+          ]
+        }
+      }
+    },
+    "codex.response.metadata": {
+      "magnitude": 3,
+      "paths": {
+        "headers": {
+          "types": [
+            "object"
+          ]
+        },
+        "headers.x-codex-safety-buffering-enabled": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "true"
+          ]
+        },
+        "headers.x-codex-safety-buffering-faster-model": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "gpt-5.6-luna"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "codex.response.metadata"
+          ]
+        }
+      }
+    },
+    "error": {
+      "magnitude": 1,
+      "paths": {
+        "error": {
+          "types": [
+            "object"
+          ]
+        },
+        "error.code": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "previous_response_not_found",
+            "server_is_overloaded",
+            "websocket_connection_limit_reached"
+          ]
+        },
+        "error.message": {
+          "types": [
+            "string"
+          ]
+        },
+        "error.param": {
+          "types": [
+            "null",
+            "string"
+          ],
+          "values": [
+            "input",
+            "previous_response_id"
+          ]
+        },
+        "error.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "invalid_request_error",
+            "service_unavailable_error"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "status": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "error"
+          ]
+        }
+      }
+    },
+    "response.completed": {
+      "magnitude": 3,
+      "paths": {
+        "response": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.background": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.completed_at": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.created_at": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.error": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.frequency_penalty": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.generate": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.id": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.incomplete_details": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.instructions": {
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "response.max_output_tokens": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.max_tool_calls": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.metadata": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.model": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "gpt-5.3-codex-spark",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra"
+          ]
+        },
+        "response.moderation": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.object": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response"
+          ]
+        },
+        "response.output": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.parallel_tool_calls": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false",
+            "true"
+          ]
+        },
+        "response.presence_penalty": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.previous_response_id": {
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "response.prompt_cache_key": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.prompt_cache_retention": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "24h"
+          ]
+        },
+        "response.reasoning": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.reasoning.context": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "all_turns",
+            "current_turn"
+          ]
+        },
+        "response.reasoning.effort": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "high",
+            "low",
+            "medium",
+            "xhigh"
+          ]
+        },
+        "response.reasoning.mode": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "standard"
+          ]
+        },
+        "response.reasoning.summary": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.safety_identifier": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.service_tier": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "auto",
+            "default"
+          ]
+        },
+        "response.status": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "completed"
+          ]
+        },
+        "response.store": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.temperature": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.verbosity": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tool_choice": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "auto"
+          ]
+        },
+        "response.tool_usage": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens_details": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens_details.image_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens_details.text_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens_details": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens_details.image_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens_details.text_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.total_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.web_search": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.web_search.num_requests": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tools": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].format": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].format.definition": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].format.syntax": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "lark"
+          ]
+        },
+        "response.tools[].format.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "grammar"
+          ]
+        },
+        "response.tools[].name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "collaboration",
+            "exec",
+            "request_user_input",
+            "wait"
+          ]
+        },
+        "response.tools[].output_schema": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].parameters": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].parameters.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.autoResolutionMs": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.autoResolutionMs.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.autoResolutionMs.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].parameters.properties.cell_id": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.cell_id.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.cell_id.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.max_tokens": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.max_tokens.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.max_tokens.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].parameters.properties.questions": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.header": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.header.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.header.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.id": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.id.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.id.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "description",
+            "label"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.question": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.question.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.question.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "header",
+            "id",
+            "options",
+            "question"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.terminate": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.terminate.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.terminate.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "boolean"
+          ]
+        },
+        "response.tools[].parameters.properties.yield_time_ms": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.yield_time_ms.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.yield_time_ms.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].parameters.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "cell_id",
+            "questions"
+          ]
+        },
+        "response.tools[].parameters.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].strict": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].tools": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].tools[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "followup_task",
+            "interrupt_agent",
+            "list_agents",
+            "send_message",
+            "spawn_agent",
+            "wait_agent"
+          ]
+        },
+        "response.tools[].tools[].output_schema": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].tools[].parameters": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.fork_turns": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.fork_turns.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.fork_turns.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message.encrypted": {
+          "types": [
+            "bool"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.model": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.model.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.model.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.path_prefix": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.path_prefix.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.path_prefix.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.reasoning_effort": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.reasoning_effort.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.reasoning_effort.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.target": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.target.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.target.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.task_name": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.task_name.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.task_name.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.timeout_ms": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.timeout_ms.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.timeout_ms.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].tools[].parameters.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].tools[].parameters.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "message",
+            "target",
+            "task_name"
+          ]
+        },
+        "response.tools[].tools[].parameters.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].strict": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].tools[].type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "function"
+          ]
+        },
+        "response.tools[].type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "custom",
+            "function",
+            "namespace"
+          ]
+        },
+        "response.top_logprobs": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.top_p": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.truncation": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "disabled"
+          ]
+        },
+        "response.usage": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.usage.input_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.input_tokens_details": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.usage.input_tokens_details.cache_write_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.input_tokens_details.cached_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.output_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.output_tokens_details": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.usage.output_tokens_details.reasoning_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.total_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.user": {
+          "types": [
+            "null"
+          ]
+        },
+        "safety_buffering": {
+          "types": [
+            "bool",
+            "object"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "safety_buffering.reasons": {
+          "types": [
+            "array"
+          ]
+        },
+        "safety_buffering.retry_model": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "gpt-5.6-luna"
+          ]
+        },
+        "safety_buffering.use_cases": {
+          "types": [
+            "array"
+          ]
+        },
+        "safety_buffering.use_cases[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "bio",
+            "cyber"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.completed"
+          ]
+        }
+      }
+    },
+    "response.content_part.added": {
+      "magnitude": 2,
+      "paths": {
+        "content_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "item_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "output_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "part": {
+          "types": [
+            "object"
+          ]
+        },
+        "part.annotations": {
+          "types": [
+            "array"
+          ]
+        },
+        "part.logprobs": {
+          "types": [
+            "array"
+          ]
+        },
+        "part.text": {
+          "types": [
+            "string"
+          ]
+        },
+        "part.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "output_text"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.content_part.added"
+          ]
+        }
+      }
+    },
+    "response.content_part.done": {
+      "magnitude": 2,
+      "paths": {
+        "content_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "item_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "output_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "part": {
+          "types": [
+            "object"
+          ]
+        },
+        "part.annotations": {
+          "types": [
+            "array"
+          ]
+        },
+        "part.logprobs": {
+          "types": [
+            "array"
+          ]
+        },
+        "part.text": {
+          "types": [
+            "string"
+          ]
+        },
+        "part.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "output_text"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.content_part.done"
+          ]
+        }
+      }
+    },
+    "response.create": {
+      "magnitude": 3,
+      "paths": {
+        "client_metadata": {
+          "types": [
+            "object"
+          ]
+        },
+        "client_metadata.session_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.thread_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.turn_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.ws_request_header_traceparent": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.ws_request_header_x_openai_internal_codex_responses_lite": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "true"
+          ]
+        },
+        "client_metadata.x-codex-installation-id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-parent-thread-id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-window-id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-ws-stream-request-start-ms": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-openai-subagent": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "collab_spawn"
+          ]
+        },
+        "generate": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "include": {
+          "types": [
+            "array"
+          ]
+        },
+        "include[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "reasoning.encrypted_content"
+          ]
+        },
+        "input": {
+          "types": [
+            "array"
+          ]
+        },
+        "input[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].arguments": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].author": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].call_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].content": {
+          "types": [
+            "array"
+          ]
+        },
+        "input[].content[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].content[].encrypted_content": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].content[].text": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].content[].type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].encrypted_content": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].id": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].input": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].name": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].output": {
+          "types": [
+            "array",
+            "string"
+          ]
+        },
+        "input[].output[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].output[].text": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].output[].type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].phase": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].recipient": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].role": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].status": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].summary": {
+          "types": [
+            "array"
+          ]
+        },
+        "input[].tools": {
+          "types": [
+            "array"
+          ]
+        },
+        "input[].tools[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].format": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].format.definition": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].format.syntax": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].format.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].name": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.additionalProperties": {
+          "types": [
+            "bool"
+          ]
+        },
+        "input[].tools[].parameters.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.autoResolutionMs": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.autoResolutionMs.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.autoResolutionMs.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.cell_id": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.cell_id.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.cell_id.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.max_tokens": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.max_tokens.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.max_tokens.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.additionalProperties": {
+          "types": [
+            "bool"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.header": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.header.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.header.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.id": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.id.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.id.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.additionalProperties": {
+          "types": [
+            "bool"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.description": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.description.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.description.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.label": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.label.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.properties.label.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.required[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.items.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.options.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.question": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.question.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.properties.question.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.required[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.items.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.questions.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.terminate": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.terminate.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.terminate.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.yield_time_ms": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].parameters.properties.yield_time_ms.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.properties.yield_time_ms.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "input[].tools[].parameters.required[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].parameters.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].strict": {
+          "types": [
+            "bool"
+          ]
+        },
+        "input[].tools[].tools": {
+          "types": [
+            "array"
+          ]
+        },
+        "input[].tools[].tools[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].name": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].parameters.additionalProperties": {
+          "types": [
+            "bool"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.fork_turns": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.fork_turns.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.fork_turns.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.message": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.message.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.message.encrypted": {
+          "types": [
+            "bool"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.message.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.model": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.model.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.model.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.path_prefix": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.path_prefix.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.path_prefix.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.reasoning_effort": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.reasoning_effort.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.reasoning_effort.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.target": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.target.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.target.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.task_name": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.task_name.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.task_name.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.timeout_ms": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.timeout_ms.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.properties.timeout_ms.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "input[].tools[].tools[].parameters.required[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].parameters.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].tools[].strict": {
+          "types": [
+            "bool"
+          ]
+        },
+        "input[].tools[].tools[].type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].tools[].type": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].type": {
+          "types": [
+            "string"
+          ]
+        },
+        "instructions": {
+          "types": [
+            "string"
+          ]
+        },
+        "model": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "gpt-5.3-codex-spark",
+            "gpt-5.6-sol",
+            "gpt-5.6-sol-wm",
+            "gpt-5.6-terra"
+          ]
+        },
+        "parallel_tool_calls": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "previous_response_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "prompt_cache_key": {
+          "types": [
+            "string"
+          ]
+        },
+        "reasoning": {
+          "types": [
+            "object"
+          ]
+        },
+        "reasoning.context": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "all_turns"
+          ]
+        },
+        "reasoning.effort": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "high",
+            "low",
+            "medium",
+            "xhigh"
+          ]
+        },
+        "store": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "text": {
+          "types": [
+            "object"
+          ]
+        },
+        "text.verbosity": {
+          "types": [
+            "string"
+          ]
+        },
+        "tool_choice": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "auto"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.create"
+          ]
+        }
+      }
+    },
+    "response.created": {
+      "magnitude": 3,
+      "paths": {
+        "response": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.background": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.completed_at": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.created_at": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.error": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.frequency_penalty": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.generate": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.id": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.incomplete_details": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.instructions": {
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "response.max_output_tokens": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.max_tool_calls": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.metadata": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.model": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "gpt-5.3-codex-spark",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra"
+          ]
+        },
+        "response.moderation": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.object": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response"
+          ]
+        },
+        "response.output": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.parallel_tool_calls": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false",
+            "true"
+          ]
+        },
+        "response.presence_penalty": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.previous_response_id": {
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "response.prompt_cache_key": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.prompt_cache_retention": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "24h"
+          ]
+        },
+        "response.reasoning": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.reasoning.context": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "all_turns",
+            "current_turn"
+          ]
+        },
+        "response.reasoning.effort": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "high",
+            "low",
+            "medium",
+            "xhigh"
+          ]
+        },
+        "response.reasoning.mode": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "standard"
+          ]
+        },
+        "response.reasoning.summary": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.safety_identifier": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.service_tier": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "auto"
+          ]
+        },
+        "response.status": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "in_progress"
+          ]
+        },
+        "response.store": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.temperature": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.verbosity": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tool_choice": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "auto"
+          ]
+        },
+        "response.tool_usage": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens_details": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens_details.image_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens_details.text_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens_details": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens_details.image_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens_details.text_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.total_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.web_search": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.web_search.num_requests": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tools": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].format": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].format.definition": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].format.syntax": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "lark"
+          ]
+        },
+        "response.tools[].format.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "grammar"
+          ]
+        },
+        "response.tools[].name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "collaboration",
+            "exec",
+            "request_user_input",
+            "wait"
+          ]
+        },
+        "response.tools[].output_schema": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].parameters": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].parameters.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.autoResolutionMs": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.autoResolutionMs.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.autoResolutionMs.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].parameters.properties.cell_id": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.cell_id.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.cell_id.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.max_tokens": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.max_tokens.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.max_tokens.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].parameters.properties.questions": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.header": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.header.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.header.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.id": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.id.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.id.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "description",
+            "label"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.question": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.question.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.question.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "header",
+            "id",
+            "options",
+            "question"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.terminate": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.terminate.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.terminate.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "boolean"
+          ]
+        },
+        "response.tools[].parameters.properties.yield_time_ms": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.yield_time_ms.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.yield_time_ms.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].parameters.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "cell_id",
+            "questions"
+          ]
+        },
+        "response.tools[].parameters.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].strict": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].tools": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].tools[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "followup_task",
+            "interrupt_agent",
+            "list_agents",
+            "send_message",
+            "spawn_agent",
+            "wait_agent"
+          ]
+        },
+        "response.tools[].tools[].output_schema": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].tools[].parameters": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.fork_turns": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.fork_turns.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.fork_turns.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message.encrypted": {
+          "types": [
+            "bool"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.model": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.model.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.model.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.path_prefix": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.path_prefix.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.path_prefix.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.reasoning_effort": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.reasoning_effort.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.reasoning_effort.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.target": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.target.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.target.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.task_name": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.task_name.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.task_name.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.timeout_ms": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.timeout_ms.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.timeout_ms.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].tools[].parameters.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].tools[].parameters.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "message",
+            "target",
+            "task_name"
+          ]
+        },
+        "response.tools[].tools[].parameters.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].strict": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].tools[].type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "function"
+          ]
+        },
+        "response.tools[].type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "custom",
+            "function",
+            "namespace"
+          ]
+        },
+        "response.top_logprobs": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.top_p": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.truncation": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "disabled"
+          ]
+        },
+        "response.usage": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.user": {
+          "types": [
+            "null"
+          ]
+        },
+        "safety_buffering": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.created"
+          ]
+        }
+      }
+    },
+    "response.custom_tool_call_input.delta": {
+      "magnitude": 6,
+      "paths": {
+        "delta": {
+          "types": [
+            "string"
+          ]
+        },
+        "item_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "obfuscation": {
+          "types": [
+            "string"
+          ]
+        },
+        "output_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.custom_tool_call_input.delta"
+          ]
+        }
+      }
+    },
+    "response.custom_tool_call_input.done": {
+      "magnitude": 3,
+      "paths": {
+        "input": {
+          "types": [
+            "string"
+          ]
+        },
+        "item_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "output_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.custom_tool_call_input.done"
+          ]
+        }
+      }
+    },
+    "response.function_call_arguments.delta": {
+      "magnitude": 4,
+      "paths": {
+        "delta": {
+          "types": [
+            "string"
+          ]
+        },
+        "item_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "obfuscation": {
+          "types": [
+            "string"
+          ]
+        },
+        "output_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.function_call_arguments.delta"
+          ]
+        }
+      }
+    },
+    "response.function_call_arguments.done": {
+      "magnitude": 3,
+      "paths": {
+        "arguments": {
+          "types": [
+            "string"
+          ]
+        },
+        "item_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "output_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.function_call_arguments.done"
+          ]
+        }
+      }
+    },
+    "response.in_progress": {
+      "magnitude": 3,
+      "paths": {
+        "response": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.background": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.completed_at": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.created_at": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.error": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.frequency_penalty": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.generate": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.id": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.incomplete_details": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.instructions": {
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "response.max_output_tokens": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.max_tool_calls": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.metadata": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.model": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "gpt-5.3-codex-spark",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra"
+          ]
+        },
+        "response.moderation": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.object": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response"
+          ]
+        },
+        "response.output": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.parallel_tool_calls": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false",
+            "true"
+          ]
+        },
+        "response.presence_penalty": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.previous_response_id": {
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "response.prompt_cache_key": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.prompt_cache_retention": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "24h"
+          ]
+        },
+        "response.reasoning": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.reasoning.context": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "all_turns",
+            "current_turn"
+          ]
+        },
+        "response.reasoning.effort": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "high",
+            "low",
+            "medium",
+            "xhigh"
+          ]
+        },
+        "response.reasoning.mode": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "standard"
+          ]
+        },
+        "response.reasoning.summary": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.safety_identifier": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.service_tier": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "auto"
+          ]
+        },
+        "response.status": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "in_progress"
+          ]
+        },
+        "response.store": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.temperature": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.verbosity": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tool_choice": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "auto"
+          ]
+        },
+        "response.tool_usage": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens_details": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens_details.image_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.input_tokens_details.text_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens_details": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens_details.image_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.output_tokens_details.text_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.image_gen.total_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tool_usage.web_search": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tool_usage.web_search.num_requests": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.tools": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].format": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].format.definition": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].format.syntax": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "lark"
+          ]
+        },
+        "response.tools[].format.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "grammar"
+          ]
+        },
+        "response.tools[].name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "collaboration",
+            "exec",
+            "request_user_input",
+            "wait"
+          ]
+        },
+        "response.tools[].output_schema": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].parameters": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].parameters.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.autoResolutionMs": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.autoResolutionMs.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.autoResolutionMs.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].parameters.properties.cell_id": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.cell_id.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.cell_id.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.max_tokens": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.max_tokens.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.max_tokens.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].parameters.properties.questions": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.header": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.header.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.header.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.id": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.id.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.id.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.description.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.properties.label.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "description",
+            "label"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.items.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.options.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.question": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.question.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.properties.question.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "header",
+            "id",
+            "options",
+            "question"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.items.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.questions.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.properties.terminate": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.terminate.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.terminate.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "boolean"
+          ]
+        },
+        "response.tools[].parameters.properties.yield_time_ms": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].parameters.properties.yield_time_ms.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].parameters.properties.yield_time_ms.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].parameters.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].parameters.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "cell_id",
+            "questions"
+          ]
+        },
+        "response.tools[].parameters.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].strict": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].tools": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].tools[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "followup_task",
+            "interrupt_agent",
+            "list_agents",
+            "send_message",
+            "spawn_agent",
+            "wait_agent"
+          ]
+        },
+        "response.tools[].tools[].output_schema": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].tools[].parameters": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.additionalProperties": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.fork_turns": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.fork_turns.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.fork_turns.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message.encrypted": {
+          "types": [
+            "bool"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.message.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.model": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.model.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.model.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.path_prefix": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.path_prefix.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.path_prefix.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.reasoning_effort": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.reasoning_effort.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.reasoning_effort.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.target": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.target.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.target.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.task_name": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.task_name.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.task_name.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.timeout_ms": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.timeout_ms.description": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.tools[].tools[].parameters.properties.timeout_ms.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "number"
+          ]
+        },
+        "response.tools[].tools[].parameters.required": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].tools[].parameters.required[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "message",
+            "target",
+            "task_name"
+          ]
+        },
+        "response.tools[].tools[].parameters.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "object"
+          ]
+        },
+        "response.tools[].tools[].strict": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "response.tools[].tools[].type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "function"
+          ]
+        },
+        "response.tools[].type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "custom",
+            "function",
+            "namespace"
+          ]
+        },
+        "response.top_logprobs": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.top_p": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.truncation": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "disabled"
+          ]
+        },
+        "response.usage": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.user": {
+          "types": [
+            "null"
+          ]
+        },
+        "safety_buffering": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.in_progress"
+          ]
+        }
+      }
+    },
+    "response.output_item.added": {
+      "magnitude": 4,
+      "paths": {
+        "item": {
+          "types": [
+            "object"
+          ]
+        },
+        "item.arguments": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.call_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.content": {
+          "types": [
+            "array"
+          ]
+        },
+        "item.encrypted_content": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.id": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.input": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.internal_chat_message_metadata_passthrough": {
+          "types": [
+            "object"
+          ]
+        },
+        "item.internal_chat_message_metadata_passthrough.create_time": {
+          "types": [
+            "number"
+          ]
+        },
+        "item.internal_chat_message_metadata_passthrough.turn_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.metadata": {
+          "types": [
+            "object"
+          ]
+        },
+        "item.metadata.turn_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "exec",
+            "followup_task",
+            "interrupt_agent",
+            "list_agents",
+            "request_user_input",
+            "send_message",
+            "spawn_agent",
+            "wait",
+            "wait_agent"
+          ]
+        },
+        "item.namespace": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "collaboration"
+          ]
+        },
+        "item.phase": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "commentary",
+            "final_answer"
+          ]
+        },
+        "item.role": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "assistant"
+          ]
+        },
+        "item.status": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "in_progress"
+          ]
+        },
+        "item.summary": {
+          "types": [
+            "array"
+          ]
+        },
+        "item.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "custom_tool_call",
+            "function_call",
+            "message",
+            "reasoning"
+          ]
+        },
+        "output_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.output_item.added"
+          ]
+        }
+      }
+    },
+    "response.output_item.done": {
+      "magnitude": 4,
+      "paths": {
+        "item": {
+          "types": [
+            "object"
+          ]
+        },
+        "item.arguments": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.call_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.content": {
+          "types": [
+            "array"
+          ]
+        },
+        "item.content[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "item.content[].annotations": {
+          "types": [
+            "array"
+          ]
+        },
+        "item.content[].logprobs": {
+          "types": [
+            "array"
+          ]
+        },
+        "item.content[].text": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.content[].type": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.encrypted_content": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.id": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.input": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.internal_chat_message_metadata_passthrough": {
+          "types": [
+            "object"
+          ]
+        },
+        "item.internal_chat_message_metadata_passthrough.create_time": {
+          "types": [
+            "number"
+          ]
+        },
+        "item.internal_chat_message_metadata_passthrough.turn_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.metadata": {
+          "types": [
+            "object"
+          ]
+        },
+        "item.metadata.turn_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "item.name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "exec",
+            "followup_task",
+            "interrupt_agent",
+            "list_agents",
+            "request_user_input",
+            "send_message",
+            "spawn_agent",
+            "wait",
+            "wait_agent"
+          ]
+        },
+        "item.namespace": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "collaboration"
+          ]
+        },
+        "item.phase": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "commentary",
+            "final_answer"
+          ]
+        },
+        "item.role": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "assistant"
+          ]
+        },
+        "item.status": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "completed"
+          ]
+        },
+        "item.summary": {
+          "types": [
+            "array"
+          ]
+        },
+        "item.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "custom_tool_call",
+            "function_call",
+            "message",
+            "reasoning"
+          ]
+        },
+        "output_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.output_item.done"
+          ]
+        }
+      }
+    },
+    "response.output_text.delta": {
+      "magnitude": 5,
+      "paths": {
+        "content_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "delta": {
+          "types": [
+            "string"
+          ]
+        },
+        "item_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "logprobs": {
+          "types": [
+            "array"
+          ]
+        },
+        "obfuscation": {
+          "types": [
+            "string"
+          ]
+        },
+        "output_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "safety_buffering": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.output_text.delta"
+          ]
+        }
+      }
+    },
+    "response.output_text.done": {
+      "magnitude": 2,
+      "paths": {
+        "content_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "item_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "logprobs": {
+          "types": [
+            "array"
+          ]
+        },
+        "output_index": {
+          "types": [
+            "number"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "text": {
+          "types": [
+            "string"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.output_text.done"
+          ]
+        }
+      }
+    },
+    "responsesapi.websocket_timing": {
+      "magnitude": 3,
+      "paths": {
+        "timing_metrics": {
+          "types": [
+            "object"
+          ]
+        },
+        "timing_metrics.client_tool_pause_total_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.critical_path": {
+          "types": [
+            "object"
+          ]
+        },
+        "timing_metrics.critical_path.boundary_type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "actionable_output_item_done",
+            "missing_harness_boundary"
+          ]
+        },
+        "timing_metrics.critical_path.client_tool_pause_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.critical_path.coverage": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "complete",
+            "missing_harness_boundary"
+          ]
+        },
+        "timing_metrics.critical_path.engine_iapi_total_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.critical_path.engine_ids": {
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "timing_metrics.critical_path.engine_wall_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.critical_path.inference_residual_total_ms": {
+          "types": [
+            "null"
+          ]
+        },
+        "timing_metrics.critical_path.num_engine_calls": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.critical_path.responses_harness_unblocked_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.critical_path.responses_other_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.critical_path.responses_pre_inference_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.critical_path.sampling_and_stream_total_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.critical_path.scope": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response"
+          ]
+        },
+        "timing_metrics.critical_path.taas_provider_wait_total_ms": {
+          "types": [
+            "null"
+          ]
+        },
+        "timing_metrics.critical_path.taas_request_setup_total_ms": {
+          "types": [
+            "null"
+          ]
+        },
+        "timing_metrics.engine_cached_prompt_tokens_total": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_iapi_inference_total_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_iapi_sampling_total_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_iapi_tbt_across_engine_calls_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_iapi_ttft_total_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_ids": {
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "timing_metrics.engine_queue_max_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_service_inference_total_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_service_minus_iapi_tbt_across_engine_calls_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_service_sampling_total_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_service_tbt_across_engine_calls_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_service_total_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_service_ttft_total_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_total_prompt_tokens_total": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.engine_uncached_prompt_tokens_total": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.first_sampled_message_reasoning_tokens": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.first_sampled_message_ttft_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.num_engine_calls": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.num_sampled_tokens_total": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.pre_inference_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.response_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "timing_metrics.responses_duration_excl_engine_and_client_tool_time_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.responses_duration_excl_engine_wait_and_sampling_iapi_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.responses_duration_excl_engine_wait_and_sampling_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.responses_duration_pause_count": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.responsesapi_chat_runner_streaming_token_batch_size": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.responsesapi_duration_excl_client_tools_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.responsesapi_duration_excl_engine_per_tool_call_ms": {
+          "types": [
+            "array"
+          ]
+        },
+        "timing_metrics.responsesapi_duration_excl_engine_per_tool_call_ms[]": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.responsesapi_duration_excl_engine_per_tool_call_truncated": {
+          "types": [
+            "bool",
+            "null"
+          ],
+          "values": [
+            "true"
+          ]
+        },
+        "timing_metrics.taas_provider_start_to_first_token_total_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.taas_request_to_provider_start_total_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.timing_scope": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "logical_turn"
+          ]
+        },
+        "timing_metrics.total_turn_time_s": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.websocket_output_text_delta_count": {
+          "types": [
+            "number"
+          ]
+        },
+        "timing_metrics.websocket_output_text_delta_tbt_ms": {
+          "types": [
+            "null",
+            "number"
+          ]
+        },
+        "timing_metrics.xapi_validation_time_s": {
+          "types": [
+            "null"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "responsesapi.websocket_timing"
+          ]
+        }
+      }
+    }
+  }
+}

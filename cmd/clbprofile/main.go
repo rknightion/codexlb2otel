@@ -4,13 +4,11 @@
 // and value ranges present - including the ones the typed decoders ignore. Run it
 // against a fresh capture before trusting that the extractor still sees everything.
 //
-//	clbprofile -out shapes.json testdata/live/*.jsonl.gz
+//	clbprofile -out shapes.json corpus/camden-2026-08-06/*.jsonl.gz
 package main
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -21,13 +19,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/rknightion/codexlb2otel/internal/archive"
 	"github.com/rknightion/codexlb2otel/internal/profile"
 )
 
 func main() {
 	out := flag.String("out", "", "write the full induced schema as JSON to this path")
-	chunk := flag.Int("chunk", 16<<20, "bytes of compressed input to decode per pass")
+	chunk := flag.Int("chunk", profile.DefaultChunk, "bytes of compressed input to decode per pass")
 	top := flag.Int("top", 12, "how many histogram entries to print per field")
 	flag.Parse()
 
@@ -50,7 +47,7 @@ func main() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			p, err := profileFile(path, *chunk)
+			p, _, err := profile.ScanFile(path, *chunk)
 			if err != nil {
 				mu.Lock()
 				failed++
@@ -80,67 +77,6 @@ func main() {
 	}
 	if failed > 0 {
 		os.Exit(1)
-	}
-}
-
-// profileFile streams one archive, decoding only whole gzip members so memory stays
-// bounded regardless of file size.
-func profileFile(path string, chunk int) (*profile.Profile, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	p := profile.New()
-	fp := profile.FileProfile{Name: filepath.Base(path)}
-
-	var pending []byte // decompressed bytes not yet ending in a newline
-	buf := make([]byte, 0, chunk)
-	tmp := make([]byte, chunk)
-	for {
-		n, rerr := f.Read(tmp)
-		if n > 0 {
-			buf = append(buf, tmp[:n]...)
-			res, derr := archive.DecodeMembers(buf)
-			if derr != nil {
-				return nil, derr
-			}
-			if res.Consumed > 0 {
-				fp.Bytes += int64(len(res.Data))
-				fp.Members += int64(res.Members)
-				pending = consume(p, &fp, append(pending, res.Data...))
-				buf = append(buf[:0], buf[res.Consumed:]...)
-			}
-		}
-		if rerr != nil {
-			if !errors.Is(rerr, io.EOF) {
-				return nil, rerr
-			}
-			break
-		}
-	}
-	if len(bytes.TrimSpace(pending)) > 0 {
-		p.AddLine(bytes.TrimSpace(pending), &fp)
-	}
-
-	p.Bytes = fp.Bytes
-	p.Members = fp.Members
-	p.Files = []profile.FileProfile{fp}
-	return p, nil
-}
-
-// consume folds every complete line into the profile and returns the trailing partial.
-func consume(p *profile.Profile, fp *profile.FileProfile, data []byte) []byte {
-	for {
-		i := bytes.IndexByte(data, '\n')
-		if i < 0 {
-			return data
-		}
-		if line := bytes.TrimSpace(data[:i]); len(line) > 0 {
-			p.AddLine(line, fp)
-		}
-		data = data[i+1:]
 	}
 }
 

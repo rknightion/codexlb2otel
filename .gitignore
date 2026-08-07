@@ -11,10 +11,18 @@ docs/superpowers/
 config.yaml
 .env
 
-# Test fixtures pulled from live archives (large, contain conversation content)
-testdata/live/
+# Captured archives. These hold FULL conversation content - prompts, tool output,
+# assistant messages - so committing one is a personal-data leak that survives in
+# git history forever. The whole corpus tree is ignored, plus the file extensions
+# wherever they land, and TestNoArchivesAreTracked fails the build if anything of
+# this shape is ever staged anyway.
+/corpus/
 *.jsonl
 *.jsonl.gz
-
-# Morning corpus pulled from the NAS dump
+*.jsonl.zst
 testdata/live*/
+
+# Induced-schema dumps: clbprofile -out writes example VALUES from real records.
+# The committed baseline is corpus.sig.json, which is content-free by construction.
+shapes*.json
+*.profile.json
