@@ -2,6 +2,7 @@ package otlpmetric
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -235,6 +236,171 @@ func TestMillisecondsConvertedToSeconds(t *testing.T) {
 	}
 	if got := histogramSum(t, wall); got != 4 {
 		t.Errorf("%s: got %v seconds, want 4 (from 4000ms)", attr.MetricEngineWall, got)
+	}
+}
+
+// TestEngineTimingDeltasConvertedToSeconds is issue #23's ms->s trap for the eight new
+// duration-delta histograms - the same shape as TestMillisecondsConvertedToSeconds
+// above, covering the new instruments specifically so a regression here shows up as a
+// silent 1000x error on a dashboard, not merely "the existing durations still work".
+func TestEngineTimingDeltasConvertedToSeconds(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	tt := baseTurn("1")
+	tt.EngineServiceInferenceMsDelta = 1500 // 1.5s
+	tt.EngineIapiSamplingMsDelta = 250      // 0.25s
+
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	rm := collect(t, reader)
+
+	m, ok := findMetric(rm, attr.MetricEngineServiceInference)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricEngineServiceInference)
+	}
+	if got := histogramSum(t, m); got != 1.5 {
+		t.Errorf("%s: got %v seconds, want 1.5 (from 1500ms)", attr.MetricEngineServiceInference, got)
+	}
+
+	m2, ok := findMetric(rm, attr.MetricEngineIapiSampling)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricEngineIapiSampling)
+	}
+	if got := histogramSum(t, m2); got != 0.25 {
+		t.Errorf("%s: got %v seconds, want 0.25 (from 250ms)", attr.MetricEngineIapiSampling, got)
+	}
+}
+
+// TestEngineUncachedPromptTokensIsItsOwnInstrument pins the decision in
+// recordEngineTimingDeltas: EngineUncachedPromptTokensDelta must never appear as a
+// gen_ai.token.type value on codexlb.tokens (it would double-count against input, the
+// same nested-breakdown trap "cached" already has - see tokenTypes' own doc comment),
+// and must land on its own counter instead.
+func TestEngineUncachedPromptTokensIsItsOwnInstrument(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	tt := baseTurn("1")
+	tt.InputTokens, tt.CachedTokens = 100, 40
+	tt.EngineUncachedPromptTokensDelta = 60
+
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	rm := collect(t, reader)
+
+	own, ok := findMetric(rm, attr.MetricEngineUncachedPromptTokens)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricEngineUncachedPromptTokens)
+	}
+	if got := sumInt64(t, own); got != 60 {
+		t.Errorf("%s: got %d, want 60", attr.MetricEngineUncachedPromptTokens, got)
+	}
+
+	tokens, ok := findMetric(rm, attr.MetricTokens)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricTokens)
+	}
+	for _, dp := range tokens.Data.(metricdata.Sum[int64]).DataPoints {
+		if kind, _ := attrString(t, dp.Attributes, attr.GenAITokenType); kind != "" &&
+			kind != attr.TokenInput && kind != attr.TokenOutput && kind != attr.TokenReasoning &&
+			kind != attr.TokenCached && kind != attr.TokenCacheWrite {
+			t.Errorf("%s emitted an unexpected gen_ai.token.type value %q - uncached must not "+
+				"have joined this axis", attr.MetricTokens, kind)
+		}
+	}
+	if got := sumInt64(t, tokens); got != 140 { // 100 input + 40 cached, NOT +60 uncached
+		t.Errorf("%s sum = %d, want 140 (input+cached only - a 200 here would mean uncached "+
+			"double-counted onto this axis)", attr.MetricTokens, got)
+	}
+}
+
+// TestTBTNegativeValueRecordedHonestly is issue #23's explicit acceptance criterion:
+// EngineServiceMinusIapiTBTMs goes negative (measured min -6.70ms in the corpus) and
+// must be recorded as reported - not clamped to zero, and not silently absorbed by the
+// SDK's default zero-floored histogram buckets, which is why this instrument is built
+// with negativeCapableTBTBoundaries (instruments.go).
+func TestTBTNegativeValueRecordedHonestly(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	tt := baseTurn("1")
+	tt.EngineServiceMinusIapiTBTMs = -6.7 // corpus minimum; converts to -0.0067s
+
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	rm := collect(t, reader)
+
+	m, ok := findMetric(rm, attr.MetricEngineServiceMinusIapiTBT)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricEngineServiceMinusIapiTBT)
+	}
+	h, ok := m.Data.(metricdata.Histogram[float64])
+	if !ok {
+		t.Fatalf("%s: not a float64 histogram (got %T)", attr.MetricEngineServiceMinusIapiTBT, m.Data)
+	}
+	if len(h.DataPoints) != 1 {
+		t.Fatalf("%s: got %d data points, want 1", attr.MetricEngineServiceMinusIapiTBT, len(h.DataPoints))
+	}
+	dp := h.DataPoints[0]
+
+	wantSum := -6.7 / 1000
+	if math.Abs(dp.Sum-wantSum) > 1e-9 {
+		t.Errorf("%s: Sum = %v, want %v (the negative reading, not clamped to 0)",
+			attr.MetricEngineServiceMinusIapiTBT, dp.Sum, wantSum)
+	}
+	if min, ok := dp.Min.Value(); !ok || math.Abs(min-wantSum) > 1e-9 {
+		t.Errorf("%s: Min = %v (defined=%v), want %v", attr.MetricEngineServiceMinusIapiTBT, min, ok, wantSum)
+	}
+
+	// The negative reading must land in a bucket whose UPPER BOUND is <= 0 - proof the
+	// explicit negative-capable boundaries are actually wired to this instrument, not
+	// merely that Sum still adds up correctly (Sum would look right even if the SDK
+	// silently used its default zero-floored boundaries and dumped this reading in the
+	// lowest bucket alongside every non-negative one).
+	var foundNegativeBucket bool
+	for i, bound := range dp.Bounds {
+		if bound <= 0 && dp.BucketCounts[i] > 0 {
+			foundNegativeBucket = true
+		}
+	}
+	if !foundNegativeBucket {
+		t.Errorf("%s: no bucket at or below 0 received a count - negative-capable boundaries "+
+			"are not applied. Bounds=%v Counts=%v", attr.MetricEngineServiceMinusIapiTBT, dp.Bounds, dp.BucketCounts)
+	}
+}
+
+// TestTemperatureTopPNeverBecomeMetricAttributes is issue #23's explicit prohibition:
+// both are measured constant across the corpus (temperature=1.0, top_p=0.98), so
+// promoting either to a metric attribute would add a dimension carrying exactly one
+// observed value - checked directly against every data point this sink produces,
+// mirroring TestEveryEmittedAttributeKeyIsOnContract's own walk.
+func TestTemperatureTopPNeverBecomeMetricAttributes(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	tt := baseTurn("1")
+	tt.RequestKind = "turn"
+	tt.Temperature = 1.0
+	tt.TopP = 0.98
+
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	rm := collect(t, reader)
+
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			for _, key := range dataPointKeys(t, m) {
+				if key == attr.GenAIRequestTemperature || key == attr.GenAIRequestTopP {
+					t.Errorf("metric %s emitted attribute key %q - temperature/top_p must never "+
+						"become a metric attribute (issue #23)", m.Name, key)
+				}
+			}
+		}
 	}
 }
 

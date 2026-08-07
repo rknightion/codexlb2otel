@@ -208,6 +208,94 @@ func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
 	}
 }
 
+// TestBuildGeneration_ToolsTemperatureTopP is issue #23: Turn.Tools/Temperature/TopP
+// now reach sigil's Generation.tools/temperature/top_p, decoded through the same real
+// protojson unmarshaller as the wire-format test above - checking both that the three
+// land correctly and that the two `optional double` fields encode with the right wire
+// shape (trap #4: present-with-a-value and absent are different shapes for a proto
+// optional scalar, which is exactly why wireGeneration.Temperature/TopP are pointers).
+func TestBuildGeneration_ToolsTemperatureTopP(t *testing.T) {
+	tr := &turn.Turn{
+		RequestID: "req-1", ResponseID: "resp_x", Model: "gpt-5.6-sol", Status: "completed",
+		Temperature: 1.0,
+		TopP:        0.98,
+		Tools: []turn.ToolDef{
+			{Name: "exec", Kind: "custom", Description: "run a shell command"},
+			{Name: "wait", Kind: "custom"},
+		},
+	}
+	g := buildGeneration(tr, attr.NewGuard())
+
+	data, err := json.Marshal(wireExportGenerationsRequest{Generations: []wireGeneration{g}})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req, err := wire.UnmarshalExportGenerationsJSON(data)
+	if err != nil {
+		t.Fatalf("wire.UnmarshalExportGenerationsJSON rejected this sink's own output: %v", err)
+	}
+	if len(req.Generations) != 1 {
+		t.Fatalf("expected 1 decoded generation, got %d", len(req.Generations))
+	}
+	got := req.Generations[0]
+
+	if got.Temperature == nil || *got.Temperature != 1.0 {
+		t.Errorf("temperature = %v, want 1.0", got.GetTemperature())
+	}
+	if got.TopP == nil || *got.TopP != 0.98 {
+		t.Errorf("top_p = %v, want 0.98", got.GetTopP())
+	}
+
+	tools := got.GetTools()
+	if len(tools) != 2 {
+		t.Fatalf("tools = %d entries, want 2: %+v", len(tools), tools)
+	}
+	if tools[0].GetName() != "exec" || tools[0].GetType() != "custom" ||
+		tools[0].GetDescription() != "run a shell command" {
+		t.Errorf("tools[0] = %+v, want name=exec type=custom description=\"run a shell command\"", tools[0])
+	}
+	if tools[1].GetName() != "wait" || tools[1].GetType() != "custom" {
+		t.Errorf("tools[1] = %+v, want name=wait type=custom", tools[1])
+	}
+}
+
+// TestBuildGeneration_TemperatureTopPAbsentWhenZero pins the zero-vs-absent handling
+// documented on wireGeneration: a Turn that never carried Temperature/TopP (the Go
+// zero value, indistinguishable here from "the server sent exactly 0.0") must produce
+// a Generation with BOTH fields genuinely UNSET on the wire, not present-with-value-0
+// - a real optional-double consumer treats those as different facts.
+func TestBuildGeneration_TemperatureTopPAbsentWhenZero(t *testing.T) {
+	tr := &turn.Turn{RequestID: "req-1", ResponseID: "resp_x", Model: "gpt-5.6-sol", Status: "completed"}
+	g := buildGeneration(tr, attr.NewGuard())
+	if g.Temperature != nil {
+		t.Errorf("Temperature = %v, want nil (unset, not present-with-0)", *g.Temperature)
+	}
+	if g.TopP != nil {
+		t.Errorf("TopP = %v, want nil (unset, not present-with-0)", *g.TopP)
+	}
+
+	data, err := json.Marshal(wireExportGenerationsRequest{Generations: []wireGeneration{g}})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(data), `"temperature"`) || strings.Contains(string(data), `"top_p"`) {
+		t.Errorf("temperature/top_p leaked onto the wire despite being unset: %s", data)
+	}
+}
+
+// TestBuildGeneration_EmptyToolsOmitted pins Tools staying nil (and so omitted from
+// the wire, per wireGeneration's trap #4 doc comment) when Turn.Tools is empty - the
+// COMMON case, since Tools is populated only on the one response where a catalogue's
+// hash first changes (turn.go's own comment on Tools/ToolsHash). This is correct
+// dedup behaviour, not a gap, and must not be "fixed" by synthesizing a catalogue.
+func TestBuildGeneration_EmptyToolsOmitted(t *testing.T) {
+	tr := &turn.Turn{RequestID: "req-1", ResponseID: "resp_x", Model: "gpt-5.6-sol", Status: "completed"}
+	g := buildGeneration(tr, attr.NewGuard())
+	if g.Tools != nil {
+		t.Errorf("Tools = %+v, want nil", g.Tools)
+	}
+}
+
 // TestMapRole_UnknownRoleOmitsRatherThanMisattributes pins the deliberate choice in
 // mapRole: a role this proto has no slot for (sigil's MessageRole is only
 // UNSPECIFIED/USER/ASSISTANT/TOOL) must come out unset, never coerced to USER.

@@ -50,6 +50,14 @@ var semconvJustified = map[string]string{
 	Originator:   "the client binary (codex-tui / codex_exec / the probe) - no GenAI concept",
 
 	// --- identifiers and lifecycle detail below gen_ai.conversation.id / gen_ai.response.id ---
+	// Forking a conversation is a codex-lb concept, not a model-API one, so there is
+	// nothing in the registry to map it to. Its sibling PrevResponseID deliberately
+	// does NOT appear in this map, because it is not a codexlb.* key at all: the spec
+	// defines gen_ai.request.previous_response.id and names OpenAI's
+	// previous_response_id as its own example, so it takes the standard name. That
+	// asymmetry between two fields added together is exactly what this test is for.
+	ForkedFromThreadID: "forking a conversation into a new thread is codex-lb's own concept - no GenAI equivalent",
+
 	RequestID:        idJustification,
 	SessionID:        idJustification,
 	ThreadID:         idJustification,

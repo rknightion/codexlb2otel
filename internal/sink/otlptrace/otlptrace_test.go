@@ -461,6 +461,170 @@ func TestToolCallSpans(t *testing.T) {
 	}
 }
 
+// --- temperature/top_p (issue #23): response span only, correct GenAI names ---
+
+func TestTemperatureTopPOnResponseSpanOnly(t *testing.T) {
+	s, exp := newTestSink(t)
+	now := time.Now()
+	tt := &turn.Turn{
+		RequestID: "req-1", ResponseID: "resp-1", ThreadID: "thread-1",
+		Model: "gpt-5.6-sol", Status: "completed",
+		FirstTS: now.Add(-time.Second), LastTS: now,
+		ServerCreatedAt: now.Add(-time.Second), ServerCompletedAt: now,
+		Temperature: 1.0, TopP: 0.98,
+	}
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	var respSpan tracetest.SpanStub
+	for _, sp := range exp.GetSpans() {
+		if sp.Name == "chat gpt-5.6-sol" {
+			respSpan = sp
+		}
+	}
+	if respSpan.Name == "" {
+		t.Fatal("no response (chat) span exported")
+	}
+
+	var gotTemp, gotTopP float64
+	var hasTemp, hasTopP bool
+	for _, a := range respSpan.Attributes {
+		switch string(a.Key) {
+		case attr.GenAIRequestTemperature:
+			hasTemp, gotTemp = true, a.Value.AsFloat64()
+		case attr.GenAIRequestTopP:
+			hasTopP, gotTopP = true, a.Value.AsFloat64()
+		}
+	}
+	if !hasTemp || gotTemp != 1.0 {
+		t.Errorf("response span %s = %v (present=%v), want 1.0", attr.GenAIRequestTemperature, gotTemp, hasTemp)
+	}
+	if !hasTopP || gotTopP != 0.98 {
+		t.Errorf("response span %s = %v (present=%v), want 0.98", attr.GenAIRequestTopP, gotTopP, hasTopP)
+	}
+
+	// Never on any other span (turn root, phase children, tool_call children) - same
+	// single-claimant scoping GenAIOperation/GenAIProvider already have on this span.
+	for _, sp := range exp.GetSpans() {
+		if sp.Name == "chat gpt-5.6-sol" {
+			continue
+		}
+		for _, a := range sp.Attributes {
+			if string(a.Key) == attr.GenAIRequestTemperature || string(a.Key) == attr.GenAIRequestTopP {
+				t.Errorf("span %q carries %s, want it scoped to the response span only", sp.Name, a.Key)
+			}
+		}
+	}
+}
+
+// --- tool-call durations (issue #23): narrow the span, and guard the length mismatch ---
+
+func TestToolCallDurations_NarrowSpanEnd(t *testing.T) {
+	s, exp := newTestSink(t)
+	now := time.Now()
+	start := now.Add(-10 * time.Second)
+	tt := &turn.Turn{
+		RequestID: "req-1", ResponseID: "resp-1", ThreadID: "thread-1",
+		Model: "gpt-5.6-sol", Status: "completed",
+		FirstTS: start, LastTS: now,
+		ServerCreatedAt: start, ServerCompletedAt: now,
+		ToolCalls: []turn.ToolCall{
+			{Kind: "custom", Name: "exec", CallID: "c1"},
+			{Kind: "custom", Name: "wait", CallID: "c2"},
+		},
+		// Both durations are well under the 10s response - if the span were still
+		// spanning the full response (the pre-#23 approximation), these checks below
+		// would see 10s on both, not 0.5s/1.5s.
+		ToolCallDurationsMs: []float64{500, 1500},
+	}
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	toolSpans := toolCallSpans(exp.GetSpans())
+	if len(toolSpans) != 2 {
+		t.Fatalf("got %d tool-call spans, want 2", len(toolSpans))
+	}
+	for _, sp := range toolSpans {
+		name := toolNameOf(sp)
+		wantDur := 500 * time.Millisecond
+		if name == "wait" {
+			wantDur = 1500 * time.Millisecond
+		}
+		if gotDur := sp.EndTime.Sub(sp.StartTime); gotDur != wantDur {
+			t.Errorf("tool call %q span duration = %v, want %v (narrowed to ToolCallDurationsMs, "+
+				"not the full 10s response)", name, gotDur, wantDur)
+		}
+	}
+}
+
+func TestToolCallDurations_LengthMismatchFallsBackToFullResponse(t *testing.T) {
+	s, exp := newTestSink(t)
+	now := time.Now()
+	start := now.Add(-10 * time.Second)
+	tt := &turn.Turn{
+		RequestID: "req-1", ResponseID: "resp-1", ThreadID: "thread-1",
+		Model: "gpt-5.6-sol", Status: "completed",
+		FirstTS: start, LastTS: now,
+		ServerCreatedAt: start, ServerCompletedAt: now,
+		ToolCalls: []turn.ToolCall{
+			{Kind: "custom", Name: "exec", CallID: "c1"},
+			{Kind: "custom", Name: "wait", CallID: "c2"},
+		},
+		// Length 1 against 2 ToolCalls: a genuine mismatch between the two
+		// independently-decoded wire arrays, not something index 0 can be trusted to
+		// mean "exec's duration" against.
+		ToolCallDurationsMs: []float64{500},
+	}
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	wantDur := now.Sub(start)
+	toolSpans := toolCallSpans(exp.GetSpans())
+	if len(toolSpans) != 2 {
+		t.Fatalf("got %d tool-call spans, want 2", len(toolSpans))
+	}
+	for _, sp := range toolSpans {
+		if gotDur := sp.EndTime.Sub(sp.StartTime); gotDur != wantDur {
+			t.Errorf("tool call %q span duration = %v, want %v (full-response fallback on a "+
+				"length mismatch, not a guess at which entries align)", toolNameOf(sp), gotDur, wantDur)
+		}
+	}
+}
+
+func toolCallSpans(spans tracetest.SpanStubs) []tracetest.SpanStub {
+	var out []tracetest.SpanStub
+	for _, sp := range spans {
+		for _, a := range sp.Attributes {
+			if a.Key == attr.ToolName {
+				out = append(out, sp)
+				break
+			}
+		}
+	}
+	return out
+}
+
+func toolNameOf(sp tracetest.SpanStub) string {
+	for _, a := range sp.Attributes {
+		if a.Key == attr.ToolName {
+			return a.Value.AsString()
+		}
+	}
+	return ""
+}
+
 // --- Flush surfaces export failure, and does not silently swallow it ---
 
 func TestFlushReportsExportFailure(t *testing.T) {

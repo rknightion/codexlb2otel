@@ -56,6 +56,24 @@ const (
 	// requested for a GenAI model." The spec wins over the issue's proposed name.
 	ReasoningEffort = "gen_ai.request.reasoning.level"
 
+	// GenAIRequestTemperature and GenAIRequestTopP are Turn.Temperature/TopP (issue
+	// #23). Checked against the live registry (semantic-conventions-genai,
+	// 2026-08-07), same source and date as ReasoningEffort above:
+	// gen_ai.request.temperature and gen_ai.request.top_p both exist, type double,
+	// stability "development".
+	//
+	// SPAN AND GENERATION ATTRIBUTES ONLY - never routed through attr.Guard, and
+	// deliberately given no Field entry in attr.go's registry (frozen; not this
+	// lane's to extend). Both are measured CONSTANT across the whole corpus
+	// (temperature=1.0, top_p=0.98, issue #23's own text), so promoting either to a
+	// metric attribute would add a dimension carrying exactly one observed value for
+	// no query benefit and a cardinality cost forever. Applied directly at the two
+	// call sites that need them (otlptrace's response span, agento11y's Generation),
+	// the same way GenAIOperation/GenAIProvider above are applied directly to the
+	// response span without ever going through SpanAttrs/MetricAttrs.
+	GenAIRequestTemperature = "gen_ai.request.temperature"
+	GenAIRequestTopP        = "gen_ai.request.top_p"
+
 	// --- OTel GenAI semantic conventions: tool execution and usage (issue #18) ---
 	//
 	// Added against the live registry, not recalled - same source and date as
@@ -179,20 +197,33 @@ const (
 
 	// --- identity: metadata and spans only, never a metric attribute or a label ---
 
-	RequestID        = "codexlb.request_id"
-	SessionID        = "codexlb.session_id"
-	ThreadID         = "codexlb.thread_id"
-	ParentThreadID   = "codexlb.parent_thread_id"
-	TurnID           = "codexlb.turn_id"
-	ParentTurnID     = "codexlb.parent_turn_id"
-	LogicalTurnID    = "codexlb.logical_turn_id"
-	WindowID         = "codexlb.window_id"
-	InstallationID   = "codexlb.installation_id"
-	PromptCacheKey   = "codexlb.prompt_cache_key"
-	EngineIDs        = "codexlb.engine_ids"
-	InstructionsHash = "codexlb.instructions_hash"
-	ErrorMessage     = "codexlb.error_message"
-	SafetyID         = "codexlb.safety_identifier"
+	RequestID      = "codexlb.request_id"
+	SessionID      = "codexlb.session_id"
+	ThreadID       = "codexlb.thread_id"
+	ParentThreadID = "codexlb.parent_thread_id"
+	// PrevResponseID chains responses into a DAG, and is issue #15's "walk the
+	// response chain" requirement.
+	//
+	// The standard name, NOT a codexlb.* invention: semantic-conventions-genai
+	// defines gen_ai.request.previous_response.id and its note names OpenAI's
+	// previous_response_id as the example, which is exactly this field. Checked
+	// against the live registry rather than recalled - three of five names proposed
+	// on #18 turned out not to exist, and a codexlb.* key where the spec has a
+	// standard one is precisely what TestNoUnjustifiedCodexlbKey exists to catch.
+	PrevResponseID = "gen_ai.request.previous_response.id"
+	// ForkedFromThreadID has no GenAI equivalent - forking a conversation is a
+	// codex-lb concept, not a model-API one - so it keeps a codexlb.* name.
+	ForkedFromThreadID = "codexlb.forked_from_thread_id"
+	TurnID             = "codexlb.turn_id"
+	ParentTurnID       = "codexlb.parent_turn_id"
+	LogicalTurnID      = "codexlb.logical_turn_id"
+	WindowID           = "codexlb.window_id"
+	InstallationID     = "codexlb.installation_id"
+	PromptCacheKey     = "codexlb.prompt_cache_key"
+	EngineIDs          = "codexlb.engine_ids"
+	InstructionsHash   = "codexlb.instructions_hash"
+	ErrorMessage       = "codexlb.error_message"
+	SafetyID           = "codexlb.safety_identifier"
 	// TransportEvent is the server's plain-text reason for a websocket lifecycle event
 	// - "no close frame received or sent", "received 1012 (service restart)". Prose,
 	// so it is identity-class; FrameType is the bounded classification of the same
@@ -342,6 +373,47 @@ const (
 	// MetricTokenUsage is the convention-compliant histogram - see the const block's
 	// own doc comment above.
 	MetricTokenUsage = "gen_ai.client.token.usage" // histogram, {token}, by GenAITokenType - convention-compliant
+
+	// The eight durations below (issue #23) are per-response deltas off the same
+	// cumulative logical-turn counters as MetricEngineCalls (see
+	// otlpmetric/record.go's recordEngineCalls and turn.go's own comment on the nine
+	// fields the reducer diffs identically). engine_service_* and engine_iapi_* are
+	// TWO SEPARATE PAIRS OF INSTRUMENTS by name, not one instrument with a
+	// service|iapi domain attribute - the issue's own acceptance criteria rule out a
+	// new attribute key, and this package's existing style is already one instrument
+	// per measurement (MetricEngineWall, MetricPreInference, ... above are each their
+	// own field, never merged behind a "which phase" label). Comparing
+	// engine_service_inference against engine_iapi_inference in one PromQL query
+	// costs nothing extra with two names over one name and a label.
+	MetricEngineServiceInference              = "codexlb.engine_service_inference"                 // histogram, s
+	MetricEngineServiceSampling               = "codexlb.engine_service_sampling"                  // histogram, s
+	MetricEngineIapiInference                 = "codexlb.engine_iapi_inference"                    // histogram, s
+	MetricEngineIapiSampling                  = "codexlb.engine_iapi_sampling"                     // histogram, s
+	MetricResponsesExclEngineAndTool          = "codexlb.responses_excl_engine_and_tool"           // histogram, s
+	MetricResponsesExclEngineWaitSampling     = "codexlb.responses_excl_engine_wait_sampling"      // histogram, s
+	MetricResponsesExclEngineWaitSamplingIapi = "codexlb.responses_excl_engine_wait_sampling_iapi" // histogram, s
+	MetricResponsesAPIExclClientTools         = "codexlb.responsesapi_excl_client_tools"           // histogram, s
+
+	// MetricEngineUncachedPromptTokens (issue #23) is EngineUncachedPromptTokensDelta,
+	// deliberately its OWN instrument rather than a sixth value on gen_ai.token.type -
+	// see recordEngineTimingDeltas' doc comment in otlpmetric/record.go for the full
+	// reasoning (a nested-breakdown double-count identical to the cached/input trap
+	// tokenTypes already documents, PLUS a different measurement family: this is a
+	// delta off timing_metrics' own cumulative counter, baseline-reset affected like
+	// EngineCallsDelta, not one of the already-safe-to-sum response.completed usage
+	// fields the token.type axis is built from).
+	MetricEngineUncachedPromptTokens = "codexlb.engine_uncached_prompt_tokens" // counter, {token}
+
+	// The three TBT (time-between-tokens) histograms below (issue #23) are Turn's own
+	// per-response running averages, recorded exactly as reported - never diffed, per
+	// turn.go's own comment on why delta-ing them would corrupt the arithmetic.
+	// MetricEngineServiceMinusIapiTBT is the one of the three that goes NEGATIVE
+	// (measured min -6.70ms) and is built with explicit bucket boundaries straddling
+	// zero for exactly that reason - see otlpmetric/instruments.go's
+	// negativeCapableTBTBoundaries.
+	MetricEngineServiceTBT          = "codexlb.engine_service_tbt"            // histogram, s
+	MetricEngineIapiTBT             = "codexlb.engine_iapi_tbt"               // histogram, s
+	MetricEngineServiceMinusIapiTBT = "codexlb.engine_service_minus_iapi_tbt" // histogram, s - accepts negative values
 
 	// Rate-limit gauges. Meaningless unless grouped by AccountID - see that constant.
 	MetricRateLimitUsed     = "codexlb.rate_limit.used_percent"           // gauge, %

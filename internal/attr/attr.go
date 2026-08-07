@@ -219,6 +219,13 @@ var registry = []Field{
 	{Key: SessionID, Class: Identity, Of: func(t *turn.Turn) string { return t.SessionID }},
 	{Key: ThreadID, Class: Identity, Of: func(t *turn.Turn) string { return t.ThreadID }},
 	{Key: ParentThreadID, Class: Identity, Of: func(t *turn.Turn) string { return t.ParentThreadID }},
+	// Both were captured by the reducer and reached the turn line's JSON body, but
+	// had no registry entry - so Guard.Metadata never emitted them and they were
+	// invisible to a LogQL metadata filter and absent from content lines entirely.
+	// Issue #15 wants the response chain walkable and wants the routing fields that
+	// explain WHY a turn used the parameters it did.
+	{Key: PrevResponseID, Class: Identity, Of: func(t *turn.Turn) string { return t.PrevResponseID }},
+	{Key: ForkedFromThreadID, Class: Identity, Of: func(t *turn.Turn) string { return t.ForkedFromThreadID }},
 	{Key: TurnID, Class: Identity, Of: func(t *turn.Turn) string { return t.TurnID }},
 	{Key: ParentTurnID, Class: Identity, Of: func(t *turn.Turn) string { return t.ParentTurnID }},
 	{Key: LogicalTurnID, Class: Identity, Of: func(t *turn.Turn) string { return t.LogicalTurnID }},
