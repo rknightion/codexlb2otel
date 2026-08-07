@@ -1,9 +1,9 @@
 {
-  "version": 2,
+  "version": 3,
   "coverage": {
-    "files": 14,
-    "file_bytes": 1730298562,
-    "read_bytes": 1730298562,
+    "files": 16,
+    "file_bytes": 1932055791,
+    "read_bytes": 1932055791,
     "sampled": false
   },
   "storage": {
@@ -148,6 +148,145 @@
     }
   },
   "events": {
+    "\u003cheader\u003e": {
+      "magnitude": 6,
+      "paths": {
+        "header.x-codex-turn-metadata{}": {
+          "types": [
+            "object"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.compaction": {
+          "types": [
+            "object"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.compaction.implementation": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "responses"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.compaction.phase": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "mid_turn"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.compaction.reason": {
+          "types": [
+            "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.compaction.strategy": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "memento"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.compaction.trigger": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "auto"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.forked_from_thread_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.installation_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.parent_thread_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.parent_turn_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.request_kind": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "compaction",
+            "memory",
+            "prewarm",
+            "turn"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.sandbox": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "none"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.session_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.subagent_kind": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "thread_spawn"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.thread_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.thread_source": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "memory_consolidation",
+            "subagent",
+            "user"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.turn_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.turn_started_at_unix_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.window_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.workspaces": {
+          "types": [
+            "user-keyed-map"
+          ]
+        }
+      }
+    },
     "codex.rate_limits": {
       "magnitude": 3,
       "paths": {
@@ -1203,6 +1342,146 @@
         "client_metadata.x-codex-turn-metadata": {
           "types": [
             "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}": {
+          "types": [
+            "object"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.code_mode_tool_names": {
+          "types": [
+            "json-schema"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.compaction": {
+          "types": [
+            "object"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.compaction.implementation": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "responses"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.compaction.phase": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "mid_turn"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.compaction.reason": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.compaction.strategy": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "memento"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.compaction.trigger": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "auto"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.forked_from_thread_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.installation_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.parent_thread_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.parent_turn_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.request_kind": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "compaction",
+            "memory",
+            "prewarm",
+            "turn"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.sandbox": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "none",
+            "seatbelt"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.session_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.subagent_kind": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "thread_spawn"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.thread_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.thread_source": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "memory_consolidation",
+            "subagent",
+            "user"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.turn_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.turn_started_at_unix_ms": {
+          "types": [
+            "number"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.window_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.workspaces": {
+          "types": [
+            "user-keyed-map"
           ]
         },
         "client_metadata.x-codex-window-id": {

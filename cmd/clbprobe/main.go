@@ -397,7 +397,7 @@ Paths may be archive files or directories; directories are walked for *.jsonl.gz
 
   clbprobe corpus/                          full drift check against `+DefaultBaseline+`
   clbprobe -sampled corpus/processed        fast; cannot prove a shape is absent
-  clbprobe -update corpus/                  accept the current shape as baseline
+  clbprobe -update `+DefaultBaseline+` corpus/  accept the current shape as baseline
 
 exit: 0 clean, 1 drift at or above -fail-on, 2 error, 3 nothing to do
 

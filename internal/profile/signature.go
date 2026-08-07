@@ -16,7 +16,16 @@ var sprintf = fmt.Sprintf
 // 2: tool `parameters`/`format` subtrees are recorded opaquely (see profile.opaque).
 // A v1 baseline holds them as `object` with every nested property enumerated, so
 // diffing it against a v2 capture reports the whole tool catalogue as changed.
-const SignatureVersion = 2
+//
+// 3: embedded JSON documents (client_metadata.x-codex-turn-metadata, the
+// x-codex-turn-metadata and x-codex-turn-state headers) are induced recursively
+// instead of recorded as an opaque string leaf - see profile.descendEmbedded. A v2
+// baseline has none of the "{}"-suffixed paths this produces, so every one of them
+// would diff as a mass of "new field" findings that are really one code change. The
+// version bump makes Diff refuse the comparison outright and ask for a fresh
+// baseline instead, which is the honest signal for "the induced shape changed",
+// not a flood of SevNew.
+const SignatureVersion = 3
 
 // Signature is the committable, content-free summary of an archive's shape.
 //
@@ -383,9 +392,20 @@ func enumValues(path string, h *Hist) []string {
 }
 
 // contentSafe reports whether values at this path may be recorded.
+//
+// Every notation suffix must be stripped before a segment is tested, or the guard
+// silently stops applying to the segment that carries one. "{}" is the embedded-
+// document marker added for issue #21: without trimming it here, an allowlisted
+// document at a path like client_metadata.user would be tested as "user{}", which
+// matches neither the denylist nor identifierish, and its values would be written
+// into a committed file that is public precisely because it never carries any. The
+// three paths on today's allowlist are all metadata and pass either way - this is
+// closing the hole before the allowlist grows into it, which is the same shape as
+// the "-" versus "_" separator bug recorded on identifierish above, and that one
+// reached the baseline before it was caught.
 func contentSafe(path string) bool {
-	for _, seg := range strings.Split(strings.TrimSuffix(path, "[]"), ".") {
-		seg = strings.TrimSuffix(seg, "[]")
+	for _, seg := range strings.Split(path, ".") {
+		seg = strings.TrimSuffix(strings.TrimSuffix(seg, "[]"), "{}")
 		if seg == "" {
 			continue
 		}

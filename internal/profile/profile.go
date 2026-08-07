@@ -268,6 +268,14 @@ func (p *Profile) AddLine(line []byte, fp *FileProfile) {
 				} else {
 					hist.add("<set>")
 				}
+				// Headers aren't part of any inner event's walk, so an allowlisted
+				// header's embedded document is induced into its own synthetic bucket -
+				// see embedded.go. embeddedEvent() itself enforces the sample budget;
+				// descendEmbedded enforces the allowlist, so a non-allowlisted header
+				// costs one skipped map lookup and nothing more.
+				if embeddedDocPaths["header."+name] {
+					descendEmbedded(p.embeddedEvent(), "header."+name, v)
+				}
 			}
 		} else {
 			p.PayloadShapes["headers:"+jsonKind(raw)]++
@@ -388,16 +396,60 @@ func (p *Profile) induce(t string, raw json.RawMessage) {
 //
 // Tool identity is still tracked - tools[].name and tools[].type are enum-captured -
 // so a genuinely new tool appearing is still a finding, at the right granularity.
-func opaque(path string) bool {
-	if !strings.Contains(path, "tools[]") {
-		return false
+//
+// x-codex-turn-metadata's own code_mode_tool_names is the identical problem one
+// layer down, discovered only once embedded descent (embedded.go) made this subtree
+// visible at all: it is the CLIENT's per-installation tool catalog, one entry per
+// available tool (~190 in one corpus sample, each contributing a name+namespace
+// pair), living inside an event type that also carries tools[].parameters,
+// instructions, input[] and every other response.create field under the SAME
+// maxPathsPerType budget. Left walked, it does not just bury findings the way the
+// unfixed tools[].parameters case did - it can consume enough of the 600-path cap
+// on its own that whether request_kind (the field #20 was about) survives into the
+// signature depends on Go's randomized map iteration order, i.e. it becomes
+// nondeterministic per run rather than merely noisy. Verified against corpus data
+// 2026-08-07: without this, TestInduceEmbedded_RequestKindValuesFoundInRealCorpus
+// passed or failed at random across repeated runs of the same code.
+// workspaces is opaque for a different and much sharper reason than the two above,
+// and it is the reason opaqueKind reports a KIND rather than a bool.
+//
+// The others are walked-but-noisy. workspaces is walked-and-UNPUBLISHABLE: it is a
+// map keyed by ABSOLUTE FILESYSTEM PATH on the user's own machine, so the map key
+// becomes the path segment. Induced, the 2026-08-07 corpus produced entries such as
+// "workspaces./Users/rob/repos/<name>.associated_remote_urls.origin" carrying values
+// like a private git remote and a self-hosted forge hostname, plus a has_changes flag
+// per repository.
+//
+// No existing guard could have stopped that. contentSafe screens VALUES by inspecting
+// the name of the segment they sit under, and here the user's data IS the segment
+// name - there is no name to screen. enumValues screens cardinality, and a handful of
+// repositories passes any cardinality test easily. The only correct answer is to stop
+// the walk before a key is ever turned into a path, which is what this does.
+//
+// corpus.sig.json is committed to git and the repository may be opened at some point.
+// That is the whole reason the signature is content-free by construction, and a home
+// directory layout, private repository names and a personal forge hostname are
+// exactly the shape of thing that must never reach it. Presence and type are still
+// recorded, so workspaces appearing, vanishing or changing type is still a finding.
+func opaqueKind(path string) string {
+	if path == "workspaces" || strings.HasSuffix(path, ".workspaces") {
+		return "user-keyed-map"
 	}
-	return strings.HasSuffix(path, ".parameters") || strings.HasSuffix(path, ".format")
+	if strings.HasSuffix(path, "}.code_mode_tool_names") {
+		return "json-schema"
+	}
+	if !strings.Contains(path, "tools[]") {
+		return ""
+	}
+	if strings.HasSuffix(path, ".parameters") || strings.HasSuffix(path, ".format") {
+		return "json-schema"
+	}
+	return ""
 }
 
 func walk(ep *EventProfile, prefix string, v any) {
-	if opaque(prefix) {
-		ep.note(prefix, "json-schema", "")
+	if kind := opaqueKind(prefix); kind != "" {
+		ep.note(prefix, kind, "")
 		return
 	}
 	switch x := v.(type) {
@@ -415,6 +467,10 @@ func walk(ep *EventProfile, prefix string, v any) {
 		}
 	case string:
 		ep.note(prefix, "string", x)
+		// x-codex-turn-metadata (and friends) are JSON documents embedded as a string
+		// leaf - see embedded.go. descendEmbedded is a no-op unless prefix is on the
+		// explicit allowlist, so this touches nothing outside it.
+		descendEmbedded(ep, prefix, x)
 	case float64:
 		ep.note(prefix, "number", strconv.FormatFloat(x, 'g', -1, 64))
 	case bool:
