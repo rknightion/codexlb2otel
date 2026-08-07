@@ -8,27 +8,33 @@ import (
 	"time"
 
 	"github.com/rknightion/codexlb2otel/internal/archive"
+	"github.com/rknightion/codexlb2otel/internal/fixture"
 	"github.com/rknightion/codexlb2otel/internal/frame"
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
-const (
-	fixture = "2026-08-06T21.jsonl.gz"
-	// otherFixture stands in for a same-path replacement: an unrelated capture that
-	// happens to land at a filename we already hold an offset for.
-	otherFixture = "2026-08-06T17.jsonl.gz"
-)
-
-func loadFixture(t *testing.T) []byte { return loadFixtureNamed(t, fixture) }
-
-func loadFixtureNamed(t *testing.T, name string) []byte {
+// Fixtures are discovered, not named - see internal/fixture. corpusFile(1) is a
+// DIFFERENT capture from corpusFile(0), which is what the same-path replacement
+// tests need: an unrelated archive landing at a filename we already hold an offset
+// for. That collision is not hypothetical; two distinct captures both named
+// 2026-08-06T18.jsonl.gz exist in the corpus today.
+// Indexed into the size-ordered list rather than fixture.Any, which reorders its
+// selection chronologically: these tests need two files that are DIFFERENT, and
+// nothing about when they were captured.
+func corpusFile(t *testing.T, i int) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "live", name))
-	if err != nil {
-		t.Skipf("live fixture absent (%v); pull one from camden to run this", err)
+	files := fixture.Files(t)
+	if len(files) <= i {
+		t.Fatalf("corpus has %d archives, test needs %d", len(files), i+1)
 	}
-	return b
+	return fixture.Load(t, files[i])
 }
+
+func loadFixture(t *testing.T) []byte { return corpusFile(t, 0) }
+
+// archiveName is the name the temp-dir archive is written under. Only its shape
+// matters - the watcher keys its checkpoint by path, not by content of the name.
+const archiveName = "2026-08-06T21.jsonl.gz"
 
 func newWatcher(t *testing.T, dir string, cfg func(*Config)) *Watcher {
 	t.Helper()
@@ -62,7 +68,7 @@ func collect(turns *[]*turn.Turn) Emit {
 func TestWatcher_IncrementalAppendMatchesSinglePass(t *testing.T) {
 	data := loadFixture(t)
 	dir := t.TempDir()
-	path := filepath.Join(dir, fixture)
+	path := filepath.Join(dir, archiveName)
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -135,7 +141,7 @@ func singlePass(t *testing.T, data []byte) []*turn.Turn {
 func TestWatcher_ResumesWithoutReplaying(t *testing.T) {
 	data := loadFixture(t)
 	dir := t.TempDir()
-	path := filepath.Join(dir, fixture)
+	path := filepath.Join(dir, archiveName)
 	half := len(data) / 2
 
 	if err := os.WriteFile(path, data[:half], 0o644); err != nil {
@@ -247,7 +253,7 @@ func TestWatcher_ReclaimIsOptIn(t *testing.T) {
 func TestWatcher_FailedEmitDoesNotAdvanceCheckpoint(t *testing.T) {
 	data := loadFixture(t)
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, fixture), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, archiveName), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -261,7 +267,7 @@ func TestWatcher_FailedEmitDoesNotAdvanceCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st := cp.Files[fixture]; st.Offset != 0 {
+	if st := cp.Files[archiveName]; st.Offset != 0 {
 		t.Errorf("checkpoint advanced to %d despite the sink failing", st.Offset)
 	}
 }
@@ -277,10 +283,10 @@ func TestWatcher_FailedEmitDoesNotAdvanceCheckpoint(t *testing.T) {
 func TestWatcher_DetectsReplacementAtTheSamePath(t *testing.T) {
 	data := loadFixture(t)
 	if len(data) < 4096 {
-		t.Skip("fixture too small")
+		t.Fatalf("smallest corpus archive is %d bytes; too small to split into generations", len(data))
 	}
 	dir := t.TempDir()
-	path := filepath.Join(dir, fixture)
+	path := filepath.Join(dir, archiveName)
 
 	// First generation: a short prefix, fully consumed.
 	head := data[:len(data)/4]
@@ -292,7 +298,7 @@ func TestWatcher_DetectsReplacementAtTheSamePath(t *testing.T) {
 	if err := w.Poll(context.Background(), collect(&first)); err != nil {
 		t.Fatal(err)
 	}
-	consumed := w.cp.Files[fixture].Offset
+	consumed := w.cp.Files[archiveName].Offset
 	if consumed == 0 {
 		t.Fatal("nothing consumed from the first generation")
 	}
@@ -300,9 +306,13 @@ func TestWatcher_DetectsReplacementAtTheSamePath(t *testing.T) {
 	// Second generation: the same path, a genuinely different archive, and LARGER than
 	// the offset we hold - so file size gives no hint that anything changed. This is
 	// the real 2026-08-06T18 case, where one filename held two unrelated captures.
-	replacement := loadFixtureNamed(t, otherFixture)
+	replacement := corpusFile(t, 1)
+	// fixture.Any is smallest-first, so the replacement is at least as large as the
+	// file whose quarter-prefix we consumed. If that ever stops holding, the test is
+	// no longer exercising the larger-replacement case it was written for.
 	if int64(len(replacement)) <= consumed {
-		t.Skip("replacement fixture is not larger than the consumed prefix")
+		t.Fatalf("replacement is %d bytes, not larger than the %d consumed - this test "+
+			"only proves anything when size gives no hint of the swap", len(replacement), consumed)
 	}
 	if err := os.WriteFile(path, replacement, 0o600); err != nil {
 		t.Fatal(err)
@@ -317,7 +327,7 @@ func TestWatcher_DetectsReplacementAtTheSamePath(t *testing.T) {
 			w.Stats.FilesReplaced)
 	}
 	// Restarted from zero, so everything decodable in the new file was read.
-	if got := w.cp.Files[fixture].Offset; got == 0 || got <= consumed {
+	if got := w.cp.Files[archiveName].Offset; got == 0 || got <= consumed {
 		t.Errorf("offset after replacement = %d (was %d); the file was not restarted",
 			got, consumed)
 	}
@@ -331,7 +341,7 @@ func TestWatcher_DetectsReplacementAtTheSamePath(t *testing.T) {
 func TestWatcher_AppendIsNotAReplacement(t *testing.T) {
 	data := loadFixture(t)
 	dir := t.TempDir()
-	path := filepath.Join(dir, fixture)
+	path := filepath.Join(dir, archiveName)
 	if err := os.WriteFile(path, data[:len(data)/2], 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -3,21 +3,17 @@ package archive
 import (
 	"bytes"
 	"compress/gzip"
-	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/rknightion/codexlb2otel/internal/fixture"
 )
 
-// liveFixture returns a real captured archive hour, or skips. These live under
-// testdata/live/ and are gitignored - they contain full conversation content.
+// liveFixture returns a real captured archive hour. It is DISCOVERED rather than
+// named: the corpus is never committed and gets reorganised, and a hardcoded path
+// turns into a silent skip the moment it moves. See internal/fixture.
 func liveFixture(t *testing.T) []byte {
 	t.Helper()
-	p := filepath.Join("..", "..", "testdata", "live", "2026-08-06T18.jsonl.gz")
-	data, err := os.ReadFile(p)
-	if err != nil {
-		t.Skipf("live fixture absent (%v); pull one from camden to run this", err)
-	}
-	return data
+	return fixture.Load(t, fixture.Any(t, 1)[0])
 }
 
 // appendMembers builds a multi-member file the same way codex-lb does: one closed
@@ -137,8 +133,14 @@ func TestDecodeMembers_ResumeMatchesSinglePass(t *testing.T) {
 	}
 }
 
-// Guards the counts this design was derived from, so a change in codex-lb's writer
-// batching shows up here rather than as silently wrong telemetry.
+// The whole tailing design rests on one property of codex-lb's writer: it closes a
+// gzip member per batch, and the batches are tiny. That is what lets a checkpoint
+// land on a member boundary instead of mid-stream.
+//
+// Asserting the PROPERTY rather than a per-file count is deliberate. The counts this
+// was derived from (15,106 members / 16,552 lines) belonged to one specific captured
+// hour, and pinning them meant the test could only ever run against that file - which
+// is exactly how the suite got detached from its data when the corpus moved.
 func TestDecodeMembers_LiveFixtureShape(t *testing.T) {
 	data := liveFixture(t)
 
@@ -150,16 +152,21 @@ func TestDecodeMembers_LiveFixtureShape(t *testing.T) {
 		t.Errorf("Consumed = %d, want %d", res.Consumed, len(data))
 	}
 
-	const wantLines = 16552
-	if got := bytes.Count(res.Data, []byte("\n")); got != wantLines {
-		t.Errorf("decoded %d lines, want %d", got, wantLines)
+	lines := bytes.Count(res.Data, []byte("\n"))
+	if lines == 0 || res.Members == 0 {
+		t.Fatalf("decoded %d lines from %d members", lines, res.Members)
 	}
-	const wantMembers = 15106
-	if res.Members != wantMembers {
-		t.Errorf("Members = %d, want %d; if codex-lb changed its write batching, "+
-			"re-derive the tailing assumptions before updating this number",
-			res.Members, wantMembers)
+	if res.Members < 100 {
+		t.Errorf("only %d members in %d bytes; the writer appears to batch far more "+
+			"per member than the byte-offset resume design assumes", res.Members, len(data))
 	}
+	perMember := float64(lines) / float64(res.Members)
+	if perMember < 1 || perMember > 4 {
+		t.Errorf("%.2f lines per member (measured 1.1 when this was designed); "+
+			"if codex-lb changed its write batching, re-derive the tailing assumptions",
+			perMember)
+	}
+	t.Logf("%d lines / %d members = %.2f per member", lines, res.Members, perMember)
 }
 
 // Corrupt data mid-file must surface as an error while preserving what came before,

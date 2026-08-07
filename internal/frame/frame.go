@@ -270,6 +270,30 @@ const (
 	EvContentPartDone      = "response.content_part.done"
 )
 
+// KnownEventTypes is every protocol event this package names.
+//
+// It exists so a profiler can subtract it from what a fresh capture contains and
+// report the remainder. That difference is not cosmetic: the `error` event was
+// 100% unhandled for the first two phases of this build, and because no
+// response.completed follows one, every affected turn was silently reported as
+// merely incomplete with its cause discarded.
+func KnownEventTypes() map[string]bool {
+	out := make(map[string]bool, len(knownEvents))
+	for _, t := range knownEvents {
+		out[t] = true
+	}
+	return out
+}
+
+var knownEvents = []string{
+	EvResponseCreate, EvResponseCreated, EvResponseInProgress, EvResponseCompleted,
+	EvOutputItemAdded, EvOutputItemDone, EvRateLimits, EvResponseMetadata,
+	EvWebsocketTiming, EvError,
+	EvOutputTextDelta, EvCustomToolInputDelta, EvFunctionArgsDelta,
+	EvCustomToolInputDone, EvFunctionArgsDone, EvOutputTextDone,
+	EvContentPartAdded, EvContentPartDone,
+}
+
 // IsDelta reports whether an event is streaming chatter. These are counted, never
 // stored: they were 87% of frames in the captured sample.
 func IsDelta(t string) bool {

@@ -3,55 +3,78 @@ package turn
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/rknightion/codexlb2otel/internal/archive"
+	"github.com/rknightion/codexlb2otel/internal/fixture"
 	"github.com/rknightion/codexlb2otel/internal/frame"
 )
 
-// These tests run against real captured archive hours. They deliberately assert
-// INVARIANTS rather than exact counts: the fixtures get refreshed from camden as new
-// traffic shapes turn up, and pinning "1245 responses" only produced churn. What
-// matters is that the reduction stays self-consistent whatever the input.
-const (
-	hour17 = "live/2026-08-06T17.jsonl.gz"
-	hour18 = "live/2026-08-06T18.jsonl.gz"
-	hour21 = "live/2026-08-06T21.jsonl.gz"
-
-	// The morning corpus was captured before the archive was moved off the host. It is
-	// the only fixture holding the HTTP and probe record families - the evening hours
-	// are pure websocket - so family handling is untested without it.
-	//
-	// Note morning hour 18 is a DIFFERENT FILE from live hour 18 despite the identical
-	// archive name: codex-lb recreated the path after the copy. That is exactly the
-	// case FileState.Fingerprint exists to catch.
-	mornHour16 = "live-morning/2026-08-06T16.jsonl.gz"
-	mornHour18 = "live-morning/2026-08-06T18.jsonl.gz"
-)
-
-func reduceFixtures(t *testing.T, names ...string) []*Turn {
+// These tests run against the real captured corpus, which is never committed - it
+// holds full conversation content. Two consequences shape everything below.
+//
+// They assert INVARIANTS, not counts. The corpus is refreshed as new traffic shapes
+// turn up, and pinning "1245 responses" only produced churn. What matters is that
+// the reduction stays self-consistent whatever the input.
+//
+// And they DISCOVER their fixtures rather than naming them. Naming files is what
+// silently detached this suite from its data once already: the corpus was
+// reorganised, every t.Skip fired, and `go test ./...` still printed ok for every
+// package while asserting nothing at all. See internal/fixture.
+func reduceFiles(t *testing.T, paths ...string) []*Turn {
 	t.Helper()
 	r := New()
 	var out []*Turn
-	for _, name := range names {
-		out = append(out, feed(t, r, name)...)
+	for _, p := range paths {
+		out = append(out, feed(t, r, p)...)
 	}
 	out = append(out, r.Flush()...)
 	sortByStart(out)
 	return out
 }
 
-func feed(t *testing.T, r *Reducer, name string) []*Turn {
+// corpusTurns reduces the n cheapest archives in the corpus.
+func corpusTurns(t *testing.T, n int) []*Turn {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", filepath.FromSlash(name)))
-	if err != nil {
-		t.Skipf("live fixture absent (%v); pull one from camden to run this", err)
+	return reduceFiles(t, fixture.Any(t, n)...)
+}
+
+// reduceUntil feeds archives, cheapest first, until the corpus has supplied the
+// property the test needs - then stops. Some shapes are rare (the probe family was
+// 204 records in 1.32M) and live in whichever hour happened to capture them, so a
+// test cannot name the file that holds them.
+//
+// Exhausting the corpus without the property is a FAILURE, not a skip: it means the
+// corpus no longer covers that case and the property is silently untested.
+func reduceUntil(t *testing.T, what string, want func([]*Turn) bool) []*Turn {
+	t.Helper()
+	files := fixture.Files(t)
+	r := New()
+	var out []*Turn
+	for i, p := range files {
+		out = append(out, feed(t, r, p)...)
+		if want(out) {
+			t.Logf("%s found after %d/%d archives", what, i+1, len(files))
+			out = append(out, r.Flush()...)
+			sortByStart(out)
+			return out
+		}
 	}
-	res, err := archive.DecodeMembers(data)
+	out = append(out, r.Flush()...)
+	sortByStart(out)
+	if !want(out) {
+		t.Fatalf("the corpus under %s does not contain %s (%d archives, %d turns). "+
+			"Add an archive hour that does - otherwise this property is untested.",
+			fixture.Root(t), what, len(files), len(out))
+	}
+	return out
+}
+
+func feed(t *testing.T, r *Reducer, path string) []*Turn {
+	t.Helper()
+	res, err := archive.DecodeMembers(fixture.Load(t, path))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%s: %v", fixture.Name(path), err)
 	}
 	var out []*Turn
 	err = frame.Lines(res.Data, func(rec *frame.Record) error {
@@ -62,7 +85,7 @@ func feed(t *testing.T, r *Reducer, name string) []*Turn {
 		return err
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%s: %v", fixture.Name(path), err)
 	}
 	return out
 }
@@ -71,7 +94,7 @@ func feed(t *testing.T, r *Reducer, name string) []*Turn {
 // cumulative over a logical turn, so summing them raw overcounts by ~5.7x. Summed as
 // deltas they must instead track the independent per-response usage figure.
 func TestReducer_DeltasTrackUsage(t *testing.T) {
-	turns := reduceFixtures(t, hour17, hour18, hour21)
+	turns := corpusTurns(t, 3)
 	if len(turns) < 100 {
 		t.Fatalf("only %d turns; fixtures look wrong", len(turns))
 	}
@@ -99,7 +122,7 @@ func TestReducer_DeltasTrackUsage(t *testing.T) {
 // A negative delta means a logical-turn boundary was missed, which silently corrupts
 // every downstream counter.
 func TestReducer_NoNegativeDeltas(t *testing.T) {
-	for _, x := range reduceFixtures(t, hour17, hour18, hour21) {
+	for _, x := range corpusTurns(t, 3) {
 		if x.EngineCallsDelta < 0 || x.SampledTokensDelta < 0 ||
 			x.EnginePromptTokensDelta < 0 || x.EngineCachedTokensDelta < 0 ||
 			x.TurnTimeSecondsDelta < 0 || x.ClientToolPauseMsDelta < 0 {
@@ -113,7 +136,7 @@ func TestReducer_NoNegativeDeltas(t *testing.T) {
 // Guards the cardinality rules the metric pipeline depends on. Anything asserted here
 // is safe to use as a metric attribute; everything else must stay a log field.
 func TestReducer_CardinalityAssumptions(t *testing.T) {
-	turns := reduceFixtures(t, hour17, hour18, hour21)
+	turns := corpusTurns(t, 3)
 
 	models, efforts, statuses, tools, errs := set{}, set{}, set{}, set{}, set{}
 	for _, x := range turns {
@@ -147,7 +170,7 @@ func TestReducer_CardinalityAssumptions(t *testing.T) {
 // Every turn must carry a logical-turn id, including ones that never reported timing
 // metrics. Without this, error and prewarm responses fall out of turn-level rollups.
 func TestReducer_EveryTurnHasIdentity(t *testing.T) {
-	for _, x := range reduceFixtures(t, hour17, hour18, hour21) {
+	for _, x := range corpusTurns(t, 3) {
 		if x.LogicalTurnID == "" {
 			t.Fatalf("turn %s has no logical_turn_id (status %q)", x.RequestID, x.Status)
 		}
@@ -160,10 +183,17 @@ func TestReducer_EveryTurnHasIdentity(t *testing.T) {
 // A restart must not turn the next cumulative reading into one giant fake delta.
 // This is the reason Snapshot/Restore exists.
 func TestReducer_StateSurvivesRestart(t *testing.T) {
-	full := reduceFixtures(t, hour17, hour18)
+	// Enough archives that the comparison below has real weight: two of the smallest
+	// left only 47 turns spanning the restart, which is thin evidence for the one
+	// mechanism this test exists to prove.
+	files := fixture.Any(t, 4)
+	full := reduceFiles(t, files...)
+	before, after := files[:2], files[2:]
 
 	r1 := New()
-	feed(t, r1, hour17)
+	for _, f := range before {
+		feed(t, r1, f)
+	}
 	blob, err := json.Marshal(r1.Snapshot())
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +204,10 @@ func TestReducer_StateSurvivesRestart(t *testing.T) {
 	}
 	r2 := New()
 	r2.Restore(s)
-	resumed := feed(t, r2, hour18)
+	var resumed []*Turn
+	for _, f := range after {
+		resumed = append(resumed, feed(t, r2, f)...)
+	}
 
 	// Key by request_id, not position: a turn spanning the restart is handled
 	// differently by the two runs and would shift every index after it.
@@ -210,7 +243,7 @@ func TestReducer_StateSurvivesRestart(t *testing.T) {
 // PER THREAD so each thread still reconstructs in full - a subagent legitimately
 // receives a copy of the user's request.
 func TestReducer_InputContentIsDeduplicated(t *testing.T) {
-	turns := reduceFixtures(t, hour17, hour18, hour21)
+	turns := corpusTurns(t, 3)
 
 	var prompts, outputs int
 	perThread, global := set{}, set{}
@@ -245,7 +278,7 @@ func TestReducer_InputContentIsDeduplicated(t *testing.T) {
 // the request-id shape and the originator instead. Getting this wrong silently merges
 // codex-lb's own "say OK" probes into the user-facing latency and cost metrics.
 func TestReducer_ClassifiesRecordFamilies(t *testing.T) {
-	turns := reduceFixtures(t, mornHour16, mornHour18, hour21)
+	turns := reduceUntil(t, "all three record families", haveAllFamilies)
 
 	families := map[string]int{}
 	probeModels := set{}
@@ -265,12 +298,6 @@ func TestReducer_ClassifiesRecordFamilies(t *testing.T) {
 		}
 		if x.InputTokens > probeMaxInput {
 			probeMaxInput = x.InputTokens
-		}
-	}
-	for _, f := range []string{frame.FamilyWebsocket, frame.FamilyHTTP, frame.FamilyProbe} {
-		if families[f] == 0 {
-			t.Errorf("no %s-family turns; fixtures no longer cover that family (saw %v)",
-				f, families)
 		}
 	}
 	// Probes deliberately exercise BOTH a mini model and the real one, so model overlap
@@ -295,7 +322,7 @@ func TestReducer_ClassifiesRecordFamilies(t *testing.T) {
 // with an empty turn_id long after real turns have begun - measured at 177 of 199
 // turns mislabelled. This test fails if anyone repoints it at the header.
 func TestReducer_TurnIdentityComesFromClientMetadata(t *testing.T) {
-	turns := reduceFixtures(t, hour17, hour18, hour21)
+	turns := corpusTurns(t, 3)
 
 	var withTurnID, prewarm, realTurn int
 	for _, x := range turns {
@@ -331,7 +358,7 @@ func TestReducer_TurnIdentityComesFromClientMetadata(t *testing.T) {
 // and should agree with the delta arithmetic where both are available. Divergence
 // means one of the two is being misread.
 func TestReducer_CriticalPathAgreesWithDeltas(t *testing.T) {
-	turns := reduceFixtures(t, hour17, hour18, hour21)
+	turns := corpusTurns(t, 3)
 
 	var complete, partial, agree, compared int
 	for _, x := range turns {
@@ -374,7 +401,7 @@ func TestReducer_CriticalPathAgreesWithDeltas(t *testing.T) {
 // rate-limit headroom are the point of the exercise. Losing them makes every headroom
 // figure an average across accounts, which hides the exhaustion it exists to show.
 func TestReducer_CapturesRoutingDimensions(t *testing.T) {
-	turns := reduceFixtures(t, mornHour16, mornHour18, hour17, hour21)
+	turns := reduceUntil(t, "routing dimensions (account, plan, rate limits)", haveRoutingDimensions)
 
 	accounts, plans, safety, kinds := set{}, set{}, set{}, set{}
 	var withRateLimit, withExtraLimits int
@@ -388,20 +415,6 @@ func TestReducer_CapturesRoutingDimensions(t *testing.T) {
 		}
 		if len(x.ExtraRateLimits) > 0 {
 			withExtraLimits++
-		}
-	}
-	for _, c := range []struct {
-		name string
-		got  int
-	}{
-		{"account ids", len(accounts)},
-		{"plan types", len(plans)},
-		{"safety identifiers", len(safety)},
-		{"responses with rate-limit headroom", withRateLimit},
-		{"responses with per-model rate limits", withExtraLimits},
-	} {
-		if c.got == 0 {
-			t.Errorf("no %s captured", c.name)
 		}
 	}
 	// Every one of these is a metric attribute, so an unbounded value would be a
@@ -418,7 +431,7 @@ func TestReducer_CapturesRoutingDimensions(t *testing.T) {
 // day, so the body must be emitted once while every response still carries the hash.
 // Shipping the body per response would dominate log spend for no extra information.
 func TestReducer_InstructionsAreHashedNotRepeated(t *testing.T) {
-	turns := reduceFixtures(t, hour17, hour18, hour21)
+	turns := corpusTurns(t, 3)
 
 	hashes, bodies := set{}, 0
 	var chars int
@@ -465,4 +478,36 @@ func (s set) keys() []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// ---- corpus-coverage predicates ----
+//
+// These say what a test needs the corpus to CONTAIN, separately from what it then
+// asserts about it. Keeping the two apart is what lets a missing shape be reported
+// as "the corpus no longer covers this" rather than as a failed assertion, which
+// would send the next reader looking for a bug in the reducer.
+
+func haveAllFamilies(turns []*Turn) bool {
+	seen := set{}
+	for _, x := range turns {
+		seen.add(x.Family)
+	}
+	for _, f := range []string{frame.FamilyWebsocket, frame.FamilyHTTP, frame.FamilyProbe} {
+		if !seen[f] {
+			return false
+		}
+	}
+	return true
+}
+
+func haveRoutingDimensions(turns []*Turn) bool {
+	var account, plan, safety, limits, perModel bool
+	for _, x := range turns {
+		account = account || x.AccountID != ""
+		plan = plan || x.PlanType != ""
+		safety = safety || x.SafetyID != ""
+		limits = limits || x.RateLimitUsedPercent > 0
+		perModel = perModel || len(x.ExtraRateLimits) > 0
+	}
+	return account && plan && safety && limits && perModel
 }
