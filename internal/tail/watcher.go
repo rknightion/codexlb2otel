@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rknightion/codexlb2otel/internal/archive"
@@ -102,7 +103,29 @@ type Watcher struct {
 	// tick landing mid-Poll would be a concurrent map read racing a map write, which
 	// the Go runtime is entitled to crash the process over, not merely something
 	// -race would flag.
+	//
+	// PROGRESS MUST NOT TAKE THIS LOCK. See progress below.
 	mu sync.RWMutex
+
+	// progress is the published, lock-free view Progress returns. It exists because
+	// the obvious implementation - take mu.RLock and build the snapshot - deadlocks
+	// the entire service, which is exactly how the first production run failed
+	// (2026-08-07, issue #29).
+	//
+	// The cycle: Poll holds mu for the whole pass; inside it, emit calls the sink,
+	// whose otlpmetric Flush calls MeterProvider.ForceFlush, which runs the SDK's
+	// registered async-instrument callback, which is internal/selfobs asking this
+	// watcher for Progress. A read lock cannot be taken while the same goroutine's
+	// caller holds the write lock, so Collect blocks until the OTel PeriodicReader's
+	// 30s timeout fires and the flush fails - forever, on every poll, with the
+	// checkpoint correctly refusing to advance past a failed flush. Nothing was ever
+	// ingested and the error read as a network timeout.
+	//
+	// Publishing a snapshot at the end of each pass and reading it atomically breaks
+	// the cycle at the only point where breaking it is free. The cost is that a
+	// reader sees the state as of the last completed pass rather than a half-finished
+	// one, which for an operational metric is not a cost at all.
+	progress atomic.Pointer[Progress]
 
 	// Stats are cumulative counters for self-observability.
 	Stats Stats
@@ -130,11 +153,11 @@ type Stats struct {
 	PartialMemberReads int64
 }
 
-// Progress is a point-in-time, lock-consistent view of the watcher's own operational
-// state, for self-observability (issue #8). internal/selfobs is the one caller
-// expected to invoke this from a goroutine other than the one driving Poll/Run - see
-// Watcher's own doc comment on mu for why that is safe here and nowhere else in this
-// package.
+// Progress is a self-consistent view of the watcher's own operational state as of the
+// last completed pass, for self-observability (issue #8). internal/selfobs is the one
+// caller, and it reaches this from the metrics SDK's collection path - which can be
+// the very goroutine already inside Poll, not merely a different one. See the progress
+// field on Watcher for why that distinction is the whole design.
 type Progress struct {
 	Stats Stats
 	// Watermark is the newest record timestamp seen - the archive's own clock, never
@@ -158,17 +181,29 @@ type Progress struct {
 	ReducerThreadCount int
 }
 
-// Progress reports a consistent snapshot of the watcher's own state. Safe to call
-// concurrently with Poll/Run - see the mu field's own doc comment for why that
-// safety is not free and not the default anywhere else in this package.
+// Progress reports the watcher's own state as of the last completed pass.
+//
+// It TAKES NO LOCK, deliberately, and that is a correctness requirement rather than
+// an optimisation: its caller is an OTel async-instrument callback that the metrics
+// SDK runs from inside ForceFlush, which this package calls from inside Poll, which
+// holds mu. Reading under mu.RLock there is a self-deadlock - see the progress field
+// for the full cycle and what it cost.
 func (w *Watcher) Progress() Progress {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
+	if p := w.progress.Load(); p != nil {
+		return *p
+	}
+	return Progress{}
+}
+
+// publishProgress snapshots the watcher for Progress to serve. The caller must hold
+// mu for writing - every field it reads is one Poll mutates, and reducer.Open() walks
+// a map Poll writes to.
+func (w *Watcher) publishProgress() {
 	var offset int64
 	if w.currentFile != "" {
 		offset = w.cp.Files[w.currentFile].Offset
 	}
-	return Progress{
+	w.progress.Store(&Progress{
 		Stats:              w.Stats,
 		Watermark:          w.watermark,
 		CurrentFile:        w.currentFile,
@@ -176,7 +211,7 @@ func (w *Watcher) Progress() Progress {
 		OpenResponses:      w.reducer.Open(),
 		ReducerSeriesCount: w.reducerStateEntries[0],
 		ReducerThreadCount: w.reducerStateEntries[1],
-	}
+	})
 }
 
 // New builds a Watcher, restoring reducer state and offsets from the checkpoint.
@@ -187,7 +222,12 @@ func New(cfg Config, r *turn.Reducer) (*Watcher, error) {
 		return nil, err
 	}
 	r.Restore(cp.Reducer)
-	return &Watcher{cfg: cfg, reducer: r, cp: cp, log: cfg.Logger}, nil
+	w := &Watcher{cfg: cfg, reducer: r, cp: cp, log: cfg.Logger}
+	// Publish once before anything can poll, so a metrics collection arriving in the
+	// gap between startup and the first pass reads a zero snapshot rather than one
+	// built from a half-initialised watcher.
+	w.publishProgress()
+	return w, nil
 }
 
 // Emit receives each batch of completed turns. Returning an error aborts the pass
@@ -220,6 +260,7 @@ func (w *Watcher) Run(ctx context.Context, emit Emit) error {
 func (w *Watcher) shutdown(ctx context.Context, emit Emit) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	defer w.publishProgress()
 	pending := w.reducer.Flush()
 	w.Stats.TurnsEmitted += int64(len(pending))
 	if len(pending) > 0 {
@@ -234,6 +275,10 @@ func (w *Watcher) shutdown(ctx context.Context, emit Emit) error {
 func (w *Watcher) Poll(ctx context.Context, emit Emit) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	// Deferred AFTER the unlock defer so it runs BEFORE it (LIFO), i.e. still under
+	// the write lock. Runs on the failure paths too: a poll that failed is exactly
+	// when an operator most wants the counters it did manage to move.
+	defer w.publishProgress()
 	files, err := w.scan()
 	if err != nil {
 		return err
