@@ -64,6 +64,15 @@ type Turn struct {
 	PlanType    string `json:"plan_type,omitempty"`
 	IsSubagent  bool   `json:"is_subagent"`
 
+	// Temperature and TopP are request parameters read from response.completed. #18
+	// recorded both as absent - wrong, per #22 item 2: they are present on every
+	// completion in the corpus (constant at 1.0 / 0.98 in the 2026-08-07 sample, but
+	// that is this traffic's choice, not a wire guarantee, so both are still carried
+	// per response rather than assumed fixed). response.max_output_tokens really is
+	// always null and is deliberately NOT added.
+	Temperature float64 `json:"temperature,omitempty"`
+	TopP        float64 `json:"top_p,omitempty"`
+
 	// Family is websocket | http | probe | unknown. Label metrics with this, never with
 	// the record's Transport field, which reads "websocket" for every record including
 	// the HTTP ones and the synthetic health checks.
@@ -89,6 +98,22 @@ type Turn struct {
 	// ship it on every response; the body itself is emitted once, via Prompts.
 	InstructionsHash  string `json:"instructions_hash,omitempty"`
 	InstructionsChars int    `json:"instructions_chars,omitempty"`
+
+	// Tools/ToolsHash get the identical treatment for the same reason: a re-sent
+	// catalogue is boilerplate the moment it repeats. ToolsHash is set on every
+	// response that carries a tool catalogue; Tools (the bodies) only on the response
+	// where the hash first changes. See applyCreate/captureInput and ToolDef - #22
+	// item 1's premise that this lives at response.create's own top-level tools[] is
+	// corpus-false (measured 2026-08-08 against all 8,916 response.create events: zero
+	// carry a top-level "tools" key). The only tools[] the wire protocol carries is
+	// nested inside an "additional_tools" input item - corpus.sig.json's own induced
+	// path is input[].tools[], never a bare tools[] - and only 461/8,916 creates (5%)
+	// carry one, naming just 5 distinct entries (collaboration, functions, exec, wait,
+	// request_user_input). That is a materially smaller and different thing than "the
+	// tools available to this agent" #22 wanted a hash of - flagged rather than
+	// silently worked around; decode it as-is until product intent is confirmed.
+	Tools     []ToolDef `json:"tools,omitempty"`
+	ToolsHash string    `json:"tools_hash,omitempty"`
 
 	// Websocket lifecycle. The close code is in the archive's extra block and the
 	// reason is PLAIN TEXT in the payload, so a decoder that only parses JSON payloads
@@ -130,6 +155,25 @@ type Turn struct {
 	EngineCachedTokensDelta int     `json:"engine_cached_tokens_delta"`
 	ClientToolPauseMsDelta  float64 `json:"client_tool_pause_ms_delta"`
 
+	// The nine fields below are cumulative over the logical turn exactly like the
+	// block above - measured on the full 2026-08-07 corpus (#12's corrective comment,
+	// not the issue body, which wrongly called several of these absent or wrongly
+	// scoped the taas_* split as deliverable when every taas_* value in the corpus is
+	// null). Each decrease-fraction matches num_engine_calls's own turn-boundary rate
+	// exactly, so they share its baseline and reset rules. EngineUncachedPromptTokens
+	// is engine_uncached_prompt_tokens_total's sibling to the already-decoded
+	// engine_total_prompt_tokens_total (EnginePromptTokensDelta above) - only the
+	// uncached one was ever missing.
+	EngineServiceInferenceMsDelta              float64 `json:"engine_service_inference_ms_delta,omitempty"`
+	EngineServiceSamplingMsDelta               float64 `json:"engine_service_sampling_ms_delta,omitempty"`
+	EngineIapiInferenceMsDelta                 float64 `json:"engine_iapi_inference_ms_delta,omitempty"`
+	EngineIapiSamplingMsDelta                  float64 `json:"engine_iapi_sampling_ms_delta,omitempty"`
+	ResponsesExclEngineAndToolMsDelta          float64 `json:"responses_excl_engine_and_tool_ms_delta,omitempty"`
+	ResponsesExclEngineWaitSamplingMsDelta     float64 `json:"responses_excl_engine_wait_sampling_ms_delta,omitempty"`
+	ResponsesExclEngineWaitSamplingIapiMsDelta float64 `json:"responses_excl_engine_wait_sampling_iapi_ms_delta,omitempty"`
+	ResponsesAPIExclClientToolsMsDelta         float64 `json:"responsesapi_excl_client_tools_ms_delta,omitempty"`
+	EngineUncachedPromptTokensDelta            int     `json:"engine_uncached_prompt_tokens_delta,omitempty"`
+
 	// CriticalPath is the server's OWN per-response breakdown. Prefer it to the delta
 	// fields above wherever it is populated.
 	CriticalPath CriticalPath `json:"critical_path"`
@@ -138,6 +182,15 @@ type Turn struct {
 	TTFTMs           float64 `json:"ttft_ms,omitempty"`
 	PreInferenceMs   float64 `json:"pre_inference_ms,omitempty"`
 	EngineQueueMaxMs float64 `json:"engine_queue_max_ms,omitempty"`
+
+	// The three TBT (time-between-tokens) fields below are RUNNING AVERAGES across
+	// engine calls, not sums - #12's corpus measurement proved this by construction:
+	// EngineServiceMinusIapiTBTMs goes negative (min -6.70), which a monotonic
+	// cumulative sum can never do. Delta-ing them would silently corrupt the
+	// arithmetic, so they are used exactly as reported, per response.
+	EngineServiceTBTMs          float64 `json:"engine_service_tbt_ms,omitempty"`
+	EngineIapiTBTMs             float64 `json:"engine_iapi_tbt_ms,omitempty"`
+	EngineServiceMinusIapiTBTMs float64 `json:"engine_service_minus_iapi_tbt_ms,omitempty"`
 
 	// Streaming shape, from the timing block. Delta count and time-between-tokens
 	// describe how the response was delivered rather than how long it took.
@@ -194,6 +247,21 @@ type Turn struct {
 	ToolOutputs   []ToolOutput   `json:"tool_outputs,omitempty"`
 	AgentMessages []AgentMessage `json:"agent_messages,omitempty"`
 	InputItems    int            `json:"input_items,omitempty"`
+
+	// ToolCallDurationsMs is a SUFFIX DIFF, not the server's raw reading. The wire
+	// field (responsesapi_duration_excl_engine_per_tool_call_ms) accumulates one entry
+	// per tool call across the whole logical turn and only resets at the turn
+	// boundary - #12's corpus measurement proved it shrinks in exactly the responses
+	// where the num_engine_calls turn-boundary detector also fires (300/8,663 pairs,
+	// identical numerator and denominator). So this carries only the entries newly
+	// added since the previous response of the same series, the same "newly seen, not
+	// total" principle InputImages already uses. See applyTiming.
+	ToolCallDurationsMs []float64 `json:"tool_call_durations_ms,omitempty"`
+	// ToolCallDurationsTruncated is the companion flag, read directly (never diffed) -
+	// responsesapi_duration_excl_engine_per_tool_call_TRUNCATED, which drops the "_ms"
+	// its sibling carries. Missing the rename once already cost a round trip. It is
+	// null on 8,853 of 8,883 corpus events and true on the other 30, never false.
+	ToolCallDurationsTruncated bool `json:"tool_call_durations_truncated,omitempty"`
 	// InputImages counts image parts newly seen on this response - multimodal input,
 	// which the capture proves exists and which nothing else in the pipeline records.
 	// Newly seen, not total: response.create re-sends the whole history every turn, so
@@ -205,6 +273,20 @@ type Turn struct {
 	Frames       int            `json:"frames"`
 	Bytes        int            `json:"bytes"`
 	ReasoningEnc int            `json:"reasoning_encrypted_chars,omitempty"`
+}
+
+// ToolDef is one entry of a re-sent tool catalogue, deduplicated onto Turn.Tools by
+// Turn.ToolsHash. Deliberately shallow: Kind and Name are enum-like and Description
+// is prose, all cheap to carry, but a tool's parameters/output_schema are
+// client-authored JSON Schema of unbounded shape - internal/profile.opaqueKind exists
+// because walking that subtree once produced 217 spurious findings from a single new
+// tool, and one observed schema alone ran to ~190 properties. Decoding it here would
+// import the exact problem that guard was built to avoid.
+type ToolDef struct {
+	Name        string `json:"name"`
+	Kind        string `json:"kind,omitempty"` // the wire's `type`
+	Description string `json:"description,omitempty"`
+	Strict      bool   `json:"strict,omitempty"`
 }
 
 // CriticalPath is the server's per-response timing breakdown.
@@ -308,4 +390,22 @@ type cumulative struct {
 	promptTokens  int
 	cachedTokens  int
 	toolPauseMs   float64
+
+	// The nine fields #12's corpus comment added, same series/reset rules as above.
+	serviceInferenceMs           float64
+	serviceSamplingMs            float64
+	iapiInferenceMs              float64
+	iapiSamplingMs               float64
+	exclEngineAndToolMs          float64
+	exclEngineWaitSamplingMs     float64
+	exclEngineWaitSamplingIapiMs float64
+	exclClientToolsMs            float64
+	uncachedPromptTokens         int
+
+	// toolCallDurationsMs is the last cumulative reading of the per-tool-call array,
+	// kept so applyTiming can suffix-diff the next one against it rather than against
+	// the values already reported. Unlike the scalar fields above this needs no
+	// separate reset flag: a shorter new array than this one IS the reset signal, by
+	// construction - see applyTiming.
+	toolCallDurationsMs []float64
 }
