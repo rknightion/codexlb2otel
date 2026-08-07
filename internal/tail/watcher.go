@@ -426,6 +426,18 @@ func (w *Watcher) readFile(ctx context.Context, path string, emit Emit) error {
 				// Only advance past bytes whose turns were accepted by the sink.
 				st.Offset += int64(res.Consumed)
 				buf = append(buf[:0], buf[res.Consumed:]...)
+
+				// Republish per chunk, not just per pass. A pass reads every file to
+				// EOF, so the first one after a restart works through the whole
+				// backlog - 2.1GB and ~20 minutes on camden - in a single call. With
+				// the snapshot only published at the end of a pass, every progress
+				// metric reads zero for that entire window and the two gated on having
+				// seen data at all (ingest lag, current-file offset) are absent
+				// outright, which is exactly when an operator is watching. Observed on
+				// the first good run, 2026-08-07. Building a small struct and storing
+				// a pointer is nothing against decoding a chunk.
+				w.cp.Files[name] = st
+				w.publishProgress()
 			}
 			// A partial member left sitting in buf here is the normal steady state of
 			// tailing a file codex-lb is still appending to (archive package's own doc
