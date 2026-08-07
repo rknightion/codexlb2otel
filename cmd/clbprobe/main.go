@@ -6,15 +6,17 @@
 // failure that silently destroys data: an existing field that starts arriving as a
 // second JSON type, which makes Go's decoder abandon the whole event.
 //
-// The default is a SAMPLED scan. Each window resynchronises onto a gzip member
-// boundary, which is only possible because codex-lb closes a member per batch, so a
-// gigabyte-per-hour archive is characterised from a few megabytes. That trade is
-// real and stated in the output: sampling detects drift in common shapes and proves
-// nothing about rare ones. Use -full before concluding something is absent.
+// The default is a FULL scan. Sampling exists (-sampled) and resynchronises each
+// window onto a gzip member boundary, which is only possible because codex-lb closes
+// a member per batch - but a full pass over 1.6GB is about 30 seconds on a laptop,
+// and the trade sampling makes is not worth that: it detects drift in common shapes
+// and proves NOTHING about rare ones. The shapes that matter here are rare by nature
+// (20 websocket control frames in 1.5M lines; one connection-limit error in a day),
+// so a sampled scan is most likely to miss exactly what the tool exists to find.
 //
 //	clbprobe corpus/processed                  # drift check against the baseline
-//	clbprobe -full -update corpus/processed    # accept current shape as the baseline
-//	clbprobe -full -fail-on breaking corpus/   # exhaustive, CI-style
+//	clbprobe -update corpus/processed          # accept current shape as the baseline
+//	clbprobe -sampled corpus/processed         # fast, and cannot prove absence
 package main
 
 import (
@@ -56,7 +58,7 @@ func run() int {
 	var (
 		baseline = flag.String("baseline", DefaultBaseline, "committed signature to compare against")
 		update   = flag.String("update", "", "write the signature to this path instead of comparing (\"-\" for stdout)")
-		full     = flag.Bool("full", false, "read every byte instead of sampling; required to prove absence")
+		sampled  = flag.Bool("sampled", false, "sample windows instead of reading every byte; faster, but cannot prove a shape is absent")
 		windows  = flag.Int("windows", 24, "sampled windows per file")
 		window   = flag.Int("window-bytes", 1<<20, "compressed bytes per sampled window")
 		failOn   = flag.String("fail-on", "new", "exit non-zero at this severity or above: info|new|breaking")
@@ -90,7 +92,7 @@ func run() int {
 		return exitNoInput
 	}
 
-	total, cov, failures := scanAll(files, *full, *windows, *window)
+	total, cov, failures := scanAll(files, !*sampled, *windows, *window)
 	for _, e := range failures {
 		fmt.Fprintf(os.Stderr, "clbprobe: %v\n", e)
 	}
@@ -117,7 +119,7 @@ func run() int {
 			if cov.Sampled {
 				fmt.Fprintln(os.Stderr,
 					"WARNING: baseline written from a SAMPLED scan. It will not contain rare shapes, "+
-						"so the next run may report them as new. Prefer -full -update.")
+						"so the next run may report them as new. Drop -sampled.")
 			}
 		}
 		return exitOK
@@ -126,7 +128,7 @@ func run() int {
 	base, err := readSignature(*baseline)
 	if errors.Is(err, fs.ErrNotExist) {
 		fmt.Fprintf(os.Stderr,
-			"clbprobe: no baseline at %s.\nRun `clbprobe -full -update %s` once to record the current shape.\n",
+			"clbprobe: no baseline at %s.\nRun `clbprobe -update %s` once to record the current shape.\n",
 			*baseline, strings.Join(flag.Args(), " "))
 		return exitNoInput
 	}
@@ -393,8 +395,8 @@ func usage() {
 
 Paths may be archive files or directories; directories are walked for *.jsonl.gz.
 
-  clbprobe corpus/                          drift check against `+DefaultBaseline+`
-  clbprobe -full corpus/processed           exhaustive scan; needed to prove absence
+  clbprobe corpus/                          full drift check against `+DefaultBaseline+`
+  clbprobe -sampled corpus/processed        fast; cannot prove a shape is absent
   clbprobe -update corpus/                  accept the current shape as baseline
 
 exit: 0 clean, 1 drift at or above -fail-on, 2 error, 3 nothing to do
