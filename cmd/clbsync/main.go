@@ -35,6 +35,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // fingerprintBytes is how much of a file's head identifies it. Archive members are
@@ -66,6 +67,28 @@ type action struct {
 	from   int64  // existing local size, for grown/replaced reporting
 }
 
+// transfer is how many bytes actually cross the wire. For a grown file rsync sends
+// only the tail, so reporting the whole file size makes the per-file line disagree
+// with the total quoted at the prompt.
+func (a action) transfer() int64 {
+	if n := a.remote.Size - a.from; n > 0 {
+		return n
+	}
+	return a.remote.Size
+}
+
+func (a action) describe() string {
+	switch a.kind {
+	case "grown":
+		return fmt.Sprintf("grown %s -> %s, fetching +%s",
+			bytesH(a.from), bytesH(a.remote.Size), bytesH(a.transfer()))
+	case "replaced":
+		return fmt.Sprintf("replaced, %s -> %s", bytesH(a.remote.Size), filepath.Base(a.target))
+	default:
+		return fmt.Sprintf("new, %s", bytesH(a.remote.Size))
+	}
+}
+
 func main() {
 	os.Exit(run())
 }
@@ -78,6 +101,7 @@ func run() int {
 		dryRun    = flag.Bool("dry-run", false, "report what would be fetched and stop")
 		yes       = flag.Bool("yes", false, "do not prompt; fetch and run the probe")
 		noProbe   = flag.Bool("no-probe", false, "never offer to run clbprobe afterwards")
+		progress  = flag.Bool("progress", false, "show rsync's live per-file progress")
 	)
 	flag.Usage = usage
 	flag.Parse()
@@ -121,11 +145,15 @@ func run() int {
 	}
 	var failed int
 	for _, a := range todo {
-		fmt.Printf("\n==> %s (%s, %s)\n", a.remote.Name, a.kind, bytesH(a.remote.Size))
-		if err := fetch(*host, *remoteDir, a); err != nil {
+		fmt.Printf("\n==> %s  %s\n", a.remote.Name, a.describe())
+		start := time.Now()
+		if err := fetch(*host, *remoteDir, a, *progress); err != nil {
 			fmt.Fprintf(os.Stderr, "clbsync: %s: %v\n", a.remote.Name, err)
 			failed++
+			continue
 		}
+		el := time.Since(start)
+		fmt.Printf("    done in %s (%s/s)\n", el.Round(100*time.Millisecond), bytesH(rate(a.transfer(), el)))
 	}
 	if failed > 0 {
 		fmt.Fprintf(os.Stderr, "\n%d file(s) failed\n", failed)
@@ -279,7 +307,7 @@ func pending(actions []action) []action {
 func pendingBytes(actions []action) int64 {
 	var n int64
 	for _, a := range actions {
-		n += a.remote.Size - a.from
+		n += a.transfer()
 	}
 	return n
 }
@@ -310,15 +338,30 @@ func report(remote []remoteFile, local []localFile, actions []action) {
 // fetch copies one archive. rsync is used for its resume and delta transfer: the
 // live hour is refetched every run and is usually only a few megabytes longer than
 // the copy already held.
-func fetch(host, remoteDir string, a action) error {
+//
+// Progress is off by default. rsync --progress reprints the filename we just printed
+// and then a carriage-return-updated counter, which leaves a scrollback of half-
+// overwritten lines saying less than the summary we print ourselves.
+func fetch(host, remoteDir string, a action, progress bool) error {
 	src := fmt.Sprintf("%s:%s", host, filepath.Join(remoteDir, a.remote.Name))
 	// Flags kept to the portable set. macOS ships openrsync ("rsync version 2.6.9
 	// compatible"), which rejects --info=progress2 and exits 1 with a usage dump -
 	// so the modern spelling fails every transfer on the machine this is run from.
-	cmd := exec.Command("rsync", "-a", "--partial", "--progress", src, a.target)
+	args := []string{"-a", "--partial"}
+	if progress {
+		args = append(args, "--progress")
+	}
+	cmd := exec.Command("rsync", append(args, src, a.target)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func rate(n int64, d time.Duration) int64 {
+	if d <= 0 {
+		return 0
+	}
+	return int64(float64(n) / d.Seconds())
 }
 
 func probe(dir string) int {

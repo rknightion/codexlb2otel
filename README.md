@@ -33,6 +33,7 @@ files hold real prompts, tool output and assistant messages.
 ./corpus/sync              # pull anything new from camden, then offer to probe it
 ./corpus/sync -dry-run     # say what it would fetch
 ./corpus/sync -yes         # no prompts
+./corpus/sync -progress    # rsync's live per-file counter
 ```
 
 `clbsync` identifies files by a fingerprint of their first bytes, **not by name**. That is not
@@ -65,10 +66,21 @@ corpus **fails**; CI sets `CLB_NO_CORPUS=1` to opt out explicitly. Two guards ba
 Paste an id from codex-lb's UI, a dashboard or an alert:
 
 ```sh
-clbfind resp_052b6a1e90eb18d3016a75b032be908191   # one response
+clbfind resp_052b6a1e90eb18d3016a75b032be908191   # search the whole corpus
+clbfind resp_052b6a... corpus/processed/2026-08-07T10.jsonl.gz   # just that archive
 clbfind -thread resp_...                          # the whole conversation it belongs to
 clbfind -json ws_481fa8fa32724155a2ff8f372d7448ce # the reduced Turn
 ```
+
+Paths after the id narrow the search. codex-lb's request-details view names the archive a response
+came from, so pasting it alongside the id cuts a lookup to ~2.7s against ~5.6s for the whole corpus,
+and the gap widens as the corpus grows. `-thread` deliberately widens back out — a conversation runs
+for hours and crosses archive rotations, so honouring the narrowing would truncate the transcript at
+an hour boundary.
+
+Both passes are sharded across cores. That is only possible because codex-lb closes a gzip member per
+batch, so a worker can seek into the middle of a file and resynchronise instead of decoding
+everything before it.
 
 It prints the model and reasoning parameters, the routing metadata that explains them (request kind,
 thread source, subagent kind, parent thread), the critical-path timing breakdown, token usage,

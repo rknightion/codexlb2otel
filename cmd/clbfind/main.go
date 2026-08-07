@@ -14,6 +14,8 @@
 // (ws_* or a UUID), a thread id, a turn id, a call id.
 //
 //	clbfind resp_052b6a1e90eb18d3016a75b032be908191
+//	clbfind resp_052b6a... corpus/processed/2026-08-07T10.jsonl.gz
+//	clbfind -thread resp_052b6a...
 //	clbfind -json ws_481fa8fa32724155a2ff8f372d7448ce
 package main
 
@@ -39,6 +41,11 @@ import (
 
 const chunkSize = 16 << 20
 
+// shardChunk is deliberately smaller than chunkSize: a shard's compressed buffer
+// decompresses to roughly three times its size, and every core running one at once
+// is what decides the scan's peak memory.
+const shardChunk = 4 << 20
+
 func main() {
 	os.Exit(run())
 }
@@ -54,23 +61,32 @@ func run() int {
 	flag.Usage = usage
 	flag.Parse()
 
-	if flag.NArg() != 1 {
+	if flag.NArg() < 1 {
 		usage()
 		return 2
 	}
 	id := flag.Arg(0)
 
-	files, err := archives(*dir)
+	// Any paths after the id narrow the search. codex-lb's own UI names the archive a
+	// response came from, so pasting that alongside the id turns a whole-corpus scan
+	// into a single-file one - seconds instead of a minute, and it grows worse as the
+	// corpus does.
+	searchPaths := flag.Args()[1:]
+	if len(searchPaths) == 0 {
+		searchPaths = []string{*dir}
+	}
+
+	files, err := archives(searchPaths)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "clbfind: %v\n", err)
 		return 2
 	}
 	if len(files) == 0 {
-		fmt.Fprintf(os.Stderr, "clbfind: no archives under %s\n", *dir)
+		fmt.Fprintf(os.Stderr, "clbfind: no archives in %s\n", strings.Join(searchPaths, " "))
 		return 3
 	}
 
-	fmt.Fprintf(os.Stderr, "searching %d archives for %q...\n", len(files), id)
+	fmt.Fprintf(os.Stderr, "searching %d archive(s) for %q...\n", len(files), id)
 	hits := search(files, id)
 	if len(hits) == 0 {
 		fmt.Fprintf(os.Stderr, "clbfind: %q not found in %s\n", id, *dir)
@@ -117,7 +133,16 @@ func run() int {
 			fmt.Fprintln(os.Stderr, "clbfind: no thread id on this response; cannot expand the conversation")
 			return 1
 		}
-		if err := transcript(os.Stdout, files, id, opts, *maxText); err != nil {
+		// A conversation runs for hours and crosses archive rotations, so expanding it
+		// deliberately searches the WHOLE corpus even when the id lookup was narrowed
+		// to one file. Honouring the narrowing here would silently truncate the
+		// transcript at the hour boundary.
+		wide := files
+		if all, err := archives([]string{*dir}); err == nil && len(all) > len(files) {
+			fmt.Fprintf(os.Stderr, "expanding the search to all %d archives - a thread spans hours\n", len(all))
+			wide = all
+		}
+		if err := transcript(os.Stdout, wide, id, opts, *maxText); err != nil {
 			fmt.Fprintf(os.Stderr, "clbfind: %v\n", err)
 			return 2
 		}
@@ -165,22 +190,18 @@ func transcript(w io.Writer, files []string, threadID string, opts turn.Options,
 	r := turn.NewWithOptions(opts)
 	var turns []*turn.Turn
 	for _, f := range ordered {
-		err := streamLines(f, func(line []byte) error {
-			var rec frame.Record
-			if json.Unmarshal(line, &rec) != nil {
-				return nil
-			}
-			if !wanted[f][rec.RequestID] {
-				return nil
-			}
-			done, err := r.Add(&rec)
+		recs, err := collect(f, func(rec *frame.Record) bool { return wanted[f][rec.RequestID] })
+		if err != nil {
+			return err
+		}
+		for _, rec := range recs {
+			done, err := r.Add(rec)
 			if done != nil {
 				turns = append(turns, done)
 			}
-			return err
-		})
-		if err != nil {
-			return err
+			if err != nil {
+				return err
+			}
 		}
 	}
 	turns = append(turns, r.Flush()...)
@@ -248,7 +269,7 @@ func search(files []string, id string) []hit {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			_ = streamLines(path, func(line []byte) error {
+			_ = scanFile(path, func(_ int, line []byte) error {
 				if !bytes.Contains(line, needle) {
 					return nil
 				}
@@ -289,27 +310,249 @@ func search(files []string, id string) []hit {
 // done before the first frame we replayed, and the report says so rather than
 // presenting them as measurements.
 func reduce(h hit, opts turn.Options) ([]*turn.Turn, error) {
+	recs, err := collect(h.file, func(rec *frame.Record) bool { return rec.RequestID == h.requestID })
+	if err != nil {
+		return nil, err
+	}
+
 	r := turn.NewWithOptions(opts)
 	var out []*turn.Turn
+	for _, rec := range recs {
+		done, err := r.Add(rec)
+		if done != nil {
+			out = append(out, done)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return append(out, r.Flush()...), nil
+}
 
-	err := streamLines(h.file, func(line []byte) error {
+// collect gathers the records matching want, IN FILE ORDER, scanning concurrently.
+//
+// Order is not optional here: the reducer is a state machine over a response's
+// frames, so replaying them out of sequence produces a different turn. Shards write
+// into their own slice and are concatenated by index afterwards, which is exact -
+// no locking on the hot path and no reliance on timestamps to reconstruct order.
+func collect(path string, want func(*frame.Record) bool) ([]*frame.Record, error) {
+	var mu sync.Mutex
+	perShard := map[int][]*frame.Record{}
+
+	err := scanFile(path, func(shard int, line []byte) error {
 		var rec frame.Record
 		if json.Unmarshal(line, &rec) != nil {
 			return nil
 		}
-		if rec.RequestID != h.requestID {
+		if !want(&rec) {
 			return nil
 		}
-		done, err := r.Add(&rec)
-		if done != nil {
-			out = append(out, done)
-		}
-		return err
+		mu.Lock()
+		perShard[shard] = append(perShard[shard], &rec)
+		mu.Unlock()
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return append(out, r.Flush()...), nil
+
+	idx := make([]int, 0, len(perShard))
+	for i := range perShard {
+		idx = append(idx, i)
+	}
+	sort.Ints(idx)
+	var out []*frame.Record
+	for _, i := range idx {
+		out = append(out, perShard[i]...)
+	}
+	return out, nil
+}
+
+// shards splits a file into byte ranges that can be scanned concurrently.
+//
+// This is only sound because codex-lb closes a gzip member per batch: a worker can
+// seek into the middle of the file and resynchronise onto the next member boundary
+// (archive.FindMemberStart) instead of decoding everything before it. Boundaries
+// cannot overlap or leave a gap, because "the first member start at or after X" is
+// deterministic - so worker k stops at X and worker k+1 begins at the same member.
+func shards(size int64, n int) [][2]int64 {
+	if n < 1 {
+		n = 1
+	}
+	out := make([][2]int64, 0, n)
+	step := size / int64(n)
+	if step < minShard {
+		return [][2]int64{{0, size}}
+	}
+	for i := range n {
+		start := int64(i) * step
+		end := start + step
+		if i == n-1 {
+			end = size
+		}
+		out = append(out, [2]int64{start, end})
+	}
+	return out
+}
+
+// minShard keeps the work per goroutine worth the resync it costs. A var so tests
+// can force sharding on a fixture small enough to be quick.
+var minShard int64 = 8 << 20
+
+// scanFile scans one archive concurrently, calling fn for every complete line with
+// the index of the shard it came from.
+//
+// fn is called from several goroutines, so it must be safe for concurrent use. The
+// shard index is what lets a caller that needs FILE ORDER recover it: shards cover
+// ascending byte ranges, so appending per shard and concatenating in index order
+// reproduces the original sequence exactly - without inventing an ordering from
+// timestamps, which frames written in the same microsecond would not supply.
+func scanFile(path string, fn func(shard int, line []byte) error) error {
+	st, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	ranges := shards(st.Size(), max(1, runtime.NumCPU()-1))
+
+	var wg sync.WaitGroup
+	errs := make([]error, len(ranges))
+	for i, r := range ranges {
+		wg.Add(1)
+		go func(i int, start, end int64) {
+			defer wg.Done()
+			errs[i] = streamRange(path, start, end, func(line []byte) error { return fn(i, line) })
+		}(i, r[0], r[1])
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+// streamRange hands over the lines of every member that BEGINS within [start, end).
+//
+// "Begins within" is the whole contract, and it is what makes shards tile the file
+// exactly. A member straddling `end` belongs to this shard, because its start is
+// inside the range; the next shard resynchronises past it. Getting this wrong is not
+// subtle in effect but is invisible in code: an earlier version simply read a chunk
+// and checked the offset afterwards, so with a chunk larger than a shard every
+// worker ran to EOF and the scan emitted every line about five times.
+func streamRange(path string, start, end int64, fn func([]byte) error) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	pos := start
+	if start > 0 {
+		// Land on a real member boundary before decoding anything.
+		head := make([]byte, min(int64(shardChunk), end-start+resyncSlack))
+		n, err := f.ReadAt(head, start)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
+		off, ok := archive.FindMemberStart(head[:n])
+		if !ok {
+			return nil // no member begins in this range
+		}
+		pos = start + int64(off)
+	}
+	if pos >= end {
+		return nil
+	}
+	if _, err := f.Seek(pos, io.SeekStart); err != nil {
+		return err
+	}
+
+	var pending []byte
+	var buf []byte
+	tmp := make([]byte, shardChunk)
+
+	// Phase one: everything wholly inside the range. Reads are clamped to `end` so
+	// no member starting beyond it can be decoded by accident.
+	for pos < end {
+		want := min(int64(len(tmp)), end-pos-int64(len(buf)))
+		if want <= 0 {
+			break
+		}
+		n, rerr := f.Read(tmp[:want])
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
+			res, derr := archive.DecodeMembers(buf)
+			if derr != nil {
+				return derr
+			}
+			if res.Consumed > 0 {
+				if pending, err = emitLines(pending, res.Data, fn); err != nil {
+					return err
+				}
+				buf = append(buf[:0], buf[res.Consumed:]...)
+				pos += int64(res.Consumed)
+			}
+		}
+		if rerr != nil {
+			if !errors.Is(rerr, io.EOF) {
+				return rerr
+			}
+			break
+		}
+	}
+
+	// Phase two: the member that straddles `end`. It started before `end`, so it is
+	// ours - read past the boundary far enough to finish it, and exactly one member.
+	if len(buf) > 0 {
+		slack := make([]byte, resyncSlack)
+		n, rerr := f.Read(slack)
+		if rerr != nil && !errors.Is(rerr, io.EOF) {
+			return rerr
+		}
+		buf = append(buf, slack[:n]...)
+		data, consumed, derr := archive.DecodeMember(buf)
+		if derr != nil {
+			return derr
+		}
+		if consumed > 0 {
+			if pending, err = emitLines(pending, data, fn); err != nil {
+				return err
+			}
+		}
+	}
+
+	if line := bytes.TrimSpace(pending); len(line) > 0 {
+		return fn(line)
+	}
+	return nil
+}
+
+// resyncSlack is how far past a shard's end a worker may read to finish the member
+// it is already decoding.
+const resyncSlack = 4 << 20
+
+// emitLines hands every complete line in data to fn and returns the trailing
+// partial for the next chunk to prepend.
+//
+// data is scanned in place. Archive members hold whole records, so the carry is
+// almost always empty and the common path copies nothing - which is what keeps a
+// sharded scan CPU-bound instead of drowning the collector.
+func emitLines(carry, data []byte, fn func([]byte) error) ([]byte, error) {
+	if len(carry) > 0 {
+		data = append(carry, data...)
+	}
+	for {
+		i := bytes.IndexByte(data, '\n')
+		if i < 0 {
+			break
+		}
+		if line := bytes.TrimSpace(data[:i]); len(line) > 0 {
+			if err := fn(line); err != nil {
+				return nil, err
+			}
+		}
+		data = data[i+1:]
+	}
+	if len(data) == 0 {
+		return nil, nil
+	}
+	return append([]byte(nil), data...), nil
 }
 
 // streamLines decodes whole gzip members and hands over complete lines, so memory
@@ -333,18 +576,9 @@ func streamLines(path string, fn func([]byte) error) error {
 				return derr
 			}
 			if res.Consumed > 0 {
-				pending = append(pending, res.Data...)
-				for {
-					i := bytes.IndexByte(pending, '\n')
-					if i < 0 {
-						break
-					}
-					if line := bytes.TrimSpace(pending[:i]); len(line) > 0 {
-						if err := fn(line); err != nil {
-							return err
-						}
-					}
-					pending = pending[i+1:]
+				var err error
+				if pending, err = emitLines(pending, res.Data, fn); err != nil {
+					return err
 				}
 				buf = append(buf[:0], buf[res.Consumed:]...)
 			}
@@ -362,19 +596,42 @@ func streamLines(path string, fn func([]byte) error) error {
 	return nil
 }
 
-func archives(dir string) ([]string, error) {
+// archives resolves paths that may be individual archives or directories to walk.
+//
+// A named file is taken at its word rather than filtered on extension: if someone
+// points at a specific archive, refusing it because it does not end in .jsonl.gz
+// would be unhelpful, and it will simply fail to decode if it is not one.
+func archives(paths []string) ([]string, error) {
 	var out []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	seen := map[string]bool{}
+	for _, p := range paths {
+		st, err := os.Stat(p)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if !d.IsDir() && strings.HasSuffix(p, ".jsonl.gz") {
-			out = append(out, p)
+		if !st.IsDir() {
+			if !seen[p] {
+				seen[p] = true
+				out = append(out, p)
+			}
+			continue
 		}
-		return nil
-	})
+		err = filepath.WalkDir(p, func(q string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() && strings.HasSuffix(q, ".jsonl.gz") && !seen[q] {
+				seen[q] = true
+				out = append(out, q)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	sort.Strings(out)
-	return out, err
+	return out, nil
 }
 
 func report(w io.Writer, t *turn.Turn, maxText int) {
@@ -600,7 +857,7 @@ func sortedKeys[V any](m map[string]V) []string {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `usage: clbfind [flags] <id>
+	fmt.Fprint(os.Stderr, `usage: clbfind [flags] <id> [archive-or-directory...]
 
 Finds a response in the corpus and prints what the pipeline would ship for it:
 the model and reasoning parameters, the routing metadata that explains them, the
@@ -608,6 +865,14 @@ timing breakdown, and the conversation itself.
 
 The id can be an OpenAI response id (resp_*), an archive request id (ws_* or a
 UUID), a thread id, a turn id, or a tool call id.
+
+Paths after the id narrow the search to those archives. codex-lb's request-details
+view names the file a response came from, so pasting it makes the lookup near
+instant instead of scanning the whole corpus.
+
+  clbfind resp_052b6a...
+  clbfind resp_052b6a... corpus/processed/2026-08-07T10.jsonl.gz
+  clbfind -thread resp_052b6a...        expand the whole conversation
 
 flags:
 `)
