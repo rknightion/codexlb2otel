@@ -66,6 +66,15 @@ func (s *Sink) push(ctx context.Context, gens []wireGeneration) error {
 
 		case status >= 400:
 			reason := classify4xx(status)
+			// A 413/414 on a batch of more than one generation is not yet known to be
+			// undeliverable - only a single generation that still 413s is. Halve and
+			// retry each half instead of counting the whole batch as lost; see
+			// pushHalves for the termination argument. A batch of exactly 1 falls
+			// through to the count-and-drop path below unchanged from before this
+			// split existed.
+			if reason == sink.ReasonLineTooLong && len(gens) > 1 {
+				return s.pushHalves(ctx, gens)
+			}
 			s.addRejected(reason, int64(len(gens)))
 			// configFault mirrors loki's rule exactly (see its own doc comment there
 			// and here): a malformed request or an auth failure indicts THIS
@@ -93,6 +102,36 @@ func (s *Sink) push(ctx context.Context, gens []wireGeneration) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// pushHalves splits gens in two and pushes each half through push, which re-marshals
+// and re-attempts each half independently (its own fresh retry/backoff budget - a 413
+// is a permanent per-request verdict, not a transient one, so there is nothing to save
+// by sharing a retry count across halves). If a half is itself still too large it
+// recurses through push -> pushHalves again, converging on batches of length 1, where
+// push's own len(gens)>1 guard stops the recursion and counts that single generation
+// as sink.ReasonLineTooLong instead of splitting a batch that cannot split further.
+//
+// Termination is bounded, not just expected to happen: gens never exceeds cfg.BatchSize
+// (a few hundred at most in practice), halving strictly shrinks an integer length by at
+// least 1 every call (floor(n/2) < n for all n > 1), and the len(gens)>1 guard in push
+// is what stops the recursion - so depth is at most ceil(log2(cfg.BatchSize)), around 8
+// for a 200-generation batch, nowhere near Go's default goroutine stack limit.
+//
+// Nothing is counted here: only push's own len(gens)==1 branch (or a config-fault
+// status reached while retrying a half) ever calls addRejected, so a generation is
+// counted at most once no matter how many times the batch it started in got halved.
+func (s *Sink) pushHalves(ctx context.Context, gens []wireGeneration) error {
+	mid := len(gens) / 2
+	if err := s.push(ctx, gens[:mid]); err != nil {
+		// A config fault surfaced by a half must reach the caller unchanged - it
+		// indicts the service's configuration, not this half's size, and will recur
+		// on the other half and on every future push identically. Swallowing it here
+		// because we are "inside a split" would silently drop that signal and let the
+		// checkpoint advance past data that was never actually delivered.
+		return err
+	}
+	return s.push(ctx, gens[mid:])
 }
 
 // accountResults reads the per-generation verdicts out of a 2xx response body. This
@@ -190,9 +229,14 @@ func classify4xx(status int) string {
 	// This is a real risk rather than a theoretical one: a batch is 200 generations
 	// and each may carry prompts up to 32 KB and tool output up to 4 KB.
 	//
-	// Counted and dropped, so the checkpoint advances and reportRejections says at
-	// WARN exactly how much was lost. Splitting the batch and retrying would be
-	// better still, and is the obvious follow-up.
+	// This function only classifies the status; it does not know the batch size that
+	// produced it. push() is what decides what to do with sink.ReasonLineTooLong: a
+	// batch of more than one generation gets halved and retried (see push's
+	// status>=400 case and pushHalves) rather than counted, since halving might still
+	// deliver most of it. Only once a batch has been reduced to a single generation
+	// and that generation STILL 413s is it genuinely undeliverable - counted and
+	// dropped, so the checkpoint advances and reportRejections says at WARN exactly
+	// how much was lost.
 	case http.StatusRequestEntityTooLarge, http.StatusRequestURITooLong:
 		return sink.ReasonLineTooLong
 	default:

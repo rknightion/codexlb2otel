@@ -2,9 +2,12 @@ package agento11y
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -144,4 +147,131 @@ func TestPush_ConfigFaultHoldsCheckpoint_DataFaultDoesNot(t *testing.T) {
 			t.Fatalf("Rejections() = %+v, want exactly one %s:1", rej, sink.ReasonLineTooLong)
 		}
 	})
+}
+
+// TestPush_SplitOnTooLarge_DeliversIndividually is item 3's headline case: a batch
+// that 413s must not be dropped wholesale, it must be halved and retried until the
+// halves are small enough to be accepted. The handler here accepts up to maxAccepted
+// generations per request and 413s anything larger, so an 8-generation push must
+// halve at least twice (8 -> 4 -> 2) before any sub-batch clears - proving push()
+// actually retries the smaller halves rather than happening to succeed on the first
+// try, and that every generation is eventually delivered rather than some being
+// silently dropped along the way.
+func TestPush_SplitOnTooLarge_DeliversIndividually(t *testing.T) {
+	const maxAccepted = 3
+
+	var mu sync.Mutex
+	delivered := map[string]bool{}
+
+	s, _ := newTestSink(t, func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("handler: reading request body: %v", err)
+		}
+		var req wireExportGenerationsRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("handler: decoding request body: %v", err)
+		}
+
+		if len(req.Generations) > maxAccepted {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			fmt.Fprint(w, "payload too large")
+			return
+		}
+
+		mu.Lock()
+		results := make([]wireExportGenerationResult, 0, len(req.Generations))
+		for _, g := range req.Generations {
+			delivered[g.ID] = true
+			results = append(results, wireExportGenerationResult{GenerationID: g.ID, Accepted: true})
+		}
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(wireExportGenerationsResponse{Results: results}); err != nil {
+			t.Fatalf("handler: encoding response: %v", err)
+		}
+	})
+
+	var gens []wireGeneration
+	for i := 0; i < 8; i++ {
+		gens = append(gens, wireGeneration{ID: fmt.Sprintf("resp_%d", i)})
+	}
+
+	if err := s.push(context.Background(), gens); err != nil {
+		t.Fatalf("push returned an error, want nil: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(delivered) != len(gens) {
+		t.Fatalf("delivered %d of %d generations: %v", len(delivered), len(gens), delivered)
+	}
+	for _, g := range gens {
+		if !delivered[g.ID] {
+			t.Errorf("generation %s was never delivered", g.ID)
+		}
+	}
+
+	if rej := s.Rejections(); len(rej) != 0 {
+		t.Fatalf("Rejections() = %+v, want none - every generation was eventually delivered", rej)
+	}
+}
+
+// TestPush_SplitOnTooLarge_SingleOversizedGenerationCountsOnce covers the floor the
+// split must not erode: a generation that is too large even alone is genuinely
+// undeliverable, and halving must count it exactly once at the leaf - not once per
+// halving step it passed through on the way down. The handler 413s every request
+// regardless of size, so all 4 generations bottom out as singletons; if the split
+// double-counted at an intermediate level (e.g. also counting the length-2 and
+// length-4 attempts before recursing) the total would be well above 4.
+func TestPush_SplitOnTooLarge_SingleOversizedGenerationCountsOnce(t *testing.T) {
+	s, _ := newTestSink(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		fmt.Fprint(w, "payload too large")
+	})
+
+	gens := []wireGeneration{{ID: "resp_1"}, {ID: "resp_2"}, {ID: "resp_3"}, {ID: "resp_4"}}
+	if err := s.push(context.Background(), gens); err != nil {
+		t.Fatalf("push returned an error for a 413 that never clears, want nil: %v", err)
+	}
+
+	rej := s.Rejections()
+	if len(rej) != 1 || rej[0].Reason != sink.ReasonLineTooLong || rej[0].Count != int64(len(gens)) {
+		t.Fatalf("Rejections() = %+v, want exactly one %s:%d (one per undeliverable singleton, no double-counting)",
+			rej, sink.ReasonLineTooLong, len(gens))
+	}
+}
+
+// TestPush_ConfigFaultInsideSplitPropagates pins the requirement that splitting must
+// never swallow a config fault: a batch that 413s while larger than 1 generation gets
+// halved down, but if a half then hits a genuine config fault (modeled here as a 401
+// once a request is down to a single generation), that error must still propagate all
+// the way out of the original push() call and hold the checkpoint - exactly as it
+// would have without any splitting involved.
+func TestPush_ConfigFaultInsideSplitPropagates(t *testing.T) {
+	s, _ := newTestSink(t, func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("handler: reading request body: %v", err)
+		}
+		var req wireExportGenerationsRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("handler: decoding request body: %v", err)
+		}
+
+		if len(req.Generations) > 1 {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			fmt.Fprint(w, "payload too large")
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, "invalid credentials")
+	})
+
+	gens := []wireGeneration{{ID: "resp_1"}, {ID: "resp_2"}, {ID: "resp_3"}, {ID: "resp_4"}}
+	if err := s.push(context.Background(), gens); err == nil {
+		t.Fatal("push returned nil for a config fault reached via splitting, want an error holding the checkpoint")
+	}
 }
