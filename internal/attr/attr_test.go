@@ -171,6 +171,22 @@ func TestGuardWithCapsCallerSuppliedValues(t *testing.T) {
 	}
 }
 
+// Guard.With takes an arbitrary caller KV rather than extracting one from a Turn, so
+// - unlike SpanAttrs/MetricAttrs/Labels, which walk the registry and skip Sensitive
+// fields themselves by construction - it has no class filter of its own unless this
+// path exists. Without it, a sink could pass SafetyID's key through With and walk
+// straight past every other guarantee this package makes about that field.
+func TestGuardWithRejectsSensitiveKeys(t *testing.T) {
+	g := NewGuard()
+	got := g.With(nil, KV{SafetyID, "a-single-human"})
+	if len(got) != 0 {
+		t.Fatalf("With emitted a Sensitive key: %+v", got)
+	}
+	if g.Rejected()[SafetyID] != 1 {
+		t.Error("a Sensitive key was dropped without being counted")
+	}
+}
+
 func TestValidateLabels(t *testing.T) {
 	if err := ValidateLabels(DefaultLabels); err != nil {
 		t.Fatalf("the shipped default label set does not validate: %v", err)
@@ -261,8 +277,19 @@ func TestRegistryIsWellFormed(t *testing.T) {
 			t.Errorf("duplicate field key %q", f.Key)
 		}
 		seen[f.Key] = true
-		if f.Of == nil && f.Class != Bounded {
-			t.Errorf("%q has no extractor and is not a caller-supplied bounded field", f.Key)
+		// Of == nil means caller-supplied (attr.go's own doc comment on Field.Of).
+		// Bounded and Identity may both be caller-supplied - a tool name needs
+		// capping, a tool-call id or its arguments do not, but either way Guard.With
+		// is the one path that reaches them. Sensitive must NEVER be caller-supplied:
+		// unlike SpanAttrs/MetricAttrs/Labels, Guard.With has no class-based filter of
+		// its own for values it did not extract itself, so a Sensitive field with
+		// Of == nil would be the one way to walk safety_identifier-class data around
+		// the "never a span attribute" guarantee. (Guard.With rejects Sensitive keys
+		// defensively too - see TestGuardWithRejectsSensitiveKeys - but the registry
+		// not containing one in the first place is the check that cannot regress.)
+		if f.Of == nil && f.Class == Sensitive {
+			t.Errorf("%q is caller-supplied (Of == nil) AND Sensitive; Guard.With has no "+
+				"class filter, so this is a path around SpanAttrs' Sensitive exclusion", f.Key)
 		}
 		if f.Class == Bounded && f.Cap <= 0 {
 			t.Errorf("%q is bounded with no cap, so nothing stops it growing", f.Key)

@@ -35,6 +35,7 @@ func (s *Sink) record(ctx context.Context, t *turn.Turn) {
 	s.recordTokens(ctx, t, base)
 	s.recordEngineCalls(ctx, t, base)
 	s.recordToolCalls(ctx, t, base)
+	s.recordToolCallsPerOperation(ctx, t, base)
 	s.recordDurations(ctx, t, base)
 	s.recordRateLimits(ctx, t, base)
 }
@@ -111,6 +112,11 @@ var tokenTypes = []struct {
 // already safe to sum as-is (turn.go's own comment on InputTokens etc.) - unlike
 // engine calls or tool-pause time, there is no cumulative-logical-turn source to
 // prefer here and no delta arithmetic involved.
+//
+// Records into BOTH tokens (the codexlb.* counter) and tokenUsage (the
+// gen_ai.client.token.usage histogram) with the same attrs and the same value - see
+// names.go's MetricTokenUsage doc comment for why this is a deliberate parallel
+// instrument rather than a replacement.
 func (s *Sink) recordTokens(ctx context.Context, t *turn.Turn, base []attr.KV) {
 	narrowed := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
 		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind)
@@ -120,7 +126,9 @@ func (s *Sink) recordTokens(ctx context.Context, t *turn.Turn, base []attr.KV) {
 			continue
 		}
 		attrs := s.guard.With(narrowed, attr.KV{Key: attr.GenAITokenType, Value: tt.kind})
-		s.inst.tokens.Add(ctx, int64(v), otelmetric.WithAttributes(toOtel(attrs)...))
+		otelAttrs := toOtel(attrs)
+		s.inst.tokens.Add(ctx, int64(v), otelmetric.WithAttributes(otelAttrs...))
+		s.inst.tokenUsage.Record(ctx, int64(v), otelmetric.WithAttributes(otelAttrs...))
 	}
 }
 
@@ -143,13 +151,11 @@ func (s *Sink) recordEngineCalls(ctx context.Context, t *turn.Turn, base []attr.
 }
 
 // recordToolCalls fans one Turn out into one Add per tool invocation, tagged with the
-// tool's own name. codexlb.tool_name is a names.go constant but, unlike the fields in
-// attr's registry, it is not capped by the shared Guard - see the doc comment on
-// attr.With, which gives exactly this ("a tool name on a tool counter") as the
-// intended use of a one-off extra attribute. That is a real gap: names.go's own
-// comment on ToolName says it should be "capped like every other bounded-open field",
-// and nothing in this sink's file ownership can add that cap without editing
-// internal/attr. Flagged for the wiring pass rather than worked around here.
+// tool's own name (gen_ai.tool.name, renamed from codexlb.tool_name by issue #18).
+// ToolName is a names.go constant, capped via Guard.With exactly as attr.With's own
+// doc comment describes ("a tool name on a tool counter") - the gap this comment used
+// to flag (ToolName registered but not actually capped) was closed when it gained a
+// registry entry; see internal/attr/attr.go's registry.
 func (s *Sink) recordToolCalls(ctx context.Context, t *turn.Turn, base []attr.KV) {
 	if len(t.ToolCalls) == 0 {
 		return
@@ -163,6 +169,19 @@ func (s *Sink) recordToolCalls(ctx context.Context, t *turn.Turn, base []attr.KV
 		attrs := s.guard.With(narrowed, attr.KV{Key: attr.ToolName, Value: tc.Name})
 		s.inst.toolCalls.Add(ctx, 1, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
+}
+
+// recordToolCallsPerOperation records len(Turn.ToolCalls) once per response,
+// UNCONDITIONALLY - including the zero case, unlike recordToolCalls' own early
+// return. The two answer different questions: recordToolCalls counts invocations, by
+// tool name, and a response with none has nothing to fan out; this one measures the
+// SHAPE of tool use across every response, and excluding the (common) zero-tool-call
+// case would bias that distribution upward and hide how much of the traffic never
+// touches a tool at all.
+func (s *Sink) recordToolCallsPerOperation(ctx context.Context, t *turn.Turn, base []attr.KV) {
+	attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
+		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind)
+	s.inst.toolCallsPerOperation.Record(ctx, int64(len(t.ToolCalls)), otelmetric.WithAttributes(toOtel(attrs)...))
 }
 
 // recordDurations converts every millisecond field this sink emits into seconds
@@ -265,10 +284,10 @@ func (s *Sink) recordRateLimits(ctx context.Context, t *turn.Turn, base []attr.K
 
 	// ExtraRateLimits is keyed by model name and, per turn.go's own doc comment,
 	// "bounded by the models on the plan" - already asserted safe to fan out, so
-	// unlike codexlb.tool_name (recordToolCalls) this one genuinely needs no extra
-	// cap here. gen_ai.request.model is dropped from accountAttrs before adding it
-	// back from the map key, so each measurement carries exactly one value for that
-	// key rather than two.
+	// unlike gen_ai.tool.name (recordToolCalls, capped at 64 with no such upstream
+	// guarantee) this one genuinely needs no extra cap here. gen_ai.request.model is
+	// dropped from accountAttrs before adding it back from the map key, so each
+	// measurement carries exactly one value for that key rather than two.
 	for model, pct := range t.ExtraRateLimits {
 		if model == "" {
 			continue

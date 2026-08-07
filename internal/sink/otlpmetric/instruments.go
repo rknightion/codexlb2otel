@@ -26,6 +26,13 @@ type instruments struct {
 	safetyBuffering otelmetric.Int64Counter
 	baselineResets  otelmetric.Int64Counter
 
+	// tokenUsage is the convention-named parallel to tokens - see names.go's
+	// MetricTokenUsage doc comment for why both exist rather than one replacing the
+	// other. toolCallsPerOperation is issue #18's addition; see MetricToolCallsPerOperation's
+	// own doc comment for why it is codexlb.* despite being new.
+	tokenUsage            otelmetric.Int64Histogram
+	toolCallsPerOperation otelmetric.Int64Histogram
+
 	operationDuration otelmetric.Float64Histogram
 	turnDuration      otelmetric.Float64Histogram
 	ttft              otelmetric.Float64Histogram
@@ -80,9 +87,24 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 	must(attr.MetricEngineCalls, err)
 
 	i.toolCalls, err = meter.Int64Counter(attr.MetricToolCalls,
-		otelmetric.WithDescription("Tool invocations, by codexlb.tool_name."),
+		otelmetric.WithDescription("Tool invocations, by gen_ai.tool.name."),
 		otelmetric.WithUnit("{call}"))
 	must(attr.MetricToolCalls, err)
+
+	i.tokenUsage, err = meter.Int64Histogram(attr.MetricTokenUsage,
+		otelmetric.WithDescription("Convention-named parallel to codexlb.tokens - same "+
+			"values, same gen_ai.token.type breakdown, recorded a second time under the "+
+			"standard histogram name so anything querying the convention's own instrument "+
+			"sees this service at all."),
+		otelmetric.WithUnit("{token}"))
+	must(attr.MetricTokenUsage, err)
+
+	i.toolCallsPerOperation, err = meter.Int64Histogram(attr.MetricToolCallsPerOperation,
+		otelmetric.WithDescription("Tool calls per response - len(Turn.ToolCalls), "+
+			"recorded once per response including zero, so the distribution reflects every "+
+			"operation and not only the ones that used a tool."),
+		otelmetric.WithUnit("{tool_call}"))
+	must(attr.MetricToolCallsPerOperation, err)
 
 	i.webSearch, err = meter.Int64Counter(attr.MetricWebSearch,
 		otelmetric.WithDescription("Web-search requests issued by the model."),
@@ -160,7 +182,9 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 	must(attr.MetricTurnDuration, err)
 
 	i.ttft, err = meter.Float64Histogram(attr.MetricTTFT,
-		otelmetric.WithDescription("Time to first token."),
+		otelmetric.WithDescription("Time to first token, server-reported. Convention-compliant "+
+			"name (gen_ai.server.time_to_first_token) - see the MetricTTFT doc comment for why "+
+			"this is the server.* form and not client.*."),
 		otelmetric.WithUnit("s"))
 	must(attr.MetricTTFT, err)
 

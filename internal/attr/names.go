@@ -42,6 +42,70 @@ const (
 	// GenAIErrorType is the convention's low-cardinality error discriminator.
 	ErrorType = "error.type"
 
+	// ToolName is the tool invoked. Bounded in practice but open by construction, so
+	// it is capped like every other bounded-open field. RENAMED from codexlb.tool_name
+	// (issue #18): the convention names this exact concept.
+	ToolName = "gen_ai.tool.name"
+	// ReasoningEffort is low | medium | high | xhigh. RENAMED from
+	// codexlb.reasoning_effort (issue #18) to the convention's own name - which is
+	// gen_ai.request.reasoning.level, NOT gen_ai.request.thinking.level as issue #18
+	// proposed. Checked against the live registry at
+	// github.com/open-telemetry/semantic-conventions-genai (model/gen-ai/registry.yaml,
+	// 2026-08-07): "thinking.level" does not exist anywhere in the moved spec;
+	// "reasoning.level" does, with brief "The reasoning or thinking effort level
+	// requested for a GenAI model." The spec wins over the issue's proposed name.
+	ReasoningEffort = "gen_ai.request.reasoning.level"
+
+	// --- OTel GenAI semantic conventions: tool execution and usage (issue #18) ---
+	//
+	// Added against the live registry, not recalled - same source and date as
+	// ReasoningEffort above. All confirmed present in the CURRENT (post-move,
+	// non-deprecated) registry, none of them enum-typed, so none needs a Cap the way
+	// ToolName does.
+
+	// ToolCallID is the tool invocation's own id (ToolCall.CallID) - one value per
+	// call, not per turn, so - like ToolName - it is caller-supplied via Guard.With
+	// rather than extracted from a Turn. Unlike ToolName it is NOT bounded: a call id
+	// is unique per invocation by construction, so it is Identity class, never a
+	// metric attribute or label.
+	ToolCallID = "gen_ai.tool.call.id"
+	// ToolType is the convention's classification of a tool (its examples are
+	// function | extension | datastore); codex-lb's own ToolCall.Kind takes custom |
+	// function, which does not match those examples verbatim but is the same concept
+	// the convention names, and gen_ai.tool.type is type:string, not a closed enum.
+	// Caller-supplied like ToolName, and - unlike ToolCallID - genuinely bounded, so
+	// it is capped the same way.
+	ToolType = "gen_ai.tool.type"
+	// ToolCallArguments and ToolCallResult are ToolCall.Input and the matching
+	// ToolOutput.Text (joined by call id). The spec marks both `opt_in` on the
+	// execute_tool span specifically because they may carry sensitive content - this
+	// service emits them unconditionally per issue #18's explicit instruction, on the
+	// same footing as ToolCall.Input and ToolOutput.Text already being carried
+	// unconditionally into Loki's tool_call/tool_output record types with no capture
+	// toggle. If that changes, it changes here and in the Loki path together, not one
+	// without the other.
+	ToolCallArguments = "gen_ai.tool.call.arguments"
+	ToolCallResult    = "gen_ai.tool.call.result"
+	// GenAIAgentName is ToolCall.TaskName - "populated for spawn_agent, describing the
+	// child agent" (turn.ToolCall's own doc comment) - carried only on the tool_call
+	// span this service classifies as invoke_agent (see otlptrace/spans.go's
+	// toolOperationName), matching the spec's own span-naming guidance for that
+	// operation ("invoke_agent {gen_ai.agent.name}").
+	GenAIAgentName = "gen_ai.agent.name"
+
+	// GenAIUsage* are Turn's six token fields as SPAN attributes. Before issue #18 the
+	// only place token usage existed was internal/sink/otlpmetric's codexlb.tokens
+	// counter, split by GenAITokenType - so a decoded span carried no usage at all.
+	// input/output/cache_read/cache_creation/reasoning are exactly the five names the
+	// registry defines; there is no gen_ai.usage.total_tokens in the current spec (see
+	// the MetricTokens comment below for why that is not a gap worth filling under a
+	// codexlb name either - input+output already gives the total).
+	GenAIUsageInputTokens      = "gen_ai.usage.input_tokens"
+	GenAIUsageOutputTokens     = "gen_ai.usage.output_tokens"
+	GenAIUsageCacheReadTokens  = "gen_ai.usage.cache_read.input_tokens"
+	GenAIUsageCacheWriteTokens = "gen_ai.usage.cache_creation.input_tokens"
+	GenAIUsageReasoningTokens  = "gen_ai.usage.reasoning.output_tokens"
+
 	// --- codexlb.* : concepts the convention has no notion of ---
 
 	// Family is websocket | http | probe. NOT the record's own transport field, which
@@ -52,9 +116,30 @@ const (
 	// them as one overstates turn rates and understates cost per turn.
 	RequestKind = "codexlb.request_kind"
 	// Status is the response outcome: completed | incomplete | transport | error.
+	//
+	// STAYS codexlb.*, NOT renamed to gen_ai.response.finish_reasons - decided, not
+	// left open, despite issue #18 raising it as a question. Measured against the
+	// full corpus signature (corpus.sig.json, 1.84M records): response.status takes
+	// exactly ONE value, "completed"; finish_reason and stop_reason appear nowhere in
+	// the capture; response.incomplete_details is always null. There is no
+	// finish-reason data on the wire at all - the convention's own vocabulary
+	// (stop, length, content_filter, tool_calls, ...) describes something OpenAI's
+	// Responses API here simply does not report.
+	//
+	// The four values this field actually takes are not a coarser version of that
+	// vocabulary - issue #18's own framing was wrong on this point. "completed" is the
+	// wire constant. "incomplete", "transport" and "error" are verdicts THIS SERVICE
+	// reaches about its own pipeline (a response that never got a completion event, a
+	// websocket that died mid-response, a request the server rejected before any
+	// model turn happened) - none of them is the model's own reason for stopping.
+	// Status answers "did codexlb's pipeline observe this response finish", a
+	// pipeline-health question; gen_ai.response.finish_reasons answers "why did the
+	// model stop generating", a model-behaviour question. They are different axes
+	// entirely, not two granularities of the same one. Emitting the standard name
+	// over data that answers a different question would make a convention-aware
+	// dashboard display a fabricated finish reason in place of an honest "we don't
+	// have this" - worse than a plainly non-standard key.
 	Status = "codexlb.status"
-	// ReasoningEffort is low | medium | high | xhigh.
-	ReasoningEffort = "codexlb.reasoning_effort"
 	// AccountID is which of the load-balanced accounts served the request. The headline
 	// grouping for a load balancer: averaging rate-limit headroom across accounts hides
 	// exactly the exhaustion the metric exists to show.
@@ -73,9 +158,6 @@ const (
 	SubagentKind = "codexlb.subagent_kind"
 	// Originator is the client binary: codex-tui, codex_exec, codex_cli_rs (the probe).
 	Originator = "codexlb.originator"
-	// ToolName is the tool invoked. Bounded in practice but open by construction, so it
-	// is capped like every other bounded-open field.
-	ToolName = "codexlb.tool_name"
 	// ErrorCode is the provider's own error code - e.g. websocket_connection_limit_reached.
 	ErrorCode = "codexlb.error_code"
 	// CloseCode is the websocket close code: 1000 clean, 1012 service restart.
@@ -145,7 +227,20 @@ func LokiKey(key string) string { return strings.ReplaceAll(key, ".", "_") }
 const GenAIProviderValue = "openai"
 
 // GenAIOperationValue is the convention's operation name for a chat-style completion.
-const GenAIOperationValue = "chat"
+//
+// GenAIOperationExecuteTool and GenAIOperationInvokeAgent (issue #18) are the two
+// other operation values this service emits, on tool_call spans only - see
+// otlptrace/spans.go's emitToolCalls for which of the two a given tool call gets and
+// why, and its comment on the double-count trap fixed in 228c717 for why adding
+// these does not reopen it: that fix constrains how many spans per RESPONSE may
+// claim "chat" (the inference itself); execute_tool and invoke_agent describe a
+// different event (one tool call) on a different span, counted once each already,
+// not a second claim on the same inference.
+const (
+	GenAIOperationValue       = "chat"
+	GenAIOperationExecuteTool = "execute_tool"
+	GenAIOperationInvokeAgent = "invoke_agent"
+)
 
 // Record types - the values RecordType takes, and the set of Loki line kinds.
 //
@@ -173,35 +268,80 @@ var RecordTypes = []string{
 // Metric instrument names.
 //
 // Deviation from the convention, stated rather than hidden: it defines
-// `gen_ai.client.token.usage` as a HISTOGRAM. Token totals here are counters instead.
+// `gen_ai.client.token.usage` as a HISTOGRAM. MetricTokens is a counter instead.
 // The question this service answers is "how many tokens did which model burn on whose
 // account", which is a sum; a histogram would multiply every attribute combination by
 // its bucket count to deliver a distribution nobody queries. The convention's histogram
-// name is therefore deliberately not reused for a differently-typed instrument - these
-// carry codexlb.* names so nothing downstream mistakes them for the standard ones.
+// name is therefore deliberately not reused for a differently-typed instrument - it
+// carries a codexlb.* name so nothing downstream mistakes it for the standard one.
+//
+// MetricTokenUsage (issue #18) is the standard-named histogram added ALONGSIDE
+// MetricTokens, not instead of it - the deviation above stays, re-affirmed on the
+// issue: "the question... is a sum". This one exists purely so anything querying the
+// convention's own instrument name sees us at all. It carries the same five
+// GenAITokenType values as MetricTokens (input/output/reasoning/cached/cache_write),
+// not only the two the registry's gen_ai.token.type enum lists as canonical
+// (input/output) - same reasoning as GenAITokenType's own doc comment: the cache and
+// reasoning breakdowns extend the axis rather than becoming separate instruments, and
+// that reasoning does not change just because this particular instrument now has a
+// standard name too.
 const (
 	MetricTokens          = "codexlb.tokens"                  // counter, {token}, by GenAITokenType
 	MetricResponses       = "codexlb.responses"               // counter, {response}
 	MetricTurns           = "codexlb.turns"                   // counter, {turn} - excludes prewarm and compaction
 	MetricEngineCalls     = "codexlb.engine_calls"            // counter, {call}
 	MetricToolCalls       = "codexlb.tool_calls"              // counter, {call}
-	MetricWebSearch       = "codexlb.web_search_requests"     // counter, {request}
-	MetricImageGenTokens  = "codexlb.image_gen_tokens"        // counter, {token}
 	MetricErrors          = "codexlb.errors"                  // counter, {error}
 	MetricTransportEvents = "codexlb.transport_events"        // counter, {event}
 	MetricSafetyBuffering = "codexlb.safety_buffering_events" // counter, {event}
 	MetricBaselineResets  = "codexlb.baseline_resets"         // counter, {response}
 	MetricAttrsRejected   = "codexlb.attributes_rejected"     // counter, {attribute} - the guard's own output
+	MetricImageGenTokens  = "codexlb.image_gen_tokens"        // counter, {token}
+
+	// MetricWebSearch: issue #18 proposed renaming this to "the convention's
+	// server-tool-use name". Checked against the live registry
+	// (semantic-conventions-genai, 2026-08-07): there is no such name. No
+	// gen_ai.usage.server_tool_use.* attribute, no web-search-specific metric, and no
+	// mention of "web_search" or "server_tool_use" anywhere in the moved spec's
+	// registry, metrics or provider docs (including docs/gen-ai/openai.md). The
+	// concept this counts - web-search calls the model issued as a server-side tool -
+	// simply is not modelled by the current spec. Spec wins over the issue: NOT
+	// renamed.
+	MetricWebSearch = "codexlb.web_search_requests" // counter, {request}
+
+	// MetricToolCallsPerOperation (issue #18) answers "how many tool calls did one
+	// operation make" - len(Turn.ToolCalls) per response. The issue asked for
+	// gen_ai.client.tool_calls_per_operation; that name does not exist in the current
+	// spec either (checked 2026-08-07). The closest defined metric,
+	// gen_ai.invoke_agent.tool_calls, is explicitly scoped to a single agent
+	// invocation ("distribution is scoped to a single agent invocation"), which does
+	// not generalize to every chat operation this service reduces - most turns are not
+	// agent invocations. Kept under codexlb.* rather than misapplying a
+	// narrower-scoped standard name to a broader-scoped measurement.
+	MetricToolCallsPerOperation = "codexlb.tool_calls_per_operation" // histogram, {tool_call}
 
 	// Durations are seconds, as the convention requires for gen_ai.client.operation.duration.
 	MetricOperationDuration = "gen_ai.client.operation.duration" // histogram, s - convention-compliant
 	MetricTurnDuration      = "codexlb.turn.duration"            // histogram, s - client turn start to server completion
-	MetricTTFT              = "codexlb.time_to_first_token"      // histogram, s
-	MetricEngineWall        = "codexlb.engine_wall"              // histogram, s
-	MetricHarnessUnblocked  = "codexlb.harness_unblocked"        // histogram, s
-	MetricPreInference      = "codexlb.pre_inference"            // histogram, s
-	MetricSamplingStream    = "codexlb.sampling_and_stream"      // histogram, s
-	MetricClientToolPause   = "codexlb.client_tool_pause"        // histogram, s
+	// MetricTTFT: issue #18 proposed gen_ai.client.time_to_first_token. Checked
+	// against the live registry (2026-08-07): that name does not exist. The current
+	// spec has gen_ai.server.time_to_first_token ("Time to generate first token for
+	// successful responses") and a differently-scoped
+	// gen_ai.client.operation.time_to_first_chunk ("measured from when the client
+	// issues the generation request"). Turn.TTFTMs is the server's own reported
+	// figure (from timing_metrics, not measured client-side), so
+	// gen_ai.server.time_to_first_token is the correct match - the issue had the
+	// right concept and the wrong namespace. Spec wins: renamed to the server.* form,
+	// not the client.* form the issue proposed.
+	MetricTTFT             = "gen_ai.server.time_to_first_token" // histogram, s - convention-compliant
+	MetricEngineWall       = "codexlb.engine_wall"               // histogram, s
+	MetricHarnessUnblocked = "codexlb.harness_unblocked"         // histogram, s
+	MetricPreInference     = "codexlb.pre_inference"             // histogram, s
+	MetricSamplingStream   = "codexlb.sampling_and_stream"       // histogram, s
+	MetricClientToolPause  = "codexlb.client_tool_pause"         // histogram, s
+	// MetricTokenUsage is the convention-compliant histogram - see the const block's
+	// own doc comment above.
+	MetricTokenUsage = "gen_ai.client.token.usage" // histogram, {token}, by GenAITokenType - convention-compliant
 
 	// Rate-limit gauges. Meaningless unless grouped by AccountID - see that constant.
 	MetricRateLimitUsed     = "codexlb.rate_limit.used_percent"           // gauge, %
