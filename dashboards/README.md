@@ -153,3 +153,30 @@ these files say and what the Go source actually emits, which is the thing that g
 
 Current result: **PASS** - every identifier resolves, except the deliberately-flagged issue #13
 forward reference, which the script explicitly allowlists rather than silently passing.
+
+## v2/ - the full-telemetry dashboard
+
+`v2/codexlb2otel-full.json` is a single `dashboard.grafana.app/v2` dashboard with ten tabs covering
+**every** signal this exporter produces: all 57 metrics, all 9 Loki record types, and the trace tree.
+It is live on the m7kni stack in the `codexlb2otel` folder.
+
+It is **generated**, never hand-edited:
+
+```bash
+python3 dashboards/v2/generate.py > dashboards/v2/codexlb2otel-full.json
+gcx --context m7kni dashboards update codexlb2otel-full -f dashboards/v2/codexlb2otel-full.json
+```
+
+The generator refuses to emit a dashboard that has lost coverage. It reconciles the panels it built
+against `internal/attr`'s metric constants (via `v2/.metrics_from_code.txt`), against the record types
+the Loki sink emits, and against the span names in Tempo - and exits non-zero naming whatever is
+missing. Add a metric to the exporter without adding it here and the generator fails rather than
+silently never plotting it. Regenerate the sidecar after touching `internal/attr/names.go`:
+
+```bash
+rg -n '^\s+Metric[A-Za-z]+\s+=\s+"' internal/attr/names.go \
+  | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > dashboards/v2/.metrics_from_code.txt
+```
+
+The eight numbered dashboards beside it predate deployment and were never pushed; the v2 dashboard
+supersedes them and is the one validated against live data.
