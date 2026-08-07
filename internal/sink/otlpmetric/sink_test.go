@@ -263,6 +263,85 @@ func TestTokenTypesExcludeTotal(t *testing.T) {
 	}
 }
 
+// TestTokenUsageHistogramParallelsCounter is issue #18's acceptance criterion "a
+// parallel gen_ai.client.token.usage histogram alongside the existing counter" -
+// checked as an actual equality against MetricTokens' own sum, not merely "some data
+// arrived", so a future change that lets the two drift apart (one attrs.Only slice
+// edited and not the other) fails here.
+func TestTokenUsageHistogramParallelsCounter(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	tt := baseTurn("1")
+	tt.InputTokens, tt.OutputTokens, tt.ReasoningTokens = 10, 20, 5
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	rm := collect(t, reader)
+
+	counter, ok := findMetric(rm, attr.MetricTokens)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricTokens)
+	}
+	histogram, ok := findMetric(rm, attr.MetricTokenUsage)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricTokenUsage)
+	}
+	if cSum, hSum := sumInt64(t, counter), histogramSumInt64(t, histogram); cSum != hSum {
+		t.Errorf("%s sum = %d, %s sum = %d - the parallel histogram has drifted from "+
+			"the counter it is supposed to mirror", attr.MetricTokens, cSum, attr.MetricTokenUsage, hSum)
+	}
+}
+
+// TestToolCallsPerOperationCountsZero pins the deliberate difference from
+// recordToolCalls (which skips a response with no tool calls entirely): this
+// histogram measures the shape of tool use across every response, so a response with
+// zero tool calls must still contribute a recorded zero rather than being silently
+// excluded from the distribution.
+//
+// Both turns here share the same attribute set (model, account, request kind), so the
+// SDK aggregates them into ONE data point keyed by that attribute set - Count is how
+// many Record calls landed in it, Sum is their total, and that is what distinguishes
+// "recorded a zero" from "never called" (Count would be 1, not 2, if the zero-tool-call
+// response had been skipped the way recordToolCalls skips it).
+func TestToolCallsPerOperationCountsZero(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	turns := []*turn.Turn{
+		baseTurn("1"), // no tool calls
+		func() *turn.Turn {
+			tt := baseTurn("2")
+			tt.ToolCalls = []turn.ToolCall{{Name: "exec"}, {Name: "wait"}}
+			return tt
+		}(),
+	}
+	if err := s.Emit(context.Background(), turns); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	rm := collect(t, reader)
+
+	m, ok := findMetric(rm, attr.MetricToolCallsPerOperation)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricToolCallsPerOperation)
+	}
+	h, ok := m.Data.(metricdata.Histogram[int64])
+	if !ok {
+		t.Fatalf("%s: not an int64 histogram (got %T)", attr.MetricToolCallsPerOperation, m.Data)
+	}
+	if len(h.DataPoints) != 1 {
+		t.Fatalf("%s: got %d data points, want 1 (both turns share one attribute set)",
+			attr.MetricToolCallsPerOperation, len(h.DataPoints))
+	}
+	if got := h.DataPoints[0].Count; got != 2 {
+		t.Errorf("%s: Count = %d, want 2 (one Record call per response, including the zero)",
+			attr.MetricToolCallsPerOperation, got)
+	}
+	if got := histogramSumInt64(t, m); got != 2 {
+		t.Errorf("%s sum = %d, want 2 (0 + 2 tool calls)", attr.MetricToolCallsPerOperation, got)
+	}
+}
+
 // TestEveryEmittedAttributeKeyIsOnContract asserts the acceptance criterion "attributes
 // come from the attribute-contract package only" directly against what actually left
 // the sink, across every instrument at once. The two exceptions - GenAITokenType and
@@ -325,10 +404,9 @@ func TestEveryEmittedAttributeKeyIsOnContract(t *testing.T) {
 
 // TestCorpusSeriesCountStaysSane feeds real reduced turns through the sink and checks
 // the total data-point count is proportionate to the number of turns, not exploding -
-// a cheap guard against an attribute combination this sink builds that the shared
-// guard's per-field caps do not actually bound (codexlb.tool_name and
-// codexlb.rate_limit.model_used_percent's model dimension are the two that are not
-// capped by the Guard - see record.go's comments on both).
+// a cheap guard against a combinatorial blow-up across this sink's several capped
+// dimensions (gen_ai.tool.name, gen_ai.request.model, gen_ai.token.type, ...), each
+// individually bounded by the shared Guard but not jointly bounded by any single cap.
 func TestCorpusSeriesCountStaysSane(t *testing.T) {
 	files := fixture.Any(t, 2)
 	r := turn.New()
@@ -399,6 +477,19 @@ func histogramSum(t *testing.T, m metricdata.Metrics) float64 {
 	return total
 }
 
+func histogramSumInt64(t *testing.T, m metricdata.Metrics) int64 {
+	t.Helper()
+	h, ok := m.Data.(metricdata.Histogram[int64])
+	if !ok {
+		t.Fatalf("%s: not an int64 histogram (got %T)", m.Name, m.Data)
+	}
+	var total int64
+	for _, dp := range h.DataPoints {
+		total += dp.Sum
+	}
+	return total
+}
+
 func dataPointKeys(t *testing.T, m metricdata.Metrics) []string {
 	t.Helper()
 	var keys []string
@@ -417,6 +508,16 @@ func dataPointKeys(t *testing.T, m metricdata.Metrics) []string {
 			collectSet(dp.Attributes)
 		}
 	case metricdata.Histogram[float64]:
+		for _, dp := range d.DataPoints {
+			collectSet(dp.Attributes)
+		}
+	case metricdata.Histogram[int64]:
+		// tokenUsage and toolCallsPerOperation (issue #18) are Int64Histogram, unlike
+		// every histogram this sink built before them - all seconds-unit durations,
+		// hence float64. Missing this case is not a compile error, only a t.Fatalf the
+		// first time either instrument actually emits a data point, which is exactly
+		// the kind of silent gap this package's own newInstruments doc comment warns
+		// about for instrument construction; the same trap applies to reading them back.
 		for _, dp := range d.DataPoints {
 			collectSet(dp.Attributes)
 		}
@@ -442,6 +543,8 @@ func dataPointCount(t *testing.T, m metricdata.Metrics) int {
 	case metricdata.Sum[float64]:
 		return len(d.DataPoints)
 	case metricdata.Histogram[float64]:
+		return len(d.DataPoints)
+	case metricdata.Histogram[int64]:
 		return len(d.DataPoints)
 	case metricdata.Gauge[float64]:
 		return len(d.DataPoints)

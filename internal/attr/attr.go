@@ -54,6 +54,13 @@ const (
 	Bounded Class = iota
 	// Identity fields are ids: unbounded, rotating, or both. Structured metadata and
 	// span attributes only - both store per record rather than indexing per value.
+	//
+	// Also covers free-text CONTENT values with the same routing requirement, not
+	// just ids in the literal sense (issue #18's ToolCallArguments and
+	// ToolCallResult): both are unbounded, neither belongs anywhere near a metric
+	// attribute or a Loki label, and "never aggregated, never indexed by value" is
+	// exactly the Identity contract regardless of whether the value happens to be an
+	// identifier or a blob of tool output.
 	Identity
 	// Sensitive fields map 1:1 to a human. Structured metadata only: not a metric
 	// attribute, not a Loki label, and not a span attribute either, because Tempo
@@ -88,9 +95,20 @@ type Field struct {
 	// NIL means the field is caller-supplied rather than Turn-derived: a tool name
 	// belongs to one ToolCall and a token type to one counter, so neither can be
 	// extracted from the Turn as a whole. They are still registered here, and still
-	// capped, because Guard.With routes them through the same guard - which is the
-	// hole this closes. Both were name constants with no registry entry, so every
-	// value flowed through uncapped, and codexlb.tool_name is genuinely open-ended.
+	// routed through Guard.With, because that is the one path every sink uses instead
+	// of assembling its own attribute set - which is the hole this closes. Both were
+	// name constants with no registry entry once, so every value flowed through
+	// uncapped, and gen_ai.tool.name is genuinely open-ended.
+	//
+	// A caller-supplied field may be Bounded (ToolName, GenAITokenType, ToolType -
+	// Guard.With applies the same cap it would if the value came from a Turn) or
+	// Identity (ToolCallID, ToolCallArguments, ToolCallResult - per-invocation,
+	// unbounded by nature, so Guard.With passes them through uncapped, same as it
+	// would for any other Identity field). It must never be Sensitive: With has no
+	// per-class gate of its own the way SpanAttrs/MetricAttrs/Labels do, so a
+	// Sensitive caller-supplied field would be the one path around the "never a span
+	// attribute" guarantee - see TestRegistryIsWellFormed, which is what closes that
+	// off at registration time rather than trusting every call site to remember.
 	Of func(t *turn.Turn) string
 }
 
@@ -189,6 +207,10 @@ var registry = []Field{
 			"followup_task", "interrupt_agent", "request_user_input", "wait"}},
 	{Key: GenAITokenType, Class: Bounded, Cap: 8,
 		Observed: []string{TokenInput, TokenOutput, TokenReasoning, TokenCached, TokenCacheWrite}},
+	// ToolType is ToolCall.Kind: custom | function today, per turn.go's own comment on
+	// that field. Cap matches ToolName's caution about a field with no upstream
+	// guarantee of staying small, even though only two values have ever been seen.
+	{Key: ToolType, Class: Bounded, Cap: 16},
 
 	// --- identity: structured metadata and span attributes ---
 	{Key: GenAIResponseID, Class: Identity, Of: func(t *turn.Turn) string { return t.ResponseID }},
@@ -211,8 +233,38 @@ var registry = []Field{
 	// hold. FrameType above is the bounded classification of the same event.
 	{Key: TransportEvent, Class: Identity, Of: func(t *turn.Turn) string { return t.TransportEvent }},
 
+	// Token usage as span attributes (issue #18) - Turn already carries all six
+	// fields; before this they existed only as the codexlb.tokens counter, split by
+	// GenAITokenType, so a decoded span carried no usage figures at all. Identity, not
+	// Bounded: these are measurements, not dimensions - nothing should ever group a
+	// metric BY a token count. positiveItoa omits a non-positive count rather than
+	// emitting "0", matching Field.Of's own contract that empty means "does not apply"
+	// (a turn with no cached tokens is not the same fact as a turn with a "0" recorded
+	// for cached tokens - the former never had a cache to hit).
+	{Key: GenAIUsageInputTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.InputTokens) }},
+	{Key: GenAIUsageOutputTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.OutputTokens) }},
+	{Key: GenAIUsageReasoningTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.ReasoningTokens) }},
+	{Key: GenAIUsageCacheReadTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.CachedTokens) }},
+	{Key: GenAIUsageCacheWriteTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.CacheWriteTokens) }},
+
+	// --- caller-supplied identity: per tool call, not per Turn (see ToolType above
+	// for why the analogous per-call BOUNDED field lives in the earlier block) ---
+	{Key: ToolCallID, Class: Identity},
+	{Key: ToolCallArguments, Class: Identity},
+	{Key: ToolCallResult, Class: Identity},
+	{Key: GenAIAgentName, Class: Identity},
+
 	// --- sensitive ---
 	{Key: SafetyID, Class: Sensitive, Of: func(t *turn.Turn) string { return t.SafetyID }},
+}
+
+// positiveItoa renders n, or "" for n <= 0 - see the token-usage Field.Of comments
+// above for why zero and absent must not collapse to the same emitted value.
+func positiveItoa(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
 }
 
 var byKey = func() map[string]Field {
@@ -476,7 +528,13 @@ func (g *Guard) With(kvs []KV, extra ...KV) []KV {
 			continue
 		}
 		f, known := byKey[kv.Key]
-		if !known {
+		// Sensitive is rejected here too, not only omitted from SpanAttrs/MetricAttrs/
+		// Labels: those three enforce the class by construction (they walk the
+		// registry and skip Sensitive themselves), but With takes an arbitrary caller
+		// KV and would otherwise happily cap-and-forward a Sensitive key straight past
+		// that enforcement - the one path a sink could use to put safety_identifier on
+		// a span. Nothing does that today; this closes the path before something does.
+		if !known || f.Class == Sensitive {
 			g.mu.Lock()
 			g.rejected[kv.Key]++
 			g.mu.Unlock()

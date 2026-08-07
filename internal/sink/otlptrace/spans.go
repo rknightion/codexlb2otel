@@ -162,8 +162,11 @@ func toAttrs(kvs []attr.KV) []attribute.KeyValue {
 // deliberate, not an oversight - promoting call_id there would put a per-invocation
 // id one `attr.With` call away from becoming a label.
 const (
-	traceAttrLinkKind      = "codexlb.trace.link_kind"
-	traceAttrToolCallID    = "codexlb.trace.tool_call_id"
+	traceAttrLinkKind = "codexlb.trace.link_kind"
+	// traceAttrToolCallState has no GenAI standard equivalent - the convention names
+	// gen_ai.tool.call.id (issue #18: now attr.ToolCallID, registered and routed
+	// through the shared Guard like every other emitted key) but nothing for a call's
+	// own status string, so this one stays sink-local.
 	traceAttrToolCallState = "codexlb.trace.tool_call_status"
 	// traceAttrReconciled records whether the critical-path phase children summed to
 	// the response span's own duration within tolerance - the acceptance signal
@@ -268,7 +271,7 @@ func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 	if hasCriticalPath {
 		respSpan.SetAttributes(attribute.Bool(traceAttrReconciled, reconciled))
 	}
-	s.emitToolCalls(respCtx, respSpan.SpanContext(), raw, rkey, t.ToolCalls, respStart, respEnd)
+	s.emitToolCalls(respCtx, respSpan.SpanContext(), raw, rkey, t.ToolCalls, t.ToolOutputs, respStart, respEnd)
 
 	respSpan.End(trace.WithTimestamp(respEnd))
 	// The turn span's own end tracks the LATEST response processed for this logical
@@ -327,25 +330,84 @@ func (s *Sink) emitCriticalPathPhases(ctx context.Context, parent trace.SpanCont
 // than a false narrower interval. That is a stated limitation, not a silent
 // approximation: a future internal/turn change that captures per-call timing needs
 // no change here beyond narrowing start/end.
-func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw []attr.KV, respKey string, calls []turn.ToolCall, respStart, respEnd time.Time) {
+//
+// gen_ai.operation.name goes on these spans too (issue #18), execute_tool or
+// invoke_agent depending on the call - see toolOperationName below. This does NOT
+// reopen the double-count trap fixed in 228c717: that fix bounds how many spans per
+// RESPONSE may claim to be the "chat" inference (exactly one, the response span
+// itself). execute_tool/invoke_agent are a DIFFERENT operation value describing a
+// DIFFERENT event - one tool call, one span, one claim - not a second span claiming
+// the same inference the response span already claimed. A consumer counting "chat"
+// spans to count inferences and "execute_tool"/"invoke_agent" spans to count tool
+// calls/agent invocations gets each number counted once, on its own axis.
+func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw []attr.KV, respKey string, calls []turn.ToolCall, outputs []turn.ToolOutput, respStart, respEnd time.Time) {
 	if len(calls) == 0 {
 		return
 	}
+	// Joined by call id, matching how the reducer itself associates a tool's result
+	// with its call (turn.ToolOutput's own doc comment: "deduplicated by call id").
+	outputByCallID := make(map[string]string, len(outputs))
+	for _, o := range outputs {
+		if o.CallID != "" {
+			outputByCallID[o.CallID] = o.Text
+		}
+	}
+
 	base := attr.Only(raw, attr.GenAIResponseID, attr.ThreadID, attr.GenAIRequestModel, attr.Status)
 	for i, tc := range calls {
-		attrs := toAttrs(s.guard.With(base, attr.KV{Key: attr.ToolName, Value: tc.Name}))
-		if tc.CallID != "" {
-			attrs = append(attrs, attribute.String(traceAttrToolCallID, tc.CallID))
-		}
+		op := toolOperationName(tc)
+		attrs := s.guard.With(base,
+			attr.KV{Key: attr.ToolName, Value: tc.Name},
+			attr.KV{Key: attr.ToolCallID, Value: tc.CallID},
+			attr.KV{Key: attr.ToolType, Value: tc.Kind},
+			attr.KV{Key: attr.ToolCallArguments, Value: tc.Input},
+			attr.KV{Key: attr.ToolCallResult, Value: outputByCallID[tc.CallID]},
+			// GenAIAgentName only actually has a value when op is invoke_agent -
+			// TaskName is empty for every other tool - so this is a no-op KV on an
+			// execute_tool call rather than a branch.
+			attr.KV{Key: attr.GenAIAgentName, Value: tc.TaskName},
+		)
+		otelAttrs := toAttrs(attrs)
+		// gen_ai.operation.name: constant per call, not Turn-derived and not
+		// caller-supplied-but-registered either (there is no Field for "which
+		// operation value" - GenAIOperation itself is injected the same way on the
+		// chat span, deliberately outside the registry; see that span's own comment).
+		otelAttrs = append(otelAttrs, attribute.String(attr.GenAIOperation, op))
 		if tc.Status != "" {
-			attrs = append(attrs, attribute.String(traceAttrToolCallState, tc.Status))
+			otelAttrs = append(otelAttrs, attribute.String(traceAttrToolCallState, tc.Status))
 		}
 		sid := hashSpanID("tool_call", respKey, strconv.Itoa(i), tc.CallID, tc.Name)
-		name := "tool_call"
-		if tc.Name != "" {
-			name = "tool_call " + tc.Name
+		// Span name per the spec's own guidance for each operation: "execute_tool
+		// {gen_ai.tool.name}" / "invoke_agent {gen_ai.agent.name}" - the latter uses
+		// TaskName (the spawned agent's own name), not tc.Name (which would just say
+		// "spawn_agent" on every one of these spans and tell a reader nothing about
+		// which agent).
+		name := op
+		switch {
+		case op == attr.GenAIOperationInvokeAgent && tc.TaskName != "":
+			name = op + " " + tc.TaskName
+		case tc.Name != "":
+			name = op + " " + tc.Name
 		}
-		_, span := s.startChild(ctx, parent, name, sid, respStart, attrs)
+		_, span := s.startChild(ctx, parent, name, sid, respStart, otelAttrs)
 		span.End(trace.WithTimestamp(respEnd))
 	}
+}
+
+// toolOperationName picks execute_tool or invoke_agent per the GenAI convention's own
+// two operation values for this event class.
+//
+// TaskName is "Populated for spawn_agent, describing the child agent" (turn.ToolCall's
+// own doc comment) - it is Turn's existing, already-reduced signal for "this call
+// spawned a subagent", so it is used directly rather than hardcoding the tool name
+// "spawn_agent" a second time in this package. Every other multi-agent-protocol tool
+// this service has observed (wait_agent, list_agents, send_message, followup_task,
+// interrupt_agent - see ToolName's Observed list) interacts with an ALREADY-spawned
+// agent rather than creating one, so those stay execute_tool; only the call that
+// actually brings a new agent into existence is invoke_agent.
+func toolOperationName(tc turn.ToolCall) string {
+	if tc.TaskName != "" {
+		return attr.GenAIOperationInvokeAgent
+	}
+	return attr.GenAIOperationExecuteTool
 }
