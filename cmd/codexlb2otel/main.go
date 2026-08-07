@@ -17,7 +17,9 @@ import (
 
 	"github.com/rknightion/codexlb2otel/internal/config"
 	"github.com/rknightion/codexlb2otel/internal/health"
+	"github.com/rknightion/codexlb2otel/internal/selfobs"
 	"github.com/rknightion/codexlb2otel/internal/sink"
+	"github.com/rknightion/codexlb2otel/internal/sink/otlpmetric"
 	"github.com/rknightion/codexlb2otel/internal/tail"
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
@@ -45,13 +47,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	snk, _, err := buildSinks(ctx, cfg, log)
+	snk, _, metricsSink, err := buildSinks(ctx, cfg, log)
 	if err != nil {
 		log.Error("build sinks", "err", err)
 		os.Exit(1)
 	}
 
-	if err := run(ctx, cfg, log, snk); err != nil && !errors.Is(err, context.Canceled) {
+	if err := run(ctx, cfg, log, snk, metricsSink); err != nil && !errors.Is(err, context.Canceled) {
 		log.Error("exited with error", "err", err)
 		os.Exit(1)
 	}
@@ -95,7 +97,11 @@ func newLogger(cfg config.Log) *slog.Logger {
 // immediately after every Emit, so the callback tail.Watcher relies on only ever
 // reports success once the batch has truly left the building - see sinkEmit's own
 // comment for the tradeoff that buys.
-func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink) error {
+//
+// metricsSink is nil whenever OTLP metrics are disabled (buildSinks' own doc
+// comment); self-observability (issue #8) is then simply not wired up, since there is
+// no metrics pipeline for it to share.
+func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink, metricsSink *otlpmetric.Sink) error {
 	reducer := turn.New()
 	w, err := tail.New(tail.Config{
 		Dir:            cfg.Archive.Dir,
@@ -107,6 +113,17 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 	}, reducer)
 	if err != nil {
 		return fmt.Errorf("open archive: %w", err)
+	}
+
+	// Self-observability (issue #8) can only be wired up here, not in buildSinks: it
+	// needs w, which does not exist until this line. See buildSinks' own doc comment
+	// on why the concrete *otlpmetric.Sink is threaded all the way from there to here
+	// instead of being reconstructed by walking snk.
+	if metricsSink != nil {
+		collector := selfobs.New(w, snk)
+		if err := metricsSink.RegisterSelfObs(collector.Collect); err != nil {
+			return fmt.Errorf("register self-observability: %w", err)
+		}
 	}
 
 	var hsrv *health.Server

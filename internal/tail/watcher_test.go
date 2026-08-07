@@ -1,7 +1,10 @@
 package tail
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -359,4 +362,176 @@ func TestWatcher_AppendIsNotAReplacement(t *testing.T) {
 	if w.Stats.FilesReplaced != 0 {
 		t.Errorf("FilesReplaced = %d on a plain append", w.Stats.FilesReplaced)
 	}
+}
+
+// buildTimestampedArchive writes one complete gzip member holding a single
+// frame.Record whose only load-bearing field is its timestamp. No request_id and no
+// event payload are needed: reduce() (called from readFile) advances the watermark
+// for every frame it sees, correlated or not, before it ever asks the reducer to do
+// anything with it - see reduce's own body. This is the cheapest record shape that
+// moves the watermark to an exact, test-controlled value.
+func buildTimestampedArchive(t *testing.T, ts time.Time) []byte {
+	t.Helper()
+	rec := map[string]any{
+		"account_id":  "",
+		"direction":   "server_to_codex",
+		"headers":     map[string]string{},
+		"kind":        "frame",
+		"method":      "",
+		"payload":     map[string]string{"text": ""},
+		"request_id":  "",
+		"status_code": nil,
+		"timestamp":   ts.UTC().Format(time.RFC3339Nano),
+		"transport":   "websocket",
+		"url":         "",
+		"extra":       map[string]any{},
+	}
+	line, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(line); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// TestWatcher_IngestLagReflectsArchiveTimeNotWallClock is issue #8's central
+// acceptance criterion: ingest_lag_seconds is wall-clock now minus the newest
+// record's OWN timestamp, verified against a DELIBERATELY STALE directory - a
+// synthetic archive whose one record is stamped hours in the past, independent of
+// whenever this test happens to run. If the watermark tracked wall-clock processing
+// time instead of the record's own stamp, the lag computed from it would always read
+// near zero here, never near the ~6h actually injected - which is exactly the trap
+// the issue's Notes section records for EVICTION (never measured against time.Now();
+// see TestWatcher_ReclaimSparesTheLiveFile and the package's own Poll comment) and
+// which this test pins for the other clock, ingest lag, that deliberately DOES use
+// time.Now() - once, at the metrics layer (internal/selfobs), never here.
+func TestWatcher_IngestLagReflectsArchiveTimeNotWallClock(t *testing.T) {
+	dir := t.TempDir()
+	stale := time.Now().Add(-6 * time.Hour).UTC()
+	path := filepath.Join(dir, archiveName)
+	if err := os.WriteFile(path, buildTimestampedArchive(t, stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newWatcher(t, dir, nil)
+	var got []*turn.Turn
+	if err := w.Poll(context.Background(), collect(&got)); err != nil {
+		t.Fatal(err)
+	}
+
+	watermark := w.Progress().Watermark
+	if watermark.IsZero() {
+		t.Fatal("Progress().Watermark is zero after polling a file with a record")
+	}
+	if diff := watermark.Sub(stale); diff < -time.Second || diff > time.Second {
+		t.Errorf("Watermark = %v, want %v (the record's own stamped time)", watermark, stale)
+	}
+
+	lag := time.Since(watermark)
+	if lag < 5*time.Hour {
+		t.Fatalf("lag = %v, want >= ~6h (the archive's OWN staleness) - this looks like the "+
+			"watermark tracked wall-clock processing time instead of the record's own "+
+			"stamped timestamp", lag)
+	}
+}
+
+// TestWatcher_PartialMemberIsNotADecodeError is issue #8's other explicit acceptance
+// criterion: a gzip member cut off mid-write - the normal state of a file codex-lb is
+// still appending to - must be counted separately from genuine corruption.
+func TestWatcher_PartialMemberIsNotADecodeError(t *testing.T) {
+	data := loadFixture(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, archiveName)
+
+	// An arbitrary cut lands mid-member: members run ~1KB apart (archive package's
+	// own doc comment), far smaller than a third of any corpus file.
+	if err := os.WriteFile(path, data[:len(data)/3], 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newWatcher(t, dir, nil)
+	var got []*turn.Turn
+	if err := w.Poll(context.Background(), collect(&got)); err != nil {
+		t.Fatal(err)
+	}
+
+	if w.Stats.DecodeErrors != 0 {
+		t.Errorf("DecodeErrors = %d, want 0 - a truncated tail is not corruption", w.Stats.DecodeErrors)
+	}
+	if w.Stats.PartialMemberReads == 0 {
+		t.Error("PartialMemberReads = 0, want > 0 - the cut landed mid-member and should have been counted")
+	}
+}
+
+// TestWatcher_CorruptMemberIsCountedSeparately is the other half of the same
+// acceptance criterion: genuine corruption - a complete member whose body was
+// scrambled - must increment DecodeErrors and must stop before ever reaching the
+// partial-member accounting (readFile's derr branch breaks the read loop), so the two
+// counters can never both fire off the same event.
+func TestWatcher_CorruptMemberIsCountedSeparately(t *testing.T) {
+	good := buildTimestampedArchive(t, time.Now())
+	bad := buildTimestampedArchive(t, time.Now())
+	// Corrupt the deflate body of the second member, past its 10-byte header - same
+	// technique as internal/archive's own
+	// TestDecodeMembers_CorruptMemberReportsAndPreservesPrefix.
+	bad[len(bad)/2] ^= 0xFF
+	data := append(append([]byte{}, good...), bad...)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, archiveName)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newWatcher(t, dir, nil)
+	var got []*turn.Turn
+	if err := w.Poll(context.Background(), collect(&got)); err != nil {
+		t.Fatal(err)
+	}
+
+	if w.Stats.DecodeErrors == 0 {
+		t.Error("DecodeErrors = 0, want > 0 - the second member is genuinely corrupt")
+	}
+}
+
+// TestWatcher_ProgressReportsCurrentFileAndOpenResponses is a smoke test for the
+// self-observability accessors this package exposes (issue #8): CurrentFile is the
+// live (chronologically last) archive file, matching reclaim's own "never the newest
+// file" rule, and OpenResponses mirrors the reducer's own in-flight count.
+func TestWatcher_ProgressReportsCurrentFileAndOpenResponses(t *testing.T) {
+	data := loadFixture(t)
+	dir := t.TempDir()
+	older := filepath.Join(dir, "2026-08-06T20.jsonl.gz")
+	live := filepath.Join(dir, archiveName)
+	for _, p := range []string{older, live} {
+		if err := os.WriteFile(p, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := newWatcher(t, dir, nil)
+	var got []*turn.Turn
+	if err := w.Poll(context.Background(), collect(&got)); err != nil {
+		t.Fatal(err)
+	}
+
+	p := w.Progress()
+	if p.CurrentFile != archiveName {
+		t.Errorf("CurrentFile = %q, want %q (the chronologically-last file)", p.CurrentFile, archiveName)
+	}
+	if p.CurrentFileOffset <= 0 {
+		t.Errorf("CurrentFileOffset = %d, want > 0 after a full read", p.CurrentFileOffset)
+	}
+	// OpenResponses cannot be pinned to an exact count without depending on the
+	// fixture's own content shape, but it must never panic or deadlock reading a live
+	// reducer mid-use - that is what this call is actually proving, per the mutex
+	// this method exists to exercise.
+	_ = p.OpenResponses
 }

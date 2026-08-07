@@ -41,6 +41,11 @@ type Sink struct {
 	guard *attr.Guard
 	mp    *sdkmetric.MeterProvider
 	inst  instruments
+
+	// selfObsRegistered guards RegisterSelfObs (selfobs.go) against being called
+	// twice, which would register a second callback and double-report every
+	// self-observability instrument.
+	selfObsRegistered bool
 }
 
 // New builds a Sink that exports over real OTLP HTTP to cfg.Endpoint, authenticating

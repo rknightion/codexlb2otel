@@ -1,0 +1,208 @@
+{
+  "uid": "codexlb-response-thread-lookup",
+  "title": "codexlb2otel: Response / thread lookup",
+  "description": "Paste a response id, request id, thread id or session id; get the turn's metadata, its timing breakdown, and the conversation in order. Issue #15's deferred dashboard.",
+  "tags": [
+    "codexlb2otel",
+    "codex-lb",
+    "lookup"
+  ],
+  "timezone": "utc",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "service_name",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "query": "label_values(codexlb_responses_total, service_name)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "regex": "",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        }
+      },
+      {
+        "name": "id",
+        "label": "Response / request / thread / session id",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      },
+      {
+        "name": "resolved_thread_id",
+        "label": "Resolved thread id (auto)",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "grafanacloud-logs"
+        },
+        "query": "label_values({service_name=\"$service_name\"} | codexlb_request_id=\"$id\" or gen_ai_response_id=\"$id\" or codexlb_thread_id=\"$id\" or gen_ai_conversation_id=\"$id\" or codexlb_session_id=\"$id\", codexlb_thread_id)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "regex": "",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "How this works",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Paste any of the four ids into `$id`: a `resp_*` response id, a `ws_*`/bare-UUID request id, a thread id, or a session id (issue #15's id-collision table). All four are structured metadata on every emitted Loki record (internal/attr's Identity-class fields, always present via guard.Metadata regardless of Loki label promotion), so the first panel matches on whichever one you pasted directly. The **third panel resolves `$id` to its thread_id first** (via the `$resolved_thread_id` chained variable below, a Loki `label_values()` query that runs the same 5-way match), then lists every prompt/message/tool_call/tool_output/agent_message line on that thread, oldest first - matching a response id lands you on the **whole conversation** it belongs to, not just the one turn, per issue #15's worked example."
+      }
+    },
+    {
+      "id": 2,
+      "type": "logs",
+      "title": "Matching turn / transport / error record(s)",
+      "description": "Structured-metadata OR-filter across all four id kinds, per Loki's boolean label-filter-expression support. Raw JSON body shown as-is; turn.go's json tags name every field.",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "{service_name=\"$service_name\", codexlb_record_type=~\"turn|transport|error\"} | codexlb_request_id=\"$id\" or gen_ai_response_id=\"$id\" or codexlb_thread_id=\"$id\" or gen_ai_conversation_id=\"$id\" or codexlb_session_id=\"$id\"",
+          "refId": "A",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Timing breakdown (turn record only)",
+      "description": "Named `| json` field extraction off the turn line's own body (turn.go's json tags, including the nested critical_path object) - each extracted field becomes its own table column in Grafana's Loki table view.",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "{service_name=\"$service_name\", codexlb_record_type=\"turn\"} | codexlb_request_id=\"$id\" or gen_ai_response_id=\"$id\" or codexlb_thread_id=\"$id\" or gen_ai_conversation_id=\"$id\" or codexlb_session_id=\"$id\" | json response_id=\"response_id\", model=\"model\", effort=\"reasoning_effort\", service_tier=\"service_tier\", thread_source=\"thread_source\", subagent_kind=\"subagent_kind\", parent_thread_id=\"parent_thread_id\", previous_response_id=\"previous_response_id\", ttft_ms=\"ttft_ms\", pre_inference_ms=\"pre_inference_ms\", engine_wall_ms=\"critical_path.engine_wall_ms\", harness_unblocked_ms=\"critical_path.harness_unblocked_ms\", sampling_stream_ms=\"critical_path.sampling_and_stream_ms\", client_tool_pause_ms=\"critical_path.client_tool_pause_ms\", coverage=\"critical_path.coverage\"",
+          "refId": "A",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Conversation in order (resolved thread)",
+      "description": "Sorted oldest-first. Uses $resolved_thread_id (chained off $id), not $id directly, so a response/request/session id pasted into $id still returns the FULL conversation, not just the one turn it names.",
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 14
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Ascending",
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "{service_name=\"$service_name\", codexlb_record_type=~\"prompt|instructions|message|tool_call|tool_output|agent_message\"} | codexlb_thread_id=~\"$resolved_thread_id\" or gen_ai_conversation_id=~\"$resolved_thread_id\"",
+          "refId": "A",
+          "queryType": "range"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,441 @@
+{
+  "uid": "codexlb-tokens-cost-shape",
+  "title": "codexlb2otel: Token & cost shape",
+  "description": "Token volume by model, effort and thread source. Complements codex-lb-overview's spend panels.",
+  "tags": [
+    "codexlb2otel",
+    "codex-lb",
+    "tokens",
+    "cost"
+  ],
+  "timezone": "utc",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "service_name",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "query": "label_values(codexlb_responses_total, service_name)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "regex": "",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        }
+      },
+      {
+        "name": "model",
+        "label": "Model",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "query": "label_values(codexlb_responses_total{service_name=~\"$service_name\"}, gen_ai_request_model)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "regex": "",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "About this dashboard",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Token and cost shape by model, effort and thread source. Complements `codex-lb-overview` (the proxy's own Postgres-derived view); every panel here is built from the wire-capture telemetry only codexlb2otel emits. **Gap found while building this**: `codexlb.tokens` / `gen_ai.client.token.usage` (record.go's `recordTokens`) narrow to exactly `(gen_ai.provider.name, gen_ai.operation.name, gen_ai.request.model, gen_ai.response.model, codexlb.account_id, codexlb.request_kind, gen_ai.token.type)` - **no reasoning-effort and no thread-source label on the token metric itself.** The 'by effort' and 'by thread source' panels below are LogQL metric queries against the turn-record JSON body instead (Effort and ThreadSource ARE both present there, alongside the token counts, per-turn), not PromQL. **codexlb.family is also absent from every token/duration/tool-call instrument** - see record.go: only `responses`, `turns`, `baseline_resets` and `transport_events` carry Family. So probe-family cannot be excluded from a Prometheus token-by-model panel at all; the Loki panel below can (it has `codexlb_family` as a stream label), and is the recommended one for an accurate per-model view."
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Token volume by type",
+      "description": "codexlb.tokens counter, by gen_ai.token.type (input/output/reasoning/cached/cache_write). cached and reasoning are sub-buckets of input/output respectively - do not sum all five as a total.",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "{{gen_ai_token_type}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Input+output token volume by model",
+      "description": "codexlb.tokens, restricted to the two non-nested token types so nothing double-counts.",
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=~\"input|output\", gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "{{gen_ai_request_model}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Prompt-cache hit ratio by model",
+      "description": "cached / input, by model. cached is a nested breakdown of input (record.go's tokenTypes comment), so this ratio is well-formed.",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"cached\", gen_ai_request_model=~\"$model\"}[$__rate_interval])) / sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"input\", gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "{{gen_ai_request_model}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Reasoning-token share of output, by model",
+      "description": "reasoning / output, by model.",
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"reasoning\", gen_ai_request_model=~\"$model\"}[$__rate_interval])) / sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"output\", gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "{{gen_ai_request_model}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "[Loki] Output tokens by reasoning effort",
+      "description": "LogQL, not PromQL - the metric contract has no reasoning-effort label on token counters. Reads reasoning_effort and output_tokens straight off the turn-record JSON body (turn.go: Effort json:\"reasoning_effort\", OutputTokens json:\"output_tokens\"). Probe family excluded via the codexlb_family stream label, which Loki has and Prometheus doesn't for this measurement.",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "sum by (reasoning_effort) (sum_over_time({service_name=\"$service_name\", codexlb_record_type=\"turn\", codexlb_family!=\"probe\"} | json reasoning_effort=\"reasoning_effort\", output_tokens=\"output_tokens\" | unwrap output_tokens [$__interval]))",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": "{{reasoning_effort}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "[Loki] Output tokens by thread source (user vs subagent)",
+      "description": "LogQL, same reasoning as the effort panel - codexlb.thread_source is not on the token metric.",
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "sum by (thread_source) (sum_over_time({service_name=\"$service_name\", codexlb_record_type=\"turn\", codexlb_family!=\"probe\"} | json thread_source=\"thread_source\", output_tokens=\"output_tokens\" | unwrap output_tokens [$__interval]))",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": "{{thread_source}}"
+        }
+      ]
+    }
+  ]
+}

@@ -57,7 +57,7 @@ func TestBuildSinks_OneEntryPerEnabledDestination(t *testing.T) {
 			credentialed(t, &cfg)
 			tc.cfg(&cfg)
 
-			got, guard, err := buildSinks(t.Context(), cfg, log)
+			got, guard, metricsSink, err := buildSinks(t.Context(), cfg, log)
 			if err != nil {
 				t.Fatalf("buildSinks: %v", err)
 			}
@@ -70,6 +70,13 @@ func TestBuildSinks_OneEntryPerEnabledDestination(t *testing.T) {
 			}
 			if guard == nil {
 				t.Error("no guard returned; nothing would report attribute rejections")
+			}
+			// metricsSink is the seam self-observability (issue #8) is wired through in
+			// main.go's run() - nil exactly when OTLP metrics are disabled, since there is
+			// then no metrics pipeline for it to share.
+			if wantMetrics := cfg.OTLP.Metrics.Enabled; wantMetrics != (metricsSink != nil) {
+				t.Errorf("metricsSink non-nil = %v, want %v (cfg.OTLP.Metrics.Enabled)",
+					metricsSink != nil, wantMetrics)
 			}
 			for i, s := range multi {
 				if _, stub := s.(sink.Discard); stub {
@@ -91,7 +98,7 @@ func TestBuildSinks_AllSinksShareOneGuard(t *testing.T) {
 	cfg.Loki.Enabled, cfg.OTLP.Metrics.Enabled, cfg.OTLP.Traces.Enabled = true, true, true
 	cfg.AgentO11y.Enabled = true
 
-	snk, guard, err := buildSinks(t.Context(), cfg, slog.New(slog.DiscardHandler))
+	snk, guard, _, err := buildSinks(t.Context(), cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("buildSinks: %v", err)
 	}
