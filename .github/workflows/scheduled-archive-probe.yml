@@ -1,0 +1,97 @@
+# Sampled drift probe against codex-lb's LIVE archive directory, on a
+# schedule. Follows on from #13 - see clbprobe's package doc
+# (cmd/clbprobe/main.go) for what it detects and why sampling trades recall
+# of rare shapes for speed.
+#
+# ============================================================================
+# NOT YET LIVE - REQUIRES A SELF-HOSTED RUNNER THAT DOES NOT CURRENTLY EXIST.
+#
+# This job targets `runs-on: [self-hosted, ...]` below with a PLACEHOLDER
+# label set. The archive lives on camden, reachable only over Tailscale, so a
+# GitHub-hosted runner has no path to it and one cannot safely be given one.
+# Until a self-hosted runner carrying these labels is registered on the
+# tailnet, every trigger of this workflow queues forever with nothing to pick
+# it up - do not assume this is running just because it is present in the
+# repo. See the runner-label placeholder and the archive-path placeholder
+# below; both need a human before this can go live.
+# ============================================================================
+#
+# Why sampled, not full: ~6s for a day of capture vs a full scan, and this
+# runs on a schedule where that matters. Sampling detects drift in common
+# shapes and proves nothing about rare ones (see clbprobe's package doc) - a
+# -full pass belongs on a slower cadence or triggered by hand once this job
+# flags something worth a closer look. This workflow is deliberately
+# sampled-only; wiring a -full cadence is left for later, once the sampled
+# job has a runner and a real track record.
+#
+# -fail-on is pinned to "breaking" and -update is NEVER passed here:
+#   - absence findings ("new"/"info") are informational by design - a sampled
+#     scan not seeing a rare shape is the normal case, not a regression, so
+#     failing the run on them would page on noise rather than on drift.
+#   - clbprobe's own doc comment warns explicitly against updating the
+#     baseline from a sampled scan: it would bake "rare shape absent" into
+#     corpus.sig.json as if it were confirmed gone. Only a -full run may
+#     update the baseline, and that stays a deliberate, separate act - never
+#     this job.
+name: scheduled archive probe (sampled)
+
+on:
+  schedule:
+    # Once a day. Revisit the cadence once this actually has a runner and
+    # real signal to tune against.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: sampled probe against live archive
+    # PLACEHOLDER - unresolved, needs a human: replace with the real label(s)
+    # of a self-hosted runner that (a) has Tailscale connectivity to camden
+    # and (b) has read access to the archive directory referenced below.
+    # Nothing currently matches this label - the job will queue indefinitely
+    # until a runner is registered with it.
+    runs-on: [self-hosted, tailscale, camden]
+    timeout-minutes: 10
+    steps:
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: setup go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: sampled drift probe against live archive
+        # PLACEHOLDER - unresolved, needs a human: ARCHIVE_DIR is a guess at
+        # where codex-lb's live archive lives on camden, not a confirmed
+        # path. Replace it with the real directory before this job can run.
+        # No secret is wired for this - the assumption is a self-hosted
+        # runner already has whatever local filesystem or Tailscale-network
+        # access it needs by virtue of being registered on camden's tailnet.
+        # If that turns out wrong (e.g. the archive needs its own
+        # credential), that credential is also unresolved and not invented
+        # here.
+        env:
+          ARCHIVE_DIR: /path/to/codex-lb/archive # PLACEHOLDER - confirm the real path on camden
+        #
+        # Built, not `go run`: go run collapses every non-zero exit code to 1
+        # rather than propagating it, which would make the exit-3 branch below
+        # unreachable and turn "no archives found" into a page. See ci.yml's
+        # equivalent step for the measurement.
+        run: |
+          go build -o /tmp/clbprobe ./cmd/clbprobe
+          set +e
+          /tmp/clbprobe -sampled -fail-on breaking "$ARCHIVE_DIR"
+          status=$?
+          set -e
+          case "$status" in
+            0) echo "clbprobe: clean, no breaking drift against corpus.sig.json" ;;
+            3) echo "clbprobe: no archives found under $ARCHIVE_DIR - nothing to scan, skipped" ;;
+            1) echo "::error::clbprobe: breaking drift detected against corpus.sig.json"; exit 1 ;;
+            *) echo "::error::clbprobe: exit $status (see output above)"; exit 1 ;;
+          esac

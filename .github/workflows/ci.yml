@@ -1,0 +1,116 @@
+# CI gate: format, vet, build, test, and a drift probe against the committed
+# corpus signature (corpus.sig.json). Runs on every push to main and every PR.
+#
+# There is no corpus in CI - see internal/fixture/fixture.go: the corpus holds
+# full conversation content and is gitignored by design, never committed. The
+# test step below sets CLB_NO_CORPUS=1 so corpus-backed tests skip cleanly
+# instead of failing (mirrors the Makefile's `test-short` target). The probe
+# step hits clbprobe's own "nothing to scan" exit code for the same reason
+# and treats that as an explicit, documented skip rather than a failure.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: build, vet, test, probe
+    runs-on: ubuntu-latest
+    # Non-corpus tests are fast (seconds to low minutes); this ceiling is a
+    # safety net against a hang, not a measurement of expected runtime. The
+    # full corpus suite (8-10 min locally, per the issue this workflow was
+    # written against) never runs here at all - see the test step below.
+    timeout-minutes: 15
+    steps:
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: setup go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          # Reads the `go` directive straight out of go.mod, so CI tracks
+          # whatever version the module declares instead of a hardcoded
+          # duplicate that can silently drift from it.
+          go-version-file: go.mod
+          # Built-in module + build cache (GOMODCACHE and GOCACHE), keyed on
+          # go.sum so a dependency bump busts it correctly.
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: gofmt
+        run: |
+          fmt_out="$(gofmt -l .)"
+          if [ -n "$fmt_out" ]; then
+            echo "gofmt found unformatted files:"
+            echo "$fmt_out"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test (non-corpus)
+        # CLB_NO_CORPUS=1 (internal/fixture/fixture.go: EnvOptional) turns a
+        # missing corpus from a hard t.Fatalf into a clean t.Skip - this is
+        # the exact opt-out the fixture package documents CI as the intended
+        # user of. CLB_CORPUS is pointed at a path that provably has nothing
+        # under it, so a corpus accidentally present in the runner's working
+        # tree can never sneak in and make this step slow or flaky.
+        env:
+          CLB_CORPUS: /nonexistent
+          CLB_NO_CORPUS: "1"
+        run: go test ./...
+
+      - name: clbprobe drift check
+        # corpus/ is always present after checkout (corpus/sync is tracked -
+        # see .gitignore's `!/corpus/sync` exception), but the archives under
+        # corpus/processed are gitignored and never are. Passing the corpus/
+        # parent (not corpus/processed, which does not exist at all in CI)
+        # matters: clbprobe walks directories recursively for *.jsonl.gz, and
+        # a path that fails os.Stat entirely - as corpus/processed would -
+        # produces exit 2 (error), not exit 3 (nothing to scan). Only a path
+        # that exists but is empty of archives gives the correct exit 3.
+        #
+        # clbprobe exit codes: 0 clean, 1 drift at/above -fail-on, 2 error,
+        # 3 nothing to scan. In CI there is never an archive to scan, so exit
+        # 3 is the expected, PASSING outcome here - handled explicitly below
+        # rather than relying on `set -e` to paper over it as success, and
+        # never confused with exit 0 (which would claim a corpus was
+        # actually checked).
+        #
+        # No -full flag exists (checked clbprobe's own -h output, not the
+        # issue text) - a full scan is simply the default whenever -sampled
+        # is omitted, per clbprobe's package doc.
+        #
+        # BUILD THE BINARY, DO NOT `go run` IT. `go run` does not propagate a
+        # child's exit code - it collapses every non-zero status to 1 and
+        # prints "exit status N" to stderr instead. Measured: the binary
+        # returns 3 for an archive-less directory, `go run` returns 1 for the
+        # same input. Since 1 is this workflow's "breaking drift, fail the
+        # build" branch, running it through `go run` would turn the normal
+        # no-corpus-in-CI case into a red build on every single run, and the
+        # case statement below would be decorative.
+        run: |
+          go build -o /tmp/clbprobe ./cmd/clbprobe
+          set +e
+          /tmp/clbprobe -fail-on breaking corpus
+          status=$?
+          set -e
+          case "$status" in
+            0) echo "clbprobe: clean, no drift against corpus.sig.json" ;;
+            3) echo "clbprobe: no corpus present in CI (never committed, by design) - skipped" ;;
+            1) echo "::error::clbprobe: drift at or above 'breaking' against corpus.sig.json"; exit 1 ;;
+            *) echo "::error::clbprobe: exit $status (see output above)"; exit 1 ;;
+          esac
