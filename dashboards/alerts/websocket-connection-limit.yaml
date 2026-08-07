@@ -1,0 +1,66 @@
+apiVersion: 1
+groups:
+- orgId: 1
+  name: codexlb2otel-transport
+  folder: codexlb2otel
+  interval: 1m
+  rules:
+  - uid: codexlb-websocket-connection-limit-reached
+    title: 'codexlb2otel: websocket_connection_limit_reached rising'
+    condition: B
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: grafanacloud-prom
+      model:
+        editorMode: code
+        expr: sum by (codexlb_account_id) (increase(codexlb_errors_total{service_name="codexlb2otel",
+          codexlb_error_code="websocket_connection_limit_reached"}[15m]))
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+        refId: A
+    - refId: B
+      relativeTimeRange:
+        from: 0
+        to: 0
+      datasourceUid: __expr__
+      model:
+        type: classic_conditions
+        refId: B
+        datasource:
+          type: __expr__
+          uid: __expr__
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+            params: []
+          type: query
+    noDataState: OK
+    execErrState: Error
+    for: 0m
+    labels:
+      severity: warning
+      service: codexlb2otel
+    annotations:
+      summary: Account {{ $labels.codexlb_account_id }} is hitting the 60-minute websocket connection
+        cap
+      description: 'codexlb.errors{codexlb.error_code="websocket_connection_limit_reached"}, per account.
+        Carried over from issue #17 via issue #14''s own comment thread. This is an OpenAI-side ceiling
+        with a documented remedy (recycle the websocket connection before 60 minutes) - exactly the shape
+        of thing an alert catches early and a dashboard panel never gets looked at for. Distinct from
+        close_code=1012 (OpenAI restarting a backend under us, not a codex-lb fault, see dashboards/06-errors-transport.json)
+        - this alert only matches the named error_code, never close_code, so a 1012 restart cannot trigger
+        it.'

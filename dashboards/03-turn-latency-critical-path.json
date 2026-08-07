@@ -1,0 +1,774 @@
+{
+  "uid": "codexlb-turn-latency-critical-path",
+  "title": "codexlb2otel: Turn latency & critical path",
+  "description": "Turn latency end to end, decomposed by critical path, including issue #23's engine_service_* / engine_iapi_* split.",
+  "tags": [
+    "codexlb2otel",
+    "codex-lb",
+    "latency"
+  ],
+  "timezone": "utc",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "service_name",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "query": "label_values(codexlb_responses_total, service_name)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "regex": "",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        }
+      },
+      {
+        "name": "model",
+        "label": "Model",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "query": "label_values(codexlb_responses_total{service_name=~\"$service_name\"}, gen_ai_request_model)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "regex": "",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "coverage",
+        "label": "Critical-path coverage",
+        "type": "custom",
+        "query": "complete only (default):complete,include missing_harness_boundary:complete|missing_harness_boundary",
+        "options": [
+          {
+            "text": "complete only (default)",
+            "value": "complete",
+            "selected": true
+          },
+          {
+            "text": "include missing_harness_boundary",
+            "value": "complete|missing_harness_boundary",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "complete only (default)",
+          "value": "complete"
+        },
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "baseline_reset",
+        "label": "Baseline resets",
+        "type": "custom",
+        "query": "exclude (default):false,include all:false|true",
+        "options": [
+          {
+            "text": "exclude (default)",
+            "value": "false",
+            "selected": true
+          },
+          {
+            "text": "include all",
+            "value": "false|true",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "exclude (default)",
+          "value": "false"
+        },
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "About this dashboard",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Turn latency end to end, decomposed by critical path. Complements `codex-lb-overview` (the proxy's own Postgres-derived view); every panel here is built from the wire-capture telemetry only codexlb2otel emits. codex-lb-overview's own latency panels measure the proxy's request/response cycle from Postgres; these measure the wire capture's own timing domains, including issue #23's new engine_service_* vs engine_iapi_* split (the load-balancer-relevant view: how much the two reporting vantage points diverge) and the responses_excl_* family. `$coverage` filters the five critical-path histograms (engine_wall/harness_unblocked/pre_inference/sampling_and_stream/client_tool_pause) by codexlb.critical_path.coverage - defaults to complete-only, excluding the missing_harness_boundary ~4.6% rather than silently averaging it in. `$baseline_reset` filters every delta-derived histogram the same way, default excluding baseline_reset=true (upper bounds, not measurements). Neither filter applies to codexlb.turn_duration, gen_ai.server.time_to_first_token or the three TBT histograms - none of those carry either attribute (record.go's recordDurations/recordTBT); they are shown unfiltered."
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Turn latency (wire capture), p50/p90/p99",
+      "description": "codexlb.turn.duration: client turn_started_at_unix_ms to server completion, real turns only. No codexlb.family, codexlb.baseline_reset or codexlb.critical_path.coverage on this instrument.",
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "p50 {{gen_ai_request_model}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.90, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "p90 {{gen_ai_request_model}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "refId": "C",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "p99 {{gen_ai_request_model}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Server operation duration by status, p50",
+      "description": "gen_ai.client.operation.duration (convention-compliant): response.created to response.completed. Split by codexlb.status (completed/incomplete/transport/error) - the only latency instrument that carries status.",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "{{codexlb_status}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Time to first token, p50/p90",
+      "description": "gen_ai.server.time_to_first_token (convention-compliant name, renamed from an earlier codexlb.* form - see names.go's MetricTTFT comment).",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le, gen_ai_request_model) (rate(gen_ai_server_time_to_first_token_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "p50 {{gen_ai_request_model}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.90, sum by (le, gen_ai_request_model) (rate(gen_ai_server_time_to_first_token_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "p90 {{gen_ai_request_model}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Critical-path breakdown, p50 by phase",
+      "description": "The five critical_path phases (turn.go's CriticalPath struct), filtered by $coverage and $baseline_reset. pre_inference falls back to Turn.PreInferenceMs when critical_path was not populated for a response (record.go's recordDurations), but the coverage/baseline_reset attributes on the metric describe critical_path's own state either way.",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_wall_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "engine wall"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_harness_unblocked_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "harness unblocked"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_pre_inference_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "C",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "pre-inference"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_sampling_and_stream_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "D",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "sampling/stream"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_client_tool_pause_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "E",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "client tool pause"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Engine-reported inference time: service vs iapi vantage point, p50",
+      "description": "issue #23, brand new. Two separate instruments (not one instrument with a domain label - names.go's own comment on why), compared here in one panel.",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_inference_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "service"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_iapi_inference_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "iapi"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Engine-reported sampling time: service vs iapi vantage point, p50",
+      "description": "issue #23, brand new.",
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_sampling_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "service"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_iapi_sampling_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "iapi"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Response time, engine/tool contributions excluded (issue #23), p50",
+      "description": "The four responses_excl_*/responsesapi_excl_* histograms (issue #23) - isolates proxy/harness overhead from engine and client-tool time.",
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responses_excl_engine_and_tool_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "excl engine+tool"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responses_excl_engine_wait_sampling_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "excl engine wait+sampling"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responses_excl_engine_wait_sampling_iapi_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "C",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "excl engine wait+sampling (iapi)"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responsesapi_excl_client_tools_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "refId": "D",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "responses API excl client tools"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Time between tokens: service vs iapi, and their difference, p50",
+      "description": "issue #23's three TBT histograms, recorded as reported (never diffed). The service-minus-iapi series measures a difference and does go negative (min -6.70ms in the corpus) - its instrument uses explicit boundaries straddling zero (negativeCapableTBTBoundaries) so a negative reading is not absorbed into a zero-floored first bucket. None of the three carry codexlb.baseline_reset.",
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_tbt_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "service TBT"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_iapi_tbt_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "iapi TBT"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_minus_iapi_tbt_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "refId": "C",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "service - iapi"
+        }
+      ]
+    }
+  ]
+}

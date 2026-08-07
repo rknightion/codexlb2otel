@@ -1,0 +1,760 @@
+{
+  "uid": "codexlb-pipeline-health",
+  "title": "codexlb2otel: Pipeline health",
+  "description": "Ingest lag, decode health, and sink delivery health from issue #8's self-observability metrics. One panel (archive drift findings, issue #13) is still a genuine forward reference - see its own description.",
+  "tags": [
+    "codexlb2otel",
+    "codex-lb",
+    "pipeline-health"
+  ],
+  "timezone": "utc",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "service_name",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "query": "label_values(codexlb_responses_total, service_name)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "regex": "",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Status",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Issue #8's self-observability metrics landed in this repo's working tree (uncommitted, a concurrent lane) while this dashboard was being built, so every panel below is wired against the REAL metric names in `internal/attr/names.go`'s \"Self-observability metrics\" block and `internal/sink/otlpmetric/selfobs.go` - not the placeholders an earlier draft used. These are ObservableGauge/ObservableCounter instruments (callback-driven, one `selfobs.Snapshot` per collection tick, none carry `gen_ai.*` base attributes - selfobs.go's own doc comment on why). **`codexlb_archive_drift_findings` (issue #13) is still a genuine forward reference** - confirmed absent from both files as of this dashboard's authoring; see the drift panel below and `dashboards/alerts/drift-breaking.yaml`. **Caveat: issue #8's code was uncommitted and actively changing during this task** - reconfirm against internal/attr/names.go before trusting these names long-term, the same way every other panel on these dashboards was built against code rather than issue prose."
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Ingest lag - the alert that catches everything else",
+      "description": "codexlb.selfobs.ingest_lag_seconds, ObservableGauge, unit s (name already ends in _seconds so the Prometheus translator does not double it - verified against opentelemetry-collector-contrib's own suffix-dedup behavior). Wall-clock now minus the newest record timestamp the watcher has seen; a stopped watcher, a stuck checkpoint or a sink swallowing everything all show up here first.",
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "codexlb_selfobs_ingest_lag_seconds{service_name=~\"$service_name\"}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "**NOT YET IMPLEMENTED** (issue #8/#13 - concurrent lane). Archive drift findings, by severity",
+      "description": "**NOT YET IMPLEMENTED** (issue #8/#13 - concurrent lane). issue #13: breaking should page, new should notify, info (absence findings) must never page. Confirmed absent from internal/attr/names.go and internal/sink/otlpmetric as of this dashboard's authoring - a genuine gap, not superseded by issue #8's landing.",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum by (severity) (increase(codexlb_archive_drift_findings{service_name=~\"$service_name\"}[$__interval]))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "{{severity}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Open-response map size (leak indicator)",
+      "description": "codexlb.selfobs.open_responses, ObservableGauge, unit {response} (bracket unit, no suffix). A steadily growing value means responses are never completing - selfobs.go's own doc comment.",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "codexlb_selfobs_open_responses{service_name=~\"$service_name\"}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Decode errors vs partial-member reads (NOT the same thing)",
+      "description": "codexlb.selfobs.decode_errors: complete-but-corrupt gzip members, genuine archive corruption. codexlb.selfobs.partial_member_reads: a member cut off mid-write by a file codex-lb is still appending to - deliberately a separate counter (issue #8's explicit acceptance criterion) so a dashboard never conflates them.",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum(rate(codexlb_selfobs_decode_errors_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "decode errors (genuine corruption)"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum(rate(codexlb_selfobs_partial_member_reads_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "partial-member reads (normal steady state)"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Undecodable lines and file replacements",
+      "description": "codexlb.selfobs.undecodable_lines: a line that failed to parse as a frame.Record, or whose event payload the reducer could not decode - the checkpoint offset still advances past these. codexlb.selfobs.file_replacements: codex-lb recreating the same hourly filename as an unrelated file.",
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum(rate(codexlb_selfobs_undecodable_lines_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "undecodable lines"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum(rate(codexlb_selfobs_file_replacements_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "file replacements"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Ingest throughput: bytes read, gzip members, lines decoded",
+      "description": "Unit \"By\" (bytes) on codexlb.selfobs.bytes_read produces the _bytes_total suffix pair - this looks redundant (\"bytes_read_bytes_total\") but matches the real translator behavior; compare OTel's own system.network.io{unit=By} -> system_network_io_bytes_total.",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum(rate(codexlb_selfobs_bytes_read_bytes_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "bytes/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum(rate(codexlb_selfobs_gzip_members_decoded_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "gzip members/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum(rate(codexlb_selfobs_lines_decoded_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "C",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "lines/s"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Files watched, and checkpoint offset of the live file",
+      "description": "codexlb.selfobs.files_watched (gauge, {file}). codexlb.selfobs.current_file_offset (gauge, By -> _bytes suffix), tagged codexlb_selfobs_file - deliberately the LIVE file only, never a per-historical-file series (tail.Checkpoint marks offsets Deleted, never removes them, so a per-file series would grow without bound - selfobs.go's own comment).",
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "codexlb_selfobs_files_watched{service_name=~\"$service_name\"}",
+          "refId": "A",
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "codexlb_selfobs_current_file_offset_bytes{service_name=~\"$service_name\"}",
+          "refId": "B",
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Turns emitted vs evicted (no response.completed ever arrived)",
+      "description": "codexlb.selfobs.turns_emitted / turns_evicted. Eviction is measured against the newest-record watermark, never time.Now() - catching up on a backlog would otherwise evict every in-flight response on the first pass.",
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum(rate(codexlb_selfobs_turns_emitted_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "emitted"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum(rate(codexlb_selfobs_turns_evicted_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "evicted"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Reducer persisted-state size (series, threads)",
+      "description": "codexlb.selfobs.reducer_series / reducer_threads - the two maps turn.State persists across a restart, never pruned; unbounded growth here is a leak in the persisted half of the reducer's state (distinct from open_responses, the in-flight leak).",
+      "gridPos": {
+        "x": 12,
+        "y": 38,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "codexlb_selfobs_reducer_series{service_name=~\"$service_name\"}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "codexlb_selfobs_reducer_threads{service_name=~\"$service_name\"}",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "threads"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Sink rejections, by sink and reason",
+      "description": "codexlb.selfobs.sink_rejections - exactly sink.Rejection, reused rather than duplicated (issue #8's explicit instruction). sink is one of loki|otlpmetric|otlptrace|agento11y (each Sink's own Name()); reason is one of sink.Reason* (line_too_long, out_of_order, stream_limit, rate_limited, unauthorized, bad_request, transport, too_old). Any nonzero reading here means a record that will never exist at its destination - this is what \"Loki rejections non-zero\" (dashboards/alerts/loki-rejections.yaml) now alerts on directly.",
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum by (codexlb_selfobs_sink, codexlb_selfobs_reason) (rate(codexlb_selfobs_sink_rejections_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "{{codexlb_selfobs_sink}} / {{codexlb_selfobs_reason}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Sink pending (buffered, not yet durably delivered), by sink",
+      "description": "codexlb.selfobs.sink_pending - sink.Reporter.Pending(), by sink.",
+      "gridPos": {
+        "x": 12,
+        "y": 46,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "codexlb_selfobs_sink_pending{service_name=~\"$service_name\"}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "{{codexlb_selfobs_sink}}"
+        }
+      ]
+    }
+  ]
+}

@@ -424,6 +424,85 @@ const (
 	MetricCreditsUnlimited  = "codexlb.credits.unlimited"                 // gauge, 0|1
 )
 
+// Self-observability metrics (issue #8): this service's own operational state, not
+// the GenAI traffic flowing through it. Built by internal/sink/otlpmetric's
+// RegisterSelfObs rather than at Sink construction time - see that file's own doc
+// comment for why - but delivered over the SAME OTLP pipeline as every metric above,
+// per the issue's explicit requirement: there is no second exporter and no second
+// collection interval, so nothing here can silently stop shipping while turn metrics
+// keep flowing.
+//
+// None of these carry GenAIProvider/GenAIOperation, the two attributes every
+// instrument above this comment carries. They are not about one GenAI operation, so
+// claiming that convention over them would be exactly the mistake this package's own
+// doc comment warns against elsewhere: inventing a convention membership that does
+// not exist. Their own attribute keys (a file name, a sink name, a rejection reason)
+// are declared in otlpmetric/selfobs.go, not here - attr.go's registry is keyed by a
+// Field.Of func(*turn.Turn) string, and none of these describe a Turn at all.
+const (
+	// MetricSelfIngestLag is issue #8's "one metric that matters": wall-clock now
+	// minus the newest record timestamp the watcher has seen. Every other failure
+	// mode of this service - a stopped watcher, a checkpoint that stopped advancing, a
+	// sink rejecting everything - shows up here first, before any of them has its own
+	// dedicated signal. See internal/selfobs.Snapshot.IngestLagSeconds for the one
+	// wall-clock subtraction this whole self-observability path performs, and
+	// internal/tail's Poll for why EVICTION reads the same watermark but never
+	// subtracts time.Now() from it - two different clocks, kept deliberately apart.
+	MetricSelfIngestLag = "codexlb.selfobs.ingest_lag_seconds" // gauge, s
+
+	MetricSelfFilesWatched      = "codexlb.selfobs.files_watched"        // gauge, {file}
+	MetricSelfCurrentFileOffset = "codexlb.selfobs.current_file_offset"  // gauge, By, by codexlb.selfobs.file
+	MetricSelfBytesRead         = "codexlb.selfobs.bytes_read"           // counter, By
+	MetricSelfMembersDecoded    = "codexlb.selfobs.gzip_members_decoded" // counter, {member}
+	MetricSelfLinesDecoded      = "codexlb.selfobs.lines_decoded"        // counter, {line}
+	MetricSelfUndecodableLines  = "codexlb.selfobs.undecodable_lines"    // counter, {line}
+
+	// MetricSelfPartialMemberReads is the NORMAL steady state of tailing a file
+	// codex-lb is still appending to - a gzip member cut off mid-write, resumed next
+	// poll. Deliberately its own counter, never folded into MetricSelfDecodeErrors:
+	// issue #8's explicit acceptance criterion is that the two stay distinguishable in
+	// both metrics and logs (see internal/tail's readFile for the log side).
+	MetricSelfPartialMemberReads = "codexlb.selfobs.partial_member_reads" // counter, {read}
+	// MetricSelfDecodeErrors is genuine corruption - a complete-but-unreadable gzip
+	// member - never a partial trailing one. See MetricSelfPartialMemberReads above.
+	MetricSelfDecodeErrors = "codexlb.selfobs.decode_errors" // counter, {error}
+
+	MetricSelfFileReplacements = "codexlb.selfobs.file_replacements" // counter, {file}
+	MetricSelfFilesReclaimed   = "codexlb.selfobs.files_reclaimed"   // counter, {file}
+	MetricSelfTurnsEmitted     = "codexlb.selfobs.turns_emitted"     // counter, {turn}
+	// MetricSelfTurnsEvicted is turn.Reducer.Evict's own output: a response that never
+	// saw response.completed, forced closed after EvictAfter measured against the
+	// watermark - never against time.Now(); see MetricSelfIngestLag's own comment on
+	// the two clocks.
+	MetricSelfTurnsEvicted = "codexlb.selfobs.turns_evicted" // counter, {turn}
+
+	// MetricSelfOpenResponses is the reducer's open map size - turn.Reducer.Open's own
+	// doc comment calls a steadily growing value "worth alerting on". Flush/Evict
+	// exist specifically to prevent this from leaking; this is what makes a leak
+	// visible before it becomes an outage (issue #8's explicit acceptance criterion).
+	MetricSelfOpenResponses = "codexlb.selfobs.open_responses" // gauge, {response}
+
+	// MetricSelfReducerSeries and MetricSelfReducerThreads are the sizes of the two
+	// maps turn.State persists across a restart (issue #8's "reducer state size after
+	// snapshot") - the cumulative-baseline series count and the distinct-thread
+	// turn-sequence count. Neither is ever pruned (turn/state.go's own comment on why
+	// in-flight responses are dropped on restart but these are not), so unbounded
+	// growth here is the persisted-state twin of MetricSelfOpenResponses' in-flight
+	// leak.
+	MetricSelfReducerSeries  = "codexlb.selfobs.reducer_series"  // gauge, {series}
+	MetricSelfReducerThreads = "codexlb.selfobs.reducer_threads" // gauge, {thread}
+
+	// MetricSelfSinkRejections is exactly sink.Rejection, reused rather than
+	// duplicated (issue #8's explicit instruction): "dropped records" and "failures by
+	// reason" from the issue's scope list are the SAME number.
+	MetricSelfSinkRejections = "codexlb.selfobs.sink_rejections" // counter, {record}, by codexlb.selfobs.sink, codexlb.selfobs.reason
+	// MetricSelfSinkPending is sink.Reporter.Pending() - how much a sink is holding
+	// undelivered. The closest available proxy to the issue's "sink batches": neither
+	// a batch count nor a retry count has an accessor anywhere in internal/sink (see
+	// this feature's own delivery notes for what was left out and why).
+	MetricSelfSinkPending = "codexlb.selfobs.sink_pending" // gauge, {record}, by codexlb.selfobs.sink
+)
+
 // Token type values, per the convention's gen_ai.token.type.
 //
 // input and output are the convention's own; the cache and reasoning breakdowns are

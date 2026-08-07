@@ -1,0 +1,60 @@
+apiVersion: 1
+groups:
+- orgId: 1
+  name: codexlb2otel-errors
+  folder: codexlb2otel
+  interval: 1m
+  rules:
+  - uid: codexlb-error-event-rate
+    title: 'codexlb2otel: error event rate elevated'
+    condition: B
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: grafanacloud-prom
+      model:
+        editorMode: code
+        expr: sum(rate(codexlb_errors_total{service_name="codexlb2otel"}[5m]))
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+        refId: A
+    - refId: B
+      relativeTimeRange:
+        from: 0
+        to: 0
+      datasourceUid: __expr__
+      model:
+        type: classic_conditions
+        refId: B
+        datasource:
+          type: __expr__
+          uid: __expr__
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.5
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+            params: []
+          type: query
+    noDataState: OK
+    execErrState: Error
+    for: 10m
+    labels:
+      severity: warning
+      service: codexlb2otel
+    annotations:
+      summary: codexlb2otel error rate above 0.5 events/s
+      description: codexlb.errors, summed across every codexlb.error_code / error.type. 0.5/s is an unvalidated
+        starting threshold - this lane has no baseline error-rate figure for real traffic to tune against;
+        treat as a placeholder to revisit once live volume is known.

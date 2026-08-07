@@ -57,7 +57,7 @@ func TestRun_ExitsCleanlyOnContextCancel(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, cfg, log, sink.Discard{}) }()
+	go func() { done <- run(ctx, cfg, log, sink.Discard{}, nil) }()
 
 	cancel()
 	select {
@@ -91,7 +91,7 @@ func TestRun_HealthEndpointServesWhileRunning(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, cfg, log, sink.Discard{}) }()
+	go func() { done <- run(ctx, cfg, log, sink.Discard{}, nil) }()
 
 	time.Sleep(50 * time.Millisecond) // let the health server's ListenAndServe start
 	cancel()

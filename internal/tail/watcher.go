@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/rknightion/codexlb2otel/internal/archive"
@@ -65,6 +66,28 @@ type Watcher struct {
 	// this, not the wall clock, so catching up on a backlog does not look stale.
 	watermark time.Time
 
+	// currentFile is the live archive file - the last one in scan()'s chronological
+	// order, same file reclaim() already treats as "never delete this one". Empty
+	// before the first scan or once the directory is empty.
+	currentFile string
+
+	// reducerStateEntries is [len(Prev), len(Seq)] as of the last checkpoint save -
+	// see turn.State's own doc comment for what those two maps hold. Recomputed in
+	// save() rather than on every read, since Snapshot() is already called there.
+	reducerStateEntries [2]int
+
+	// mu guards every field above plus reducer against a self-observability read
+	// (internal/selfobs, via Progress) running on a different goroutine than the one
+	// driving Poll/Run. This package is otherwise single-goroutine by design (Poll's
+	// own doc comment) and stays that way - mu exists ONLY to make Progress safe, not
+	// to make Watcher generally concurrent. It matters for more than tidiness:
+	// turn.Reducer is explicitly "not safe for concurrent use", and Poll mutates the
+	// very map Open() reads the length of - without this lock a metrics-collection
+	// tick landing mid-Poll would be a concurrent map read racing a map write, which
+	// the Go runtime is entitled to crash the process over, not merely something
+	// -race would flag.
+	mu sync.RWMutex
+
 	// Stats are cumulative counters for self-observability.
 	Stats Stats
 }
@@ -82,6 +105,62 @@ type Stats struct {
 	ParseErrors   int64
 	EvictedOpen   int64
 	CheckpointErr int64
+	// PartialMemberReads counts a decode pass that found a gzip member cut off
+	// mid-write at the tail of the buffer - the NORMAL steady state of tailing a file
+	// codex-lb is still appending to (see internal/archive's own package doc), not an
+	// error. Deliberately a separate counter from DecodeErrors, which fires only on a
+	// complete-but-corrupt member - see readFile's own comment on why the two can
+	// never be conflated here.
+	PartialMemberReads int64
+}
+
+// Progress is a point-in-time, lock-consistent view of the watcher's own operational
+// state, for self-observability (issue #8). internal/selfobs is the one caller
+// expected to invoke this from a goroutine other than the one driving Poll/Run - see
+// Watcher's own doc comment on mu for why that is safe here and nowhere else in this
+// package.
+type Progress struct {
+	Stats Stats
+	// Watermark is the newest record timestamp seen - the archive's own clock, never
+	// time.Now(). Poll measures eviction against this, deliberately never against wall
+	// clock; see Poll's own comment. A caller building an ingest-lag metric performs
+	// the one wall-clock subtraction against this value itself (internal/selfobs).
+	Watermark time.Time
+	// CurrentFile is the live archive file, and CurrentFileOffset how far the
+	// checkpoint has advanced into it. Empty/zero before the first scan.
+	CurrentFile       string
+	CurrentFileOffset int64
+	// OpenResponses is turn.Reducer.Open() - see its own doc comment: "a steadily
+	// growing value means responses are never completing, which is worth alerting on."
+	OpenResponses int
+	// ReducerSeriesCount and ReducerThreadCount are the sizes of the two maps
+	// turn.State persists across a restart as of the last checkpoint save. Neither is
+	// ever pruned (reducer.go's own comment on why in-flight responses are dropped on
+	// restart but these are not), so unbounded growth here is the persisted-state
+	// twin of the OpenResponses leak.
+	ReducerSeriesCount int
+	ReducerThreadCount int
+}
+
+// Progress reports a consistent snapshot of the watcher's own state. Safe to call
+// concurrently with Poll/Run - see the mu field's own doc comment for why that
+// safety is not free and not the default anywhere else in this package.
+func (w *Watcher) Progress() Progress {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	var offset int64
+	if w.currentFile != "" {
+		offset = w.cp.Files[w.currentFile].Offset
+	}
+	return Progress{
+		Stats:              w.Stats,
+		Watermark:          w.watermark,
+		CurrentFile:        w.currentFile,
+		CurrentFileOffset:  offset,
+		OpenResponses:      w.reducer.Open(),
+		ReducerSeriesCount: w.reducerStateEntries[0],
+		ReducerThreadCount: w.reducerStateEntries[1],
+	}
 }
 
 // New builds a Watcher, restoring reducer state and offsets from the checkpoint.
@@ -123,6 +202,8 @@ func (w *Watcher) Run(ctx context.Context, emit Emit) error {
 }
 
 func (w *Watcher) shutdown(ctx context.Context, emit Emit) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	pending := w.reducer.Flush()
 	w.Stats.TurnsEmitted += int64(len(pending))
 	if len(pending) > 0 {
@@ -135,6 +216,8 @@ func (w *Watcher) shutdown(ctx context.Context, emit Emit) error {
 
 // Poll performs one pass: read what is new, emit it, checkpoint, then reclaim.
 func (w *Watcher) Poll(ctx context.Context, emit Emit) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	files, err := w.scan()
 	if err != nil {
 		return err
@@ -182,6 +265,14 @@ func (w *Watcher) scan() ([]string, error) {
 	}
 	sort.Strings(files)
 	w.Stats.FilesSeen = int64(len(files))
+	if len(files) > 0 {
+		// The live file: sorted chronologically, this is always the one codex-lb is
+		// still appending to - the same rule reclaim() below already relies on to
+		// never delete it.
+		w.currentFile = filepath.Base(files[len(files)-1])
+	} else {
+		w.currentFile = ""
+	}
 	return files, nil
 }
 
@@ -275,6 +366,19 @@ func (w *Watcher) readFile(ctx context.Context, path string, emit Emit) error {
 				st.Offset += int64(res.Consumed)
 				buf = append(buf[:0], buf[res.Consumed:]...)
 			}
+			// A partial member left sitting in buf here is the normal steady state of
+			// tailing a file codex-lb is still appending to (archive package's own doc
+			// comment) - not an error. Counted and logged separately from DecodeErrors
+			// above (issue #8's acceptance criterion: the two must never be conflated)
+			// so a dashboard or a log line can tell "waiting on the writer" apart from
+			// "the archive is corrupt". This fires on essentially every poll of an
+			// actively-written file - that volume IS the signal that ingestion is
+			// keeping up, not a fault.
+			if len(buf) > 0 {
+				w.Stats.PartialMemberReads++
+				w.log.Debug("partial gzip member at tail; resuming next pass",
+					"file", name, "offset", st.Offset, "buffered_bytes", len(buf))
+			}
 		}
 		if rerr != nil {
 			if !errors.Is(rerr, io.EOF) {
@@ -317,7 +421,11 @@ func (w *Watcher) reduce(data []byte) ([]*turn.Turn, int64) {
 }
 
 func (w *Watcher) save() error {
-	w.cp.Reducer = w.reducer.Snapshot()
+	st := w.reducer.Snapshot()
+	w.cp.Reducer = st
+	// See Progress/Watcher.reducerStateEntries: the size of the two maps turn.State
+	// persists, refreshed here since Snapshot() is already being called.
+	w.reducerStateEntries = [2]int{len(st.Prev), len(st.Seq)}
 	if err := w.cp.Save(w.cfg.CheckpointPath); err != nil {
 		w.Stats.CheckpointErr++
 		return err
