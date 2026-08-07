@@ -1,8 +1,10 @@
 package attr
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/rknightion/codexlb2otel/internal/archive"
@@ -11,29 +13,56 @@ import (
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
-// corpusTurns reduces the n cheapest archives. Mirrors internal/turn's own helper;
-// duplicated rather than exported because a test helper is not API.
-func corpusTurns(t *testing.T, n int) []*turn.Turn {
+var (
+	corpusOnce  sync.Once
+	corpusCache []*turn.Turn
+	corpusErr   error
+)
+
+// corpusTurns reduces the WHOLE corpus, once per process.
+//
+// It read the two cheapest archives until 2026-08-07, and that was the weaker half of
+// the same mistake issue #20 turned out to be: a cap check is only evidence for the
+// traffic it actually saw, and two archives of fourteen is a sample, not the corpus.
+// request_kind="memory" - the value whose absence from the contract caused #20's silent
+// 4.3x token over-count - is exactly the shape of thing a cheap sample misses, because
+// a rare enum value is rare in every file including the small ones. The acceptance
+// criterion on #3 says "reduce the corpus"; this now does.
+//
+// Memoized because both tests here want the same reduction and doing it twice would
+// double the most expensive thing in the package for no additional coverage. The
+// failure is memoized too rather than being raised with t.Fatal from inside the Once:
+// Fatal is a Goexit, which would still mark the Once done and leave the second test
+// reporting "the corpus reduced to no turns" instead of the real cause.
+func corpusTurns(t *testing.T) []*turn.Turn {
 	t.Helper()
-	r := turn.New()
-	var out []*turn.Turn
-	for _, path := range fixture.Any(t, n) {
-		res, err := archive.DecodeMembers(fixture.Load(t, path))
-		if err != nil {
-			t.Fatalf("%s: %v", fixture.Name(path), err)
-		}
-		err = frame.Lines(res.Data, func(rec *frame.Record) error {
-			done, err := r.Add(rec)
-			if done != nil {
-				out = append(out, done)
+	corpusOnce.Do(func() {
+		r := turn.New()
+		var out []*turn.Turn
+		for _, path := range fixture.All(t) {
+			res, err := archive.DecodeMembers(fixture.Load(t, path))
+			if err != nil {
+				corpusErr = fmt.Errorf("%s: %w", fixture.Name(path), err)
+				return
 			}
-			return err
-		})
-		if err != nil {
-			t.Fatalf("%s: %v", fixture.Name(path), err)
+			err = frame.Lines(res.Data, func(rec *frame.Record) error {
+				done, err := r.Add(rec)
+				if done != nil {
+					out = append(out, done)
+				}
+				return err
+			})
+			if err != nil {
+				corpusErr = fmt.Errorf("%s: %w", fixture.Name(path), err)
+				return
+			}
 		}
+		corpusCache = append(out, r.Flush()...)
+	})
+	if corpusErr != nil {
+		t.Fatalf("reducing the corpus: %v", corpusErr)
 	}
-	return append(out, r.Flush()...)
+	return corpusCache
 }
 
 // idShaped matches values that would be a cardinality incident as a metric attribute:
@@ -45,7 +74,7 @@ var idShaped = regexp.MustCompile(
 // real capture rather than a comment - and where an id arriving in a field the
 // contract calls an enum is caught before it becomes a series per request.
 func TestCorpus_BoundedFieldsStayWithinTheirCaps(t *testing.T) {
-	turns := corpusTurns(t, 2)
+	turns := corpusTurns(t)
 	if len(turns) == 0 {
 		t.Fatal("the corpus reduced to no turns; this test asserts nothing")
 	}
@@ -103,7 +132,7 @@ func TestCorpus_BoundedFieldsStayWithinTheirCaps(t *testing.T) {
 // same turn. That is the mistake no amount of careful naming prevents on its own.
 func TestCorpus_NoIdentityValueReachesAMetricAttribute(t *testing.T) {
 	g := NewGuard()
-	turns := corpusTurns(t, 2)
+	turns := corpusTurns(t)
 	if len(turns) == 0 {
 		t.Fatal("the corpus reduced to no turns; this test asserts nothing")
 	}

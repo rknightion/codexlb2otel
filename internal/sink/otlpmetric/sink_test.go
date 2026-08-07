@@ -449,6 +449,92 @@ func TestCorpusSeriesCountStaysSane(t *testing.T) {
 	}
 }
 
+// TestTransportEvents_UncleanDropIsCountedAndDistinguishable is issue #17's contract.
+//
+// Two failures hide behind one metric here, and the corpus says the unclean drop is by
+// far the common one - 18 of 20 transport events are an error frame with no close code:
+//
+//   - It must be COUNTED. A connection error frame that arrived correlated to an
+//     in-flight request has no close code and does not reach StatusTransport (that is
+//     set only on the uncorrelated path, reducer.go), so a condition testing only
+//     status and close code drops it silently - the worst shape of bug for a metric
+//     whose whole job is to make dropped connections visible.
+//   - It must be DISTINGUISHABLE from a clean close. Without frame_type the only thing
+//     separating "the connection died mid-turn" from "closed normally, code 1000" is
+//     the absence of an attribute, which reads as missing data rather than as a fault.
+func TestTransportEvents_UncleanDropIsCountedAndDistinguishable(t *testing.T) {
+	cases := []struct {
+		name          string
+		mutate        func(*turn.Turn)
+		wantFrameType string
+		wantCloseCode bool
+	}{
+		{
+			name: "unclean drop correlated to an in-flight request: no close code, status is incomplete",
+			mutate: func(tt *turn.Turn) {
+				tt.Status = turn.StatusIncomplete
+				tt.FrameErrors = 1
+				tt.TransportEvent = "no close frame received or sent"
+			},
+			wantFrameType: "error",
+		},
+		{
+			name: "service restart: an error frame that did carry a close code",
+			mutate: func(tt *turn.Turn) {
+				tt.Status = turn.StatusTransport
+				tt.FrameErrors = 1
+				tt.CloseCode = intPtr(1012)
+			},
+			wantFrameType: "error",
+			wantCloseCode: true,
+		},
+		{
+			name: "clean close",
+			mutate: func(tt *turn.Turn) {
+				tt.Status = turn.StatusTransport
+				tt.CloseCode = intPtr(1000)
+			},
+			wantFrameType: "close",
+			wantCloseCode: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, reader, _ := newTestSink(t)
+			t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+			tt := baseTurn("ws_1")
+			tc.mutate(tt)
+			if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+				t.Fatalf("Emit: %v", err)
+			}
+
+			m, ok := findMetric(collect(t, reader), attr.MetricTransportEvents)
+			if !ok {
+				t.Fatalf("%s was not emitted at all", attr.MetricTransportEvents)
+			}
+			if got := sumInt64(t, m); got != 1 {
+				t.Fatalf("%s = %d, want 1", attr.MetricTransportEvents, got)
+			}
+
+			sum := m.Data.(metricdata.Sum[int64])
+			set := sum.DataPoints[0].Attributes
+			ft, ok := attrString(t, set, attr.FrameType)
+			if !ok {
+				t.Fatalf("%s carries no %s; a clean close and a dropped connection are "+
+					"indistinguishable without it", attr.MetricTransportEvents, attr.FrameType)
+			}
+			if ft != tc.wantFrameType {
+				t.Errorf("%s = %q, want %q", attr.FrameType, ft, tc.wantFrameType)
+			}
+			if _, has := set.Value(attribute.Key(attr.CloseCode)); has != tc.wantCloseCode {
+				t.Errorf("%s present = %v, want %v", attr.CloseCode, has, tc.wantCloseCode)
+			}
+		})
+	}
+}
+
 func intPtr(v int) *int { return &v }
 
 func sumInt64(t *testing.T, m metricdata.Metrics) int64 {

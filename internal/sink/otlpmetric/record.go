@@ -71,8 +71,17 @@ func (s *Sink) recordCounts(ctx context.Context, t *turn.Turn, base []attr.KV) {
 			attr.AccountID, attr.ErrorType, attr.ErrorCode, attr.Status)
 		s.inst.errors.Add(ctx, 1, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
-	if t.Status == turn.StatusTransport || t.CloseCode != nil {
-		attrs := attr.Only(base, attr.Family, attr.AccountID, attr.CloseCode)
+	if t.Status == turn.StatusTransport || t.CloseCode != nil || t.FrameErrors > 0 {
+		// FrameType is what makes this counter readable, and issue #17 is the reason:
+		// 18 of the corpus's 20 transport events are an error frame with NO close code
+		// at all ("no close frame received or sent"), 1 is a 1012 service restart and 1
+		// is a clean 1000. Attributed by close_code alone the 18 collapse into a single
+		// bucket whose only distinguishing feature is an absent attribute, which reads
+		// on a dashboard as missing data rather than as the thing it actually is - a
+		// connection dropped without a handshake. close|error is the axis that separates
+		// "OpenAI restarted the backend under us" from "the connection died", and those
+		// two want different runbooks.
+		attrs := attr.Only(base, attr.Family, attr.AccountID, attr.CloseCode, attr.FrameType)
 		s.inst.transportEvents.Add(ctx, 1, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 	if t.SafetyBuffering {
