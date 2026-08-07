@@ -211,6 +211,14 @@ func TestContentSafe(t *testing.T) {
 		"tool.name":                                true,
 		"usage.input_tokens":                       true,
 		"response.instructions_chars":              true,
+		// The embedded-document marker must not shield the segment carrying it. Every
+		// one of these is unsafe with the "{}" removed, so every one must stay unsafe
+		// with it present - otherwise descending into a document simply turns the
+		// guard off for the document's own name.
+		"client_metadata.x-codex-turn-metadata{}.request_kind": true,
+		"client_metadata.user{}.name":                          false,
+		"header.x-codex-turn-metadata{}.parent_turn_id":        false,
+		"response.instructions{}.foo":                          false,
 	} {
 		if got := contentSafe(path); got != want {
 			t.Errorf("contentSafe(%q) = %v, want %v", path, got, want)
@@ -419,9 +427,56 @@ func TestOpaque(t *testing.T) {
 		"response.tools[].parameters.required": false,
 		"parameters":                           false,
 		"reasoning.format":                     false,
+		// The client's per-installation tool catalog, embedded inside
+		// x-codex-turn-metadata - see opaque's doc comment for why this floods the
+		// same path budget tools[].parameters already needed protecting from.
+		"client_metadata.x-codex-turn-metadata{}.code_mode_tool_names":           true,
+		"header.x-codex-turn-metadata{}.code_mode_tool_names":                    true,
+		"client_metadata.x-codex-turn-metadata{}.code_mode_tool_names.exec.name": false,
+		"client_metadata.x-codex-turn-metadata{}.request_kind":                   false,
+		"code_mode_tool_names": false,
 	} {
-		if got := opaque(path); got != want {
-			t.Errorf("opaque(%q) = %v, want %v", path, got, want)
+		if got := opaqueKind(path) != ""; got != want {
+			t.Errorf("opaqueKind(%q) opaque = %v, want %v", path, got, want)
 		}
+	}
+}
+
+// TestOpaque_WorkspacesNeverBecomesAPath is the PII guard, and it is a different
+// claim from the rest of TestOpaque: not "this would be noisy" but "this must never
+// reach a committed file". workspaces is keyed by absolute filesystem path, so
+// walking it writes the user's home directory layout, their private repository names
+// and their personal forge hostname straight into corpus.sig.json. See opaqueKind.
+func TestOpaque_WorkspacesNeverBecomesAPath(t *testing.T) {
+	if got := opaqueKind("client_metadata.x-codex-turn-metadata{}.workspaces"); got != "user-keyed-map" {
+		t.Errorf("opaqueKind(workspaces) = %q, want user-keyed-map", got)
+	}
+
+	ep := &EventProfile{Paths: map[string]*Path{}}
+	var v any
+	if err := json.Unmarshal([]byte(`{"workspaces":{
+		"/Users/someone/repos/private-thing":{
+			"associated_remote_urls":{"origin":"git@github.com:someone/private-thing.git"},
+			"has_changes":true}}}`), &v); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	walk(ep, "client_metadata.x-codex-turn-metadata{}", v)
+
+	for path, p := range ep.Paths {
+		if strings.Contains(path, "/Users/") {
+			t.Errorf("a filesystem path became a signature path: %q", path)
+		}
+		if p.Values == nil {
+			continue
+		}
+		for v := range p.Values.Counts {
+			if strings.Contains(v, "github.com") || strings.Contains(v, "private-thing") {
+				t.Errorf("path %q recorded the value %q", path, v)
+			}
+		}
+	}
+	if _, ok := ep.Paths["client_metadata.x-codex-turn-metadata{}.workspaces"]; !ok {
+		t.Error("workspaces vanished entirely; presence and type must still be recorded " +
+			"so it appearing or changing shape is still a finding")
 	}
 }
