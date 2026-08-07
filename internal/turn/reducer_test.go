@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/rknightion/codexlb2otel/internal/archive"
 	"github.com/rknightion/codexlb2otel/internal/fixture"
@@ -277,43 +278,110 @@ func TestReducer_InputContentIsDeduplicated(t *testing.T) {
 // including the HTTP ones and the synthetic health checks, so Family must come from
 // the request-id shape and the originator instead. Getting this wrong silently merges
 // codex-lb's own "say OK" probes into the user-facing latency and cost metrics.
+//
+// Split deliberately. The HTTP and probe families were only ever present in one
+// capture source, which no longer exists - the live corpus is pure websocket, with no
+// UUID request ids and no codex_cli_rs originator. Requiring them from the corpus is
+// therefore unsatisfiable, and a test that cannot pass is worse than no test. What the
+// corpus CAN prove is that everything real gets classified; the other two families are
+// proven against constructed records, where the input is known rather than hoped for.
 func TestReducer_ClassifiesRecordFamilies(t *testing.T) {
-	turns := reduceUntil(t, "all three record families", haveAllFamilies)
+	turns := corpusTurns(t, 3)
 
 	families := map[string]int{}
-	probeModels := set{}
-	var probeMaxInput, realTotal int
 	for _, x := range turns {
+		if x.Family == "" {
+			t.Fatalf("turn %s has no family", x.RequestID)
+		}
 		families[x.Family]++
 		if x.Family != frame.FamilyProbe {
-			realTotal++
 			continue
 		}
-		probeModels.add(x.Model)
-		// Probes must be identifiable by originator alone; if one is not, the
-		// classifier has caught a real request by accident.
 		if x.Originator != frame.OriginatorProbe {
 			t.Errorf("probe-family turn %s has originator %q, not %q",
 				x.RequestID, x.Originator, frame.OriginatorProbe)
 		}
-		if x.InputTokens > probeMaxInput {
-			probeMaxInput = x.InputTokens
+		// Probes deliberately exercise BOTH a mini model and the real one, so model
+		// overlap with user traffic cannot separate them. Size can: the probe prompts
+		// are literally "say OK" and "hi", so a probe carrying a real conversation's
+		// worth of context means the split has leaked.
+		if x.InputTokens > 5000 {
+			t.Errorf("probe turn %s has %d input tokens; real traffic is being "+
+				"classified as a health check", x.RequestID, x.InputTokens)
 		}
 	}
-	// Probes deliberately exercise BOTH a mini model and the real one, so model overlap
-	// with user traffic is expected and cannot be used to tell them apart. What does
-	// separate them is size: the probe prompts are literally "say OK" and "hi", so a
-	// probe carrying a real conversation's worth of context means the split has leaked.
-	if probeMaxInput > 5000 {
-		t.Errorf("largest probe input is %d tokens; real traffic is being classified "+
-			"as a health check", probeMaxInput)
+	t.Logf("families in the corpus: %v", families)
+}
+
+// The families the corpus no longer supplies, proven against constructed records.
+func TestReducer_ClassifiesFamiliesFromConstructedRecords(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		requestID string
+		headers   frame.Headers
+		want      string
+	}{
+		{
+			name:      "websocket TUI",
+			requestID: "ws_481fa8fa32724155a2ff8f372d7448ce",
+			headers:   frame.Headers{"originator": "codex-tui"},
+			want:      frame.FamilyWebsocket,
+		},
+		{
+			// Same client over per-request HTTP: a UUID request id matching x-request-id.
+			name:      "HTTP TUI",
+			requestID: "550e8400-e29b-41d4-a716-446655440000",
+			headers: frame.Headers{
+				"originator": "codex-tui", "x-request-id": "550e8400-e29b-41d4-a716-446655440000",
+				"x-codex-turn-state": "http_turn_active",
+			},
+			want: frame.FamilyHTTP,
+		},
+		{
+			// codex-lb's own health check. Originator wins over the id shape: a probe
+			// runs over the websocket too, so the id alone would misclassify it.
+			name:      "health probe over websocket",
+			requestID: "ws_0000000000000000000000000000dead",
+			headers:   frame.Headers{"originator": frame.OriginatorProbe, "version": "0.146.1"},
+			want:      frame.FamilyProbe,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := New()
+			base := time.Date(2026, 8, 7, 10, 0, 0, 0, time.UTC)
+			var got *Turn
+			for i, ev := range []string{
+				`{"type":"response.created","response":{"id":"resp_x","model":"gpt-5.6-sol"}}`,
+				`{"type":"response.completed","response":{"id":"resp_x","model":"gpt-5.6-sol",` +
+					`"status":"completed","usage":{"input_tokens":12,"output_tokens":3,"total_tokens":15}}}`,
+			} {
+				done, err := r.Add(&frame.Record{
+					RequestID: tc.requestID,
+					Kind:      "responses",
+					Transport: "websocket", // constant across every family; never a discriminator
+					Direction: frame.ToCodex,
+					Headers:   tc.headers,
+					Timestamp: base.Add(time.Duration(i) * time.Second),
+					Payload:   frame.Payload{Text: ev},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if done != nil {
+					got = done
+				}
+			}
+			if got == nil {
+				t.Fatal("no turn emitted")
+			}
+			if got.Family != tc.want {
+				t.Errorf("family = %q, want %q", got.Family, tc.want)
+			}
+			if tc.want == frame.FamilyProbe && got.Originator != frame.OriginatorProbe {
+				t.Errorf("originator = %q, want %q", got.Originator, frame.OriginatorProbe)
+			}
+		})
 	}
-	if families[frame.FamilyProbe]*5 > realTotal {
-		t.Errorf("probes are %d of %d turns - too many to be health checks",
-			families[frame.FamilyProbe], len(turns))
-	}
-	t.Logf("families=%v probe models=%v largest probe input=%d tokens",
-		families, probeModels.keys(), probeMaxInput)
 }
 
 // The turn id must come from response.create's client_metadata, NOT from the
@@ -486,19 +554,6 @@ func (s set) keys() []string {
 // asserts about it. Keeping the two apart is what lets a missing shape be reported
 // as "the corpus no longer covers this" rather than as a failed assertion, which
 // would send the next reader looking for a bug in the reducer.
-
-func haveAllFamilies(turns []*Turn) bool {
-	seen := set{}
-	for _, x := range turns {
-		seen.add(x.Family)
-	}
-	for _, f := range []string{frame.FamilyWebsocket, frame.FamilyHTTP, frame.FamilyProbe} {
-		if !seen[f] {
-			return false
-		}
-	}
-	return true
-}
 
 func haveRoutingDimensions(turns []*Turn) bool {
 	var account, plan, safety, limits, perModel bool

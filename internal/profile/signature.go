@@ -12,7 +12,11 @@ var sprintf = fmt.Sprintf
 
 // SignatureVersion is bumped when the signature's own layout changes, so an old
 // baseline is rejected outright rather than diffed against a shape it predates.
-const SignatureVersion = 1
+//
+// 2: tool `parameters`/`format` subtrees are recorded opaquely (see profile.opaque).
+// A v1 baseline holds them as `object` with every nested property enumerated, so
+// diffing it against a v2 capture reports the whole tool catalogue as changed.
+const SignatureVersion = 2
 
 // Signature is the committable, content-free summary of an archive's shape.
 //

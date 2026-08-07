@@ -26,19 +26,22 @@ log store. That is a deliberate choice for a private, single-tenant deployment. 
 
 ## The corpus
 
-Captured archive hours live in `corpus/`, which is **gitignored in full and must stay that way** —
-these files hold real prompts, tool output and assistant messages. Drop new captures in as they
-arrive; subdirectories per source are the convention and are walked recursively:
+Captured archives live in `corpus/processed/`, which is **gitignored and must stay that way** — these
+files hold real prompts, tool output and assistant messages.
 
-```
-corpus/
-  nas-2026-08-06/     2026-08-06T10.jsonl.gz ...
-  camden-2026-08-06/  2026-08-06T18.jsonl.gz ...
+```sh
+./corpus/sync              # pull anything new from camden, then offer to probe it
+./corpus/sync -dry-run     # say what it would fetch
+./corpus/sync -yes         # no prompts
 ```
 
-Source-tagging is not cosmetic. codex-lb reopens the archive `O_APPEND|O_CREAT` per batch, so moving
-a file away makes it recreate the same path from scratch — `2026-08-06T18.jsonl.gz` exists as two
-entirely unrelated captures, and a flat directory silently keeps whichever was copied last.
+`clbsync` identifies files by a fingerprint of their first bytes, **not by name**. That is not
+fussiness: codex-lb opens the archive `O_APPEND|O_CREAT` per batch, so moving a file away makes it
+recreate the same path from scratch, and `2026-08-06T18.jsonl.gz` has already existed as two entirely
+unrelated captures. A name-only sync keeps whichever it saw first and never fetches the second. The
+fingerprint is stable as a file grows and changes when it is recreated, which separates the three
+cases that matter: **new**, **grown** (the hour codex-lb is still writing, refetched cheaply by
+rsync), and **replaced** (kept alongside its predecessor as `NAME.gen2.jsonl.gz`, never overwritten).
 
 Tests discover the corpus rather than naming files (`CLB_CORPUS` overrides the location). A missing
 corpus **fails**; CI sets `CLB_NO_CORPUS=1` to opt out explicitly. Two guards back this up:
@@ -51,12 +54,42 @@ corpus **fails**; CI sets `CLB_NO_CORPUS=1` to opt out explicitly. Two guards ba
 
 | | |
 |---|---|
+| `corpus/sync` | pull new archives off the codex-lb host (wraps `cmd/clbsync`) |
+| `clbfind` | look up one response by id: why it ran as it did, and what was said |
 | `clbprobe` | has the format changed? Samples the `.gz` files in place and diffs against `corpus.sig.json`. |
-| `clbprofile` | full induced schema of a capture — every field, type and value range. |
-| `clbstat` | survey a directory and flag event types the reducer does not handle. |
+| `clbprofile` | full induced schema of a capture — every field, type and value range |
+| `clbstat` | survey a directory and flag event types the reducer does not handle |
 
-`clbprobe` is the routine check. It reads compressed data in place and resynchronises each sampled
-window onto a gzip member boundary, so 1.4 GB is characterised in about six seconds:
+### clbfind
+
+Paste an id from codex-lb's UI, a dashboard or an alert:
+
+```sh
+clbfind resp_052b6a1e90eb18d3016a75b032be908191   # one response
+clbfind -thread resp_...                          # the whole conversation it belongs to
+clbfind -json ws_481fa8fa32724155a2ff8f372d7448ce # the reduced Turn
+```
+
+It prints the model and reasoning parameters, the routing metadata that explains them (request kind,
+thread source, subagent kind, parent thread), the critical-path timing breakdown, token usage,
+per-account rate-limit headroom, and the conversation itself.
+
+Built on the same `internal/turn` reducer that feeds the exporters, so what it prints is what will
+land in Loki rather than a second view of the archive that drifts separately. It is the working
+prototype of the query this project exists to enable.
+
+**Note on ids.** codex-lb's UI labels `resp_*` as "Request ID". The archive's own `request_id` is
+something else — `ws_<hex32>` or a UUID. `clbfind` takes either, but the distinction matters when
+querying: they are different keys.
+
+**One response is rarely the whole answer.** A mid-turn continuation carries only the tool result
+that provoked it; the human's actual request is several responses back. `-thread` replays the whole
+conversation through one reducer in archive order.
+
+### clbprobe
+
+The routine drift check. Reads compressed data in place and resynchronises each sampled window onto a
+gzip member boundary, so 1.4 GB is characterised in about six seconds:
 
 ```sh
 clbprobe corpus/                    # drift check, exits 1 on anything new
@@ -65,7 +98,7 @@ clbprobe -full -update corpus/      # accept the current shape as the baseline
 ```
 
 `corpus.sig.json` is the committed baseline. It is **content-free by construction** — values are
-recorded only where they are provably enum-like and the field name is not identifier- or
+recorded only where they are provably enum-like and the field name is neither identifier- nor
 content-shaped, and `TestSignature_CarriesNoConversationContent` pins that.
 
 What it reports, in severity order:
@@ -76,6 +109,11 @@ What it reports, in severity order:
 - **new** — an unseen event type, field, header, or enum value (a new model, a new error code).
 - **info** — anything that has *disappeared*. Never a failure: a sampled scan reads a fraction of the
   bytes and the rarest real shapes occur ~10 times in 1.3M records.
+
+Tool `parameters` and `format` subtrees are recorded opaquely. They are JSON Schema the *client*
+writes to describe its own tool config, and walking them buried two real findings under 217 noise
+items the first time a capture contained a tool the baseline lacked. Tool identity is still tracked
+at `tools[].name`, so a genuinely new tool still surfaces.
 
 ## Status
 

@@ -270,3 +270,45 @@ func kinds(f []Finding) []string {
 	}
 	return out
 }
+
+// A tool's `parameters` is a JSON Schema the CLIENT writes to describe its own tool
+// config. Walking it induces one path per property of every tool, so the first
+// capture containing a tool the baseline lacked produced 217 "new field" findings -
+// burying the two that mattered, a new client_metadata.parent_turn_id and a new
+// originator. Tool identity must still be tracked, at tools[].name.
+func TestSignature_ToolSchemasAreOpaqueButToolIdentityIsNot(t *testing.T) {
+	base := sigOf(t, record(`{"type":"response.completed","response":{"tools":[`+
+		`{"name":"exec","type":"custom","parameters":{"properties":{"cmd":{"type":"string"}}}}]}}`))
+	cur := sigOf(t, record(`{"type":"response.completed","response":{"tools":[`+
+		`{"name":"exec","type":"custom","parameters":{"properties":{"cmd":{"type":"string"},`+
+		`"timeout":{"type":"number"},"cwd":{"type":"string"}}}}]}}`))
+
+	if f := Diff(base, cur); len(f) != 0 {
+		t.Errorf("a client changing its tool parameter schema produced %d finding(s): %v", len(f), kinds(f))
+	}
+
+	// ...but a genuinely new tool still has to surface.
+	withNewTool := sigOf(t, record(`{"type":"response.completed","response":{"tools":[`+
+		`{"name":"exec","type":"custom","parameters":{}},`+
+		`{"name":"spawn_agent","type":"function","parameters":{}}]}}`))
+	if len(findingsFor(Diff(base, withNewTool), "event.path.value")) == 0 {
+		t.Error("a new tool name produced no finding; drift detection is now blind to tool changes")
+	}
+}
+
+func TestOpaque(t *testing.T) {
+	for path, want := range map[string]bool{
+		"response.tools[].parameters":          true,
+		"response.tools[].tools[].parameters":  true,
+		"response.tools[].format":              true,
+		"input[].tools[].parameters":           true,
+		"response.tools[].name":                false,
+		"response.tools[].parameters.required": false,
+		"parameters":                           false,
+		"reasoning.format":                     false,
+	} {
+		if got := opaque(path); got != want {
+			t.Errorf("opaque(%q) = %v, want %v", path, got, want)
+		}
+	}
+}

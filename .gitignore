@@ -16,7 +16,8 @@ config.yaml
 # git history forever. The whole corpus tree is ignored, plus the file extensions
 # wherever they land, and TestNoArchivesAreTracked fails the build if anything of
 # this shape is ever staged anyway.
-/corpus/
+/corpus/*
+!/corpus/sync
 *.jsonl
 *.jsonl.gz
 *.jsonl.zst
