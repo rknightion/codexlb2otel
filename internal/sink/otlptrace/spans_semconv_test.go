@@ -2,8 +2,10 @@ package otlptrace
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rknightion/codexlb2otel/internal/attr"
 	"github.com/rknightion/codexlb2otel/internal/turn"
@@ -91,4 +93,51 @@ func TestSemconv_OnlyTheResponseSpanClaimsToBeTheInference(t *testing.T) {
 		t.Errorf("the tool-call span is %q, want %q (a plain exec call, not a spawn_agent)",
 			toolClaimants[0], want)
 	}
+}
+
+// TestBoundArguments_CapsTheTailWithoutSplittingARune covers issue #22 item 5. The
+// corpus says ToolCall.Input is median 318 bytes but reaches 33.4 KB, and unlike
+// ToolOutput nothing upstream bounds it.
+//
+// The rune case is the one worth pinning: a span attribute is a UTF-8 string, and an
+// exporter handed an invalid one may drop the attribute entirely - trading a large
+// value for no value, which is strictly worse than the problem being fixed. Cutting at
+// a fixed byte offset splits a multi-byte rune whenever one straddles it.
+func TestBoundArguments_CapsTheTailWithoutSplittingARune(t *testing.T) {
+	t.Run("a normal tool call is untouched", func(t *testing.T) {
+		in := `{"cmd":"ls -la"}`
+		if got := boundArguments(in); got != in {
+			t.Errorf("boundArguments rewrote a %d-byte input: %q", len(in), got)
+		}
+	})
+
+	t.Run("exactly at the limit is untouched", func(t *testing.T) {
+		in := strings.Repeat("a", maxToolCallArgumentBytes)
+		if got := boundArguments(in); got != in {
+			t.Errorf("boundArguments truncated an input of exactly the limit (%d bytes)", len(in))
+		}
+	})
+
+	t.Run("the corpus maximum is cut and says how much was lost", func(t *testing.T) {
+		const orig = 33411 // the largest ToolCall.Input measured across the corpus
+		got := boundArguments(strings.Repeat("a", orig))
+		if len(got) >= orig {
+			t.Errorf("boundArguments returned %d bytes for a %d-byte input", len(got), orig)
+		}
+		if !strings.Contains(got, "33411") {
+			t.Errorf("truncation marker does not carry the original length; a reader "+
+				"cannot tell how much was lost: %q", got[len(got)-80:])
+		}
+	})
+
+	t.Run("a multi-byte rune straddling the cut is not split", func(t *testing.T) {
+		// "€" is 3 bytes, so padding to one byte short of the limit puts the cut
+		// squarely inside it.
+		in := strings.Repeat("a", maxToolCallArgumentBytes-1) + "€" + strings.Repeat("b", 100)
+		got := boundArguments(in)
+		if !utf8.ValidString(got) {
+			t.Fatal("boundArguments produced an invalid UTF-8 string; an exporter may " +
+				"drop the attribute entirely rather than send a large one")
+		}
+	})
 }

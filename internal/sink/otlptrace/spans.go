@@ -2,9 +2,11 @@ package otlptrace
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -340,6 +342,43 @@ func (s *Sink) emitCriticalPathPhases(ctx context.Context, parent trace.SpanCont
 // the same inference the response span already claimed. A consumer counting "chat"
 // spans to count inferences and "execute_tool"/"invoke_agent" spans to count tool
 // calls/agent invocations gets each number counted once, on its own axis.
+// maxToolCallArgumentBytes bounds gen_ai.tool.call.arguments on a span.
+//
+// Measured over the whole corpus (8,552 tool calls, issue #22): median 318 bytes, p95
+// 2.6 KB, p99 8.6 KB, max 33.4 KB - a long exec command line. So 16 KB leaves better
+// than 99% of real tool calls untouched while capping the tail, which is the shape a
+// bound should have; a tight cap set near p99 would be truncating ordinary traffic.
+// ToolOutput needs no equivalent because codex-lb truncates it upstream and says so
+// via ToolOutput.Truncated - ToolCall.Input is the one that arrives unbounded.
+const maxToolCallArgumentBytes = 16 << 10
+
+// argTruncMarkerFmt mirrors the loki sink's marker: it carries the ORIGINAL length, so
+// a reader of a truncated span attribute never has to guess how much was lost.
+const argTruncMarkerFmt = "…[truncated by codexlb2otel; original %d bytes]"
+
+// boundArguments caps a tool call's arguments for the SPAN only.
+//
+// Deliberately not done in internal/turn, which would be the tempting place: the same
+// string is also sigil's Generation tool_call.input_json, and that field is parsed as
+// JSON rather than displayed. Cutting a JSON document at a byte offset produces
+// something that is not JSON, so truncating at reduce time would silently corrupt the
+// agento11y payload to fix a span-attribute problem. gen_ai.tool.call.arguments is an
+// opaque display string, so truncation is honest there and nowhere else.
+//
+// Cut on a rune boundary: a span attribute is a UTF-8 string, and slicing mid-rune
+// yields an invalid one that some exporters drop entirely - trading a large attribute
+// for no attribute at all.
+func boundArguments(in string) string {
+	if len(in) <= maxToolCallArgumentBytes {
+		return in
+	}
+	cut := maxToolCallArgumentBytes
+	for cut > 0 && !utf8.RuneStart(in[cut]) {
+		cut--
+	}
+	return in[:cut] + fmt.Sprintf(argTruncMarkerFmt, len(in))
+}
+
 func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw []attr.KV, respKey string, calls []turn.ToolCall, outputs []turn.ToolOutput, respStart, respEnd time.Time) {
 	if len(calls) == 0 {
 		return
@@ -360,7 +399,7 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 			attr.KV{Key: attr.ToolName, Value: tc.Name},
 			attr.KV{Key: attr.ToolCallID, Value: tc.CallID},
 			attr.KV{Key: attr.ToolType, Value: tc.Kind},
-			attr.KV{Key: attr.ToolCallArguments, Value: tc.Input},
+			attr.KV{Key: attr.ToolCallArguments, Value: boundArguments(tc.Input)},
 			attr.KV{Key: attr.ToolCallResult, Value: outputByCallID[tc.CallID]},
 			// GenAIAgentName only actually has a value when op is invoke_agent -
 			// TaskName is empty for every other tool - so this is a no-op KV on an
