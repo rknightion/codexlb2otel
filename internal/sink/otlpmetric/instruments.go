@@ -42,12 +42,55 @@ type instruments struct {
 	samplingStream    otelmetric.Float64Histogram
 	clientToolPause   otelmetric.Float64Histogram
 
+	// The eight below are issue #23's duration deltas - see recordEngineTimingDeltas
+	// in record.go for why engine_service_* and engine_iapi_* are separate instruments
+	// rather than one instrument with a domain attribute.
+	engineServiceInference              otelmetric.Float64Histogram
+	engineServiceSampling               otelmetric.Float64Histogram
+	engineIapiInference                 otelmetric.Float64Histogram
+	engineIapiSampling                  otelmetric.Float64Histogram
+	responsesExclEngineAndTool          otelmetric.Float64Histogram
+	responsesExclEngineWaitSampling     otelmetric.Float64Histogram
+	responsesExclEngineWaitSamplingIapi otelmetric.Float64Histogram
+	responsesAPIExclClientTools         otelmetric.Float64Histogram
+	engineUncachedPromptTokens          otelmetric.Int64Counter
+
+	// The three below are issue #23's TBT (time-between-tokens) running averages,
+	// recorded per response rather than diffed - see recordTBT. engineServiceMinusIapiTBT
+	// is built with negativeCapableTBTBoundaries below because it measures a
+	// difference, not a magnitude, and does go negative.
+	engineServiceTBT          otelmetric.Float64Histogram
+	engineIapiTBT             otelmetric.Float64Histogram
+	engineServiceMinusIapiTBT otelmetric.Float64Histogram
+
 	rateLimitUsed     otelmetric.Float64Gauge
 	rateLimitReset    otelmetric.Float64Gauge
 	rateLimitUsed2    otelmetric.Float64Gauge
 	rateLimitPerModel otelmetric.Float64Gauge
 	creditsBalance    otelmetric.Float64Gauge
 	creditsUnlimited  otelmetric.Float64Gauge
+}
+
+// negativeCapableTBTBoundaries covers MetricEngineServiceMinusIapiTBT, the one TBT
+// field that measures a DIFFERENCE between two averages rather than an average or a
+// magnitude, and so can and does go negative - min -6.70ms measured in the corpus
+// (turn.go's own comment on EngineServiceMinusIapiTBTMs). The SDK's default explicit-
+// bucket-histogram boundaries start at 0, so every negative reading would silently
+// collapse into the lowest bucket and the histogram would under-report without ever
+// producing a wrong-looking number on a dashboard - exactly the kind of bug nobody
+// notices. Clamping to zero was rejected for the same reason issue #23 rejects it: it
+// would misrepresent a genuine negative measurement as "no time elapsed", a false
+// number rather than an honest one. Kept as a histogram (not a Gauge) so the
+// distribution shape survives, the same as the other two TBT fields.
+//
+// Values are seconds, matching msToS - the corpus's own millisecond range (single
+// digits negative) sits well inside +-0.1s; the wider +-10s tail is headroom for
+// whatever this field does on traffic outside the sampled corpus, not a claim about
+// what is normal.
+var negativeCapableTBTBoundaries = []float64{
+	-10, -5, -1, -0.5, -0.25, -0.1, -0.075, -0.05, -0.025, -0.01, -0.005, -0.001,
+	0,
+	0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 1, 5, 10,
 }
 
 // newInstruments creates every instrument up front, at Sink construction, rather than
@@ -214,6 +257,83 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 		otelmetric.WithDescription("Time paused waiting on a client-side tool call."),
 		otelmetric.WithUnit("s"))
 	must(attr.MetricClientToolPause, err)
+
+	// The eight below (issue #23) are per-response deltas off the same cumulative
+	// logical-turn counters MetricEngineCalls already diffs - see recordEngineTimingDeltas.
+	i.engineServiceInference, err = meter.Float64Histogram(attr.MetricEngineServiceInference,
+		otelmetric.WithDescription("Engine-reported inference time, service vantage point."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricEngineServiceInference, err)
+
+	i.engineServiceSampling, err = meter.Float64Histogram(attr.MetricEngineServiceSampling,
+		otelmetric.WithDescription("Engine-reported sampling time, service vantage point."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricEngineServiceSampling, err)
+
+	i.engineIapiInference, err = meter.Float64Histogram(attr.MetricEngineIapiInference,
+		otelmetric.WithDescription("Engine-reported inference time, iapi vantage point - "+
+			"compare against engine_service_inference to see how much time diverges "+
+			"between the two reporting domains."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricEngineIapiInference, err)
+
+	i.engineIapiSampling, err = meter.Float64Histogram(attr.MetricEngineIapiSampling,
+		otelmetric.WithDescription("Engine-reported sampling time, iapi vantage point."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricEngineIapiSampling, err)
+
+	i.responsesExclEngineAndTool, err = meter.Float64Histogram(attr.MetricResponsesExclEngineAndTool,
+		otelmetric.WithDescription("Response time excluding both engine and client-tool time."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricResponsesExclEngineAndTool, err)
+
+	i.responsesExclEngineWaitSampling, err = meter.Float64Histogram(attr.MetricResponsesExclEngineWaitSampling,
+		otelmetric.WithDescription("Response time excluding engine wait and sampling time."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricResponsesExclEngineWaitSampling, err)
+
+	i.responsesExclEngineWaitSamplingIapi, err = meter.Float64Histogram(attr.MetricResponsesExclEngineWaitSamplingIapi,
+		otelmetric.WithDescription("Response time excluding engine wait and sampling time, iapi vantage point."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricResponsesExclEngineWaitSamplingIapi, err)
+
+	i.responsesAPIExclClientTools, err = meter.Float64Histogram(attr.MetricResponsesAPIExclClientTools,
+		otelmetric.WithDescription("Responses API time excluding client-tool time."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricResponsesAPIExclClientTools, err)
+
+	// MetricEngineUncachedPromptTokens (issue #23) is its own instrument rather than a
+	// sixth gen_ai.token.type value - see recordEngineTimingDeltas' doc comment for why.
+	i.engineUncachedPromptTokens, err = meter.Int64Counter(attr.MetricEngineUncachedPromptTokens,
+		otelmetric.WithDescription("Uncached prompt tokens, per the engine's own cumulative "+
+			"counter (input minus cached, a nested breakdown of the engine's prompt-token "+
+			"total - deliberately NOT a gen_ai.token.type value; see recordEngineTimingDeltas)."),
+		otelmetric.WithUnit("{token}"))
+	must(attr.MetricEngineUncachedPromptTokens, err)
+
+	// The three TBT (time-between-tokens) histograms below (issue #23) are per-response
+	// running averages, recorded as reported rather than diffed - see recordTBT.
+	i.engineServiceTBT, err = meter.Float64Histogram(attr.MetricEngineServiceTBT,
+		otelmetric.WithDescription("Time between tokens, averaged across this response's "+
+			"engine calls, service vantage point."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricEngineServiceTBT, err)
+
+	i.engineIapiTBT, err = meter.Float64Histogram(attr.MetricEngineIapiTBT,
+		otelmetric.WithDescription("Time between tokens, averaged across this response's "+
+			"engine calls, iapi vantage point."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricEngineIapiTBT, err)
+
+	i.engineServiceMinusIapiTBT, err = meter.Float64Histogram(attr.MetricEngineServiceMinusIapiTBT,
+		otelmetric.WithDescription("Service TBT minus iapi TBT. Goes NEGATIVE (measured min "+
+			"-6.70ms in the corpus) - this instrument uses explicit bucket boundaries "+
+			"straddling zero (see negativeCapableTBTBoundaries) specifically so a negative "+
+			"reading is not silently absorbed into the default histogram's zero-floored "+
+			"first bucket."),
+		otelmetric.WithUnit("s"),
+		otelmetric.WithExplicitBucketBoundaries(negativeCapableTBTBoundaries...))
+	must(attr.MetricEngineServiceMinusIapiTBT, err)
 
 	// Rate-limit and credit gauges. All of them are meaningless unless grouped by
 	// account_id - see attr.AccountID's doc comment - and record() enforces that by

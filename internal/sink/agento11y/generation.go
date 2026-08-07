@@ -17,15 +17,11 @@ import (
 //
 // Fields the proto defines but this function never sets, and why:
 //
-//   - tools (the tool catalogue): the data exists in corpus.sig.json's
-//     response.tools[] but internal/turn's reducer does not decode it onto Turn -
-//     reducer work this lane does not own, per the issue.
 //   - agent_name / agent_version: no agent-name concept exists anywhere in the
 //     capture - codex-lb has no notion of "which agent", only which account and
 //     client binary served a request. Permanent gap, not an oversight.
-//   - max_tokens / temperature / top_p / tool_choice / thinking_enabled: request
-//     parameters that never reach the reducer at all; Turn has no field for any of
-//     them.
+//   - max_tokens / tool_choice / thinking_enabled: request parameters that never
+//     reach the reducer at all; Turn has no field for any of them.
 //   - metadata (a free-form Struct) and raw_artifacts: nothing in the brief asked
 //     for these, and assembling either would mean inventing an attribute set outside
 //     attr.Guard - exactly what tags below exists to avoid.
@@ -33,6 +29,14 @@ import (
 //     (an acknowledged approximation elsewhere in this repo), and there is nowhere
 //     on Part or ToolCall to attach a start/end anyway, so nothing here implies a
 //     timing this sink cannot back up.
+//
+// tools, temperature and top_p (issue #23) ARE now set, closing the three gaps this
+// comment used to list here - see toolsOf/wireGeneration's own doc comment for
+// tools/temperature/top_p respectively. Tools is empty on most turns because
+// Turn.Tools only carries a catalogue on the response where its hash first changes
+// (turn.go's own comment on Tools/ToolsHash) - that is correct dedup behaviour, not a
+// gap to work around, so this function never tries to backfill a catalogue for a
+// response that did not carry one.
 //
 // stop_reason is deliberately left unset, and this is the same call made for
 // gen_ai.response.finish_reasons on issue #18 - the two must agree or the codebase
@@ -92,8 +96,39 @@ func buildGeneration(t *turn.Turn, guard *attr.Guard) wireGeneration {
 	}
 	g.Input, g.SystemPrompt = inputMessages(t)
 	g.Output = outputMessages(t)
+	g.Tools = toolsOf(t.Tools)
+	// != 0, not > 0: temperature 0 (fully greedy decoding) is a legitimate request
+	// setting, unlike every ms-duration field elsewhere in this codebase where 0 only
+	// ever means "not populated". See wireGeneration's own doc comment for the
+	// zero-vs-absent ambiguity this still cannot fully resolve (inherited from Turn's
+	// plain float64 fields, not introduced here).
+	if t.Temperature != 0 {
+		v := t.Temperature
+		g.Temperature = &v
+	}
+	if t.TopP != 0 {
+		v := t.TopP
+		g.TopP = &v
+	}
 
 	return g
+}
+
+// toolsOf maps Turn.Tools (populated only on the response where a catalogue's hash
+// first changes - see turn.go's comment on Tools/ToolsHash) onto proto's
+// ToolDefinition. Returns nil for an empty/nil input rather than an empty non-nil
+// slice, matching every other "absent means nothing to report" field in this file
+// (usageOf, tagsOf) and letting Go's own json encoding of a nil slice with omitempty
+// drop the field entirely, as wireGeneration's own doc comment requires.
+func toolsOf(defs []turn.ToolDef) []wireToolDefinition {
+	if len(defs) == 0 {
+		return nil
+	}
+	out := make([]wireToolDefinition, 0, len(defs))
+	for _, d := range defs {
+		out = append(out, wireToolDefinition{Name: d.Name, Description: d.Description, Type: d.Kind})
+	}
+	return out
 }
 
 // generationID is what a repeated push (retry, or a checkpoint replay) must agree on,

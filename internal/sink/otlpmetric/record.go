@@ -37,6 +37,8 @@ func (s *Sink) record(ctx context.Context, t *turn.Turn) {
 	s.recordToolCalls(ctx, t, base)
 	s.recordToolCallsPerOperation(ctx, t, base)
 	s.recordDurations(ctx, t, base)
+	s.recordEngineTimingDeltas(ctx, t, base)
+	s.recordTBT(ctx, t, base)
 	s.recordRateLimits(ctx, t, base)
 }
 
@@ -261,6 +263,112 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 	}
 	if clientToolPause > 0 {
 		s.inst.clientToolPause.Record(ctx, msToS(clientToolPause), otelmetric.WithAttributes(toOtel(cpAttrs)...))
+	}
+}
+
+// recordEngineTimingDeltas emits issue #23's eight millisecond deltas plus the
+// uncached-prompt-token delta - all cumulative-logical-turn counters from the same
+// timing_metrics block as EngineCallsDelta, diffed the identical way (reducer.go's own
+// comment on the nine fields), so they share recordEngineCalls' attribute set and its
+// BaselineReset caveat: a response with no prior baseline reports an upper bound that
+// absorbed unobserved turn history, not a clean per-response measurement.
+//
+// engine_service_* and engine_iapi_* are TWO SEPARATE PAIRS OF INSTRUMENTS, not one
+// instrument with a "domain" attribute distinguishing service from iapi - issue #23's
+// own acceptance criteria rule out a new attribute key, and this package's existing
+// style is already one instrument per measurement (every CriticalPath field above has
+// its own histogram, never a shared one keyed by "which phase"). Comparing
+// engine_service_inference against engine_iapi_inference in one PromQL query is no
+// harder with two metric names than with one name and a label.
+//
+// Every field here is gated `> 0`, matching every other delta-sourced field in this
+// file (e.g. recordEngineCalls, the critical-path fallbacks in recordDurations): the
+// reducer's own test (TestReducer_NoNegativeDeltas, internal/turn) proves these never
+// go negative, so a zero can only mean "the json:omitempty tag dropped it because
+// nothing happened in this delta window", not a real negative reading - unlike the TBT
+// fields below, which get `!= 0` for exactly the opposite reason.
+func (s *Sink) recordEngineTimingDeltas(ctx context.Context, t *turn.Turn, base []attr.KV) {
+	attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.BaselineReset)
+	opt := otelmetric.WithAttributes(toOtel(attrs)...)
+
+	for _, d := range []struct {
+		inst otelmetric.Float64Histogram
+		ms   float64
+	}{
+		{s.inst.engineServiceInference, t.EngineServiceInferenceMsDelta},
+		{s.inst.engineServiceSampling, t.EngineServiceSamplingMsDelta},
+		{s.inst.engineIapiInference, t.EngineIapiInferenceMsDelta},
+		{s.inst.engineIapiSampling, t.EngineIapiSamplingMsDelta},
+		{s.inst.responsesExclEngineAndTool, t.ResponsesExclEngineAndToolMsDelta},
+		{s.inst.responsesExclEngineWaitSampling, t.ResponsesExclEngineWaitSamplingMsDelta},
+		{s.inst.responsesExclEngineWaitSamplingIapi, t.ResponsesExclEngineWaitSamplingIapiMsDelta},
+		{s.inst.responsesAPIExclClientTools, t.ResponsesAPIExclClientToolsMsDelta},
+	} {
+		if d.ms > 0 {
+			d.inst.Record(ctx, msToS(d.ms), opt)
+		}
+	}
+
+	// EngineUncachedPromptTokensDelta deliberately does NOT join gen_ai.token.type as a
+	// sixth value, for two independent reasons - either alone would be enough:
+	//
+	//  1. Same nested-breakdown trap tokenTypes' own doc comment already flags for
+	//     "cached": uncached = input - cached is a breakdown NESTED inside the input
+	//     bucket, not an additive sibling of it. A naive `sum by () (codexlb_tokens)`
+	//     across every gen_ai.token.type value already only works because the five
+	//     real values are input+output+reasoning+cached+cache_write with
+	//     reasoning/cached/cache_write being sub-buckets a careful query excludes;
+	//     adding uncached (= input - cached) on the same axis would double-count
+	//     against input for anyone who does NOT know to exclude it, exactly like a
+	//     naive "cached" inclusion already would.
+	//  2. It is not even the SAME MEASUREMENT FAMILY as the other five. TokenInput,
+	//     TokenCached etc. are built from Turn.InputTokens/CachedTokens/... - the
+	//     per-response response.completed usage fields recordTokens' own doc comment
+	//     calls "already safe to sum as-is". EngineUncachedPromptTokensDelta instead
+	//     comes from timing_metrics' cumulative engine_uncached_prompt_tokens_total,
+	//     diffed against a baseline exactly like EngineCallsDelta - it is
+	//     BaselineReset-affected and can be an upper bound, which none of the other
+	//     five gen_ai.token.type values are. Mixing a baseline-affected engine-side
+	//     count into an axis whose other five values are all clean per-response usage
+	//     numbers would let one bad baseline-reset response corrupt an aggregate a
+	//     reader has no reason to think is baseline-sensitive at all.
+	//
+	// So: its own counter, entirely off the token.type axis - MetricEngineUncachedPromptTokens.
+	if t.EngineUncachedPromptTokensDelta > 0 {
+		s.inst.engineUncachedPromptTokens.Add(ctx, int64(t.EngineUncachedPromptTokensDelta), opt)
+	}
+}
+
+// recordTBT records the three time-between-tokens fields exactly as reported, per
+// response - never diffed, per turn.go's own comment on why delta-ing a running average
+// would corrupt the arithmetic (unlike every field recordEngineTimingDeltas handles
+// above, all of which ARE deltas).
+//
+// EngineServiceTBTMs and EngineIapiTBTMs are gated `> 0`, same as every other
+// non-negative duration field in this file. EngineServiceMinusIapiTBTMs is gated `!= 0`
+// instead - the one deliberate exception in this package - because it is a difference
+// of two averages and DOES go negative (measured min -6.70ms in the corpus), so `> 0`
+// would silently drop every negative reading before it ever reached the histogram built
+// specifically to hold them (instruments.go's negativeCapableTBTBoundaries). `!= 0`
+// still cannot distinguish a true zero from an unpopulated response (Turn's
+// json:omitempty collapses both to the Go zero value the same way every float64 field
+// here does), but that ambiguity already exists on every gated field in this file;
+// what matters here is that a NEGATIVE reading is never mistaken for "no data" the way
+// `> 0` would mistake it.
+func (s *Sink) recordTBT(ctx context.Context, t *turn.Turn, base []attr.KV) {
+	attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.AccountID, attr.RequestKind)
+	opt := otelmetric.WithAttributes(toOtel(attrs)...)
+
+	if t.EngineServiceTBTMs > 0 {
+		s.inst.engineServiceTBT.Record(ctx, msToS(t.EngineServiceTBTMs), opt)
+	}
+	if t.EngineIapiTBTMs > 0 {
+		s.inst.engineIapiTBT.Record(ctx, msToS(t.EngineIapiTBTMs), opt)
+	}
+	if t.EngineServiceMinusIapiTBTMs != 0 {
+		s.inst.engineServiceMinusIapiTBT.Record(ctx, msToS(t.EngineServiceMinusIapiTBTMs), opt)
 	}
 }
 

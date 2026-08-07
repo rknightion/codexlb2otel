@@ -266,6 +266,27 @@ func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 		attribute.String(attr.GenAIOperation, attr.GenAIOperationValue),
 		attribute.String(attr.GenAIProvider, attr.GenAIProviderValue),
 	)
+	// gen_ai.request.temperature/top_p (issue #23): request parameters, scoped to
+	// THIS span only, same reasoning as GenAIOperation/GenAIProvider immediately
+	// above - a per-response request parameter belongs on the one span that claims to
+	// be the inference, not repeated onto the turn root or its phase/tool_call
+	// children. NEVER on a metric: attr.go's registry has no Field entry for either
+	// key on purpose (see names.go's doc comment on GenAIRequestTemperature) - both
+	// are measured constant across the whole corpus, so a metric dimension carrying
+	// one observed value would cost cardinality for zero query value.
+	//
+	// Gated `!= 0`, not `> 0`: Turn.Temperature/TopP are plain float64 fields
+	// (json:omitempty) that cannot distinguish "the server sent 0.0" from "this
+	// response never carried the field" - an ambiguity inherited from turn.go, not
+	// introduced here - but top_p/temperature=0 is a legitimate (if unusual, fully
+	// greedy) request setting, so treating it as absent would be a needless second
+	// guess about data this package did not produce.
+	if t.Temperature != 0 {
+		respAttrs = append(respAttrs, attribute.Float64(attr.GenAIRequestTemperature, t.Temperature))
+	}
+	if t.TopP != 0 {
+		respAttrs = append(respAttrs, attribute.Float64(attr.GenAIRequestTopP, t.TopP))
+	}
 	respCtx, respSpan := s.startChild(turnCtx, turnSpan.SpanContext(), respName, rsid, respStart, respAttrs)
 
 	rkey := responseKey(t)
@@ -273,7 +294,7 @@ func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 	if hasCriticalPath {
 		respSpan.SetAttributes(attribute.Bool(traceAttrReconciled, reconciled))
 	}
-	s.emitToolCalls(respCtx, respSpan.SpanContext(), raw, rkey, t.ToolCalls, t.ToolOutputs, respStart, respEnd)
+	s.emitToolCalls(respCtx, respSpan.SpanContext(), raw, rkey, t.ToolCalls, t.ToolOutputs, t.ToolCallDurationsMs, respStart, respEnd)
 
 	respSpan.End(trace.WithTimestamp(respEnd))
 	// The turn span's own end tracks the LATEST response processed for this logical
@@ -325,13 +346,27 @@ func (s *Sink) emitCriticalPathPhases(ctx context.Context, parent trace.SpanCont
 	return reconciled, true
 }
 
-// emitToolCalls adds one child span per tool invocation. Turn.ToolCall carries no
-// per-call timing (the archive's responsesapi_duration_excl_engine_per_tool_call_ms
-// array is not currently reduced into Turn - that is internal/turn's scope, not
-// this sink's), so every tool-call span spans the FULL response duration rather
-// than a false narrower interval. That is a stated limitation, not a silent
-// approximation: a future internal/turn change that captures per-call timing needs
-// no change here beyond narrowing start/end.
+// emitToolCalls adds one child span per tool invocation, using Turn.ToolCallDurationsMs
+// (issue #23) to narrow each span's END away from the full-response approximation this
+// package used before per-call timing existed - see the doc comment this replaces, in
+// git history, for the limitation that stood here until now.
+//
+// durationsMs holds ONLY entries newly added since the previous response of the same
+// series (turn.go's own doc comment on ToolCallDurationsMs: a suffix diff, matching
+// InputImages' "newly seen, not total" principle) and is decoded from a DIFFERENT wire
+// field than calls, independently - so len(durationsMs) == len(calls) is not
+// guaranteed, and index i is trusted to mean "this call's duration" ONLY when the two
+// lengths agree. A mismatch is evidence the two arrays cannot be reconciled for this
+// response (a tool call the reducer saw without a matching timing entry, or vice
+// versa), and the correct response to unreconcilable data is the full-response
+// approximation, not a guess at which entries to drop to force alignment.
+//
+// durationsMs carries elapsed milliseconds, not a start OFFSET, so every call is still
+// anchored at respStart even when its own duration is known - two calls that actually
+// ran back-to-back within one response will still show up overlapping in Tempo. That
+// is a real gap in what this data can reconstruct, not a claim this code makes falsely:
+// only the END narrows, from "spans the whole response" (wrong for every call but the
+// last) to "spans its own measured duration" (right, modulo the shared start).
 //
 // gen_ai.operation.name goes on these spans too (issue #18), execute_tool or
 // invoke_agent depending on the call - see toolOperationName below. This does NOT
@@ -379,7 +414,7 @@ func boundArguments(in string) string {
 	return in[:cut] + fmt.Sprintf(argTruncMarkerFmt, len(in))
 }
 
-func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw []attr.KV, respKey string, calls []turn.ToolCall, outputs []turn.ToolOutput, respStart, respEnd time.Time) {
+func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw []attr.KV, respKey string, calls []turn.ToolCall, outputs []turn.ToolOutput, durationsMs []float64, respStart, respEnd time.Time) {
 	if len(calls) == 0 {
 		return
 	}
@@ -391,6 +426,10 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 			outputByCallID[o.CallID] = o.Text
 		}
 	}
+	// haveDurations gates the whole per-call narrowing on the two arrays actually
+	// agreeing in length - see this function's own doc comment for why a mismatch
+	// must fall back to the full-response span rather than trust index i.
+	haveDurations := len(durationsMs) == len(calls)
 
 	base := attr.Only(raw, attr.GenAIResponseID, attr.ThreadID, attr.GenAIRequestModel, attr.Status)
 	for i, tc := range calls {
@@ -428,8 +467,16 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 		case tc.Name != "":
 			name = op + " " + tc.Name
 		}
+		// end defaults to the full-response approximation and narrows to the call's
+		// own measured duration only when durationsMs[i] genuinely describes calls[i]
+		// (haveDurations) and is itself a real elapsed time (> 0, not the zero value a
+		// missing entry inside an otherwise-aligned array would carry).
+		end := respEnd
+		if haveDurations && durationsMs[i] > 0 {
+			end = clampEnd(respStart, respStart.Add(time.Duration(durationsMs[i]*float64(time.Millisecond))))
+		}
 		_, span := s.startChild(ctx, parent, name, sid, respStart, otelAttrs)
-		span.End(trace.WithTimestamp(respEnd))
+		span.End(trace.WithTimestamp(end))
 	}
 }
 

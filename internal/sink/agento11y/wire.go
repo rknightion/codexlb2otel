@@ -117,6 +117,20 @@ type wireMedia struct {
 	Name     string `json:"name,omitempty"`
 }
 
+// wireToolDefinition is one entry of Generation.tools (issue #23), sourced from
+// Turn.Tools/turn.ToolDef. Only Name/Description/Type are populated - proto's
+// input_schema_json and deferred have no Turn.ToolDef equivalent (turn.go's own
+// comment on ToolDef: "deliberately shallow", the parameters/output_schema JSON
+// Schema is unbounded client-authored shape and specifically NOT decoded onto Turn -
+// so there is nothing here to forward for either field), and per wireGeneration's own
+// doc comment on trap #4, an unpopulated proto field is simply absent from this
+// struct rather than present-and-zero.
+type wireToolDefinition struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Type        string `json:"type,omitempty"`
+}
+
 type wireTokenUsage struct {
 	// int64-as-string per trap #1. Turn's counters are plain Go int, so these are
 	// formatted, not typed as int64 - see generation.go's usageOf.
@@ -130,33 +144,47 @@ type wireTokenUsage struct {
 }
 
 // wireGeneration is one Generation, protojson-UseProtoNames-shaped. Fields the proto
-// defines but this emitter never populates (tools, metadata, raw_artifacts, agent_name,
-// agent_version, max_tokens, temperature, top_p, tool_choice, thinking_enabled) are
-// simply absent from this struct rather than present-and-always-empty: omitempty
-// cannot be trusted to hide a struct or slice consistently across every Go version's
-// json/v1 semantics, and an absent field is the same shape actual proto zero-values
-// take on the wire per trap #4, so dropping the field entirely is both simpler and
-// exactly correct. See the package doc comment on which of these are genuinely
-// unavailable in a Turn versus explicitly out of scope for this lane.
+// defines but this emitter never populates (metadata, raw_artifacts, agent_name,
+// agent_version, max_tokens, tool_choice, thinking_enabled) are simply absent from this
+// struct rather than present-and-always-empty: omitempty cannot be trusted to hide a
+// struct or slice consistently across every Go version's json/v1 semantics, and an
+// absent field is the same shape actual proto zero-values take on the wire per trap #4,
+// so dropping the field entirely is both simpler and exactly correct. See the package
+// doc comment on which of these are genuinely unavailable in a Turn versus explicitly
+// out of scope for this lane.
+//
+// Temperature/TopP (issue #23) are *float64, not float64, mirroring the proto's own
+// `optional double` (trap #4 again: a present-with-value-0.0 double and an absent one
+// are different wire shapes, and only a pointer can tell encoding/json's omitempty
+// which one this is). buildGeneration only ever sets these pointers for a nonzero
+// Turn.Temperature/TopP - Turn itself carries them as plain float64 and so cannot tell
+// "the server sent 0.0" from "this response never carried the field" either (an
+// ambiguity inherited from turn.go, not resolved here), so a genuine temperature=0
+// request would come through as absent rather than as an explicit zero. Accepted
+// rather than worked around: the corpus shows temperature/top_p present and constant
+// (1.0/0.98) on every completion, so this is a theoretical edge, not an observed one.
 type wireGeneration struct {
-	ID                  string            `json:"id,omitempty"`
-	ConversationID      string            `json:"conversation_id,omitempty"`
-	OperationName       string            `json:"operation_name,omitempty"`
-	Mode                string            `json:"mode,omitempty"`
-	TraceID             string            `json:"trace_id,omitempty"`
-	SpanID              string            `json:"span_id,omitempty"`
-	Model               *wireModelRef     `json:"model,omitempty"`
-	ResponseID          string            `json:"response_id,omitempty"`
-	ResponseModel       string            `json:"response_model,omitempty"`
-	SystemPrompt        string            `json:"system_prompt,omitempty"`
-	Input               []wireMessage     `json:"input,omitempty"`
-	Output              []wireMessage     `json:"output,omitempty"`
-	Usage               *wireTokenUsage   `json:"usage,omitempty"`
-	StopReason          string            `json:"stop_reason,omitempty"`
-	StartedAt           string            `json:"started_at,omitempty"`
-	CompletedAt         string            `json:"completed_at,omitempty"`
-	Tags                map[string]string `json:"tags,omitempty"`
-	CallError           string            `json:"call_error,omitempty"`
-	ParentGenerationIDs []string          `json:"parent_generation_ids,omitempty"`
-	EffectiveVersion    string            `json:"effective_version,omitempty"`
+	ID                  string               `json:"id,omitempty"`
+	ConversationID      string               `json:"conversation_id,omitempty"`
+	OperationName       string               `json:"operation_name,omitempty"`
+	Mode                string               `json:"mode,omitempty"`
+	TraceID             string               `json:"trace_id,omitempty"`
+	SpanID              string               `json:"span_id,omitempty"`
+	Model               *wireModelRef        `json:"model,omitempty"`
+	ResponseID          string               `json:"response_id,omitempty"`
+	ResponseModel       string               `json:"response_model,omitempty"`
+	SystemPrompt        string               `json:"system_prompt,omitempty"`
+	Input               []wireMessage        `json:"input,omitempty"`
+	Output              []wireMessage        `json:"output,omitempty"`
+	Tools               []wireToolDefinition `json:"tools,omitempty"`
+	Usage               *wireTokenUsage      `json:"usage,omitempty"`
+	StopReason          string               `json:"stop_reason,omitempty"`
+	StartedAt           string               `json:"started_at,omitempty"`
+	CompletedAt         string               `json:"completed_at,omitempty"`
+	Tags                map[string]string    `json:"tags,omitempty"`
+	CallError           string               `json:"call_error,omitempty"`
+	Temperature         *float64             `json:"temperature,omitempty"`
+	TopP                *float64             `json:"top_p,omitempty"`
+	ParentGenerationIDs []string             `json:"parent_generation_ids,omitempty"`
+	EffectiveVersion    string               `json:"effective_version,omitempty"`
 }
