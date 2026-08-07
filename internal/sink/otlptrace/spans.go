@@ -243,7 +243,25 @@ func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 		// convention wherever it defines the concept.
 		respName = "chat " + t.Model
 	}
-	respCtx, respSpan := s.startChild(turnCtx, turnSpan.SpanContext(), respName, rsid, respStart, full)
+	// gen_ai.operation.name and gen_ai.provider.name go on THIS span and nowhere else.
+	//
+	// The convention requires both on an inference span, and attr.Guard omits them from
+	// SpanAttrs because they are constants rather than Turn-derived fields - which meant
+	// no span carried either, and a consumer keying on gen_ai.operation.name saw nothing
+	// at all. Grafana's agent-observability backend is exactly such a consumer: it
+	// decodes per span and skips anything whose operation name is not one of chat,
+	// generate_content, text_completion or invoke_agent.
+	//
+	// Deliberately NOT added to SpanAttrs, which would put them on the turn root and the
+	// critical-path and tool-call children too. A consumer that turns each qualifying
+	// span into a record would then count one turn several times over - the parent and
+	// its child describing the same inference is a known double-count in that model, so
+	// exactly one span per response may claim to be the inference.
+	respAttrs := append(full[:len(full):len(full)],
+		attribute.String(attr.GenAIOperation, attr.GenAIOperationValue),
+		attribute.String(attr.GenAIProvider, attr.GenAIProviderValue),
+	)
+	respCtx, respSpan := s.startChild(turnCtx, turnSpan.SpanContext(), respName, rsid, respStart, respAttrs)
 
 	rkey := responseKey(t)
 	reconciled, hasCriticalPath := s.emitCriticalPathPhases(respCtx, respSpan.SpanContext(), raw, rkey, t.CriticalPath, respStart)
