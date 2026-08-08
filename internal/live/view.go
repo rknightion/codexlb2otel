@@ -29,15 +29,37 @@ type Thread struct {
 	// than misrepresent it as a top-level conversation.
 	Orphaned bool `json:"orphaned,omitempty"`
 
+	// ForkedFrom is set when this thread is a FORK of another rather than a fresh
+	// agent. Worth surfacing on its own: a fork inherits the parent's entire message
+	// history, so everything it says about its own past is really the parent's, and a
+	// reader comparing two forks is looking at two continuations of one conversation.
+	ForkedFrom string `json:"forked_from_thread_id,omitempty"`
+
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"reasoning_effort,omitempty"`
 
-	// Headline is what this thread was ASKED to do - the newest human prompt, or for a
-	// subagent the task it was spawned with. Sticky across turns.
-	Headline string `json:"headline,omitempty"`
-	// Activity is what it is doing NOW - the newest tool call, or the state it is in.
+	// TaskPath and TaskName are the collaboration-layer identity, e.g.
+	// "/root/final_integration_review_v2" and "final_integration_review_v2". The only
+	// human-meaningful name a subagent has; see live.TaskPath for how it is recovered
+	// and why the obvious route does not work.
+	TaskPath string `json:"task_path,omitempty"`
+	TaskName string `json:"task_name,omitempty"`
+
+	// Latest is the agent's own newest message - the primary line of a row.
+	Latest string `json:"latest_message,omitempty"`
+	// Ask is what a human asked for, scaffolding filtered out. Frequently empty on a
+	// subagent, which never receives one directly.
+	Ask string `json:"ask,omitempty"`
+	// Activity is the mechanical state - the newest tool call, or thinking/writing.
 	// Refreshed from in-flight data where there is any, so it moves between turns.
 	Activity string `json:"activity,omitempty"`
+	// Spawned lists task names this thread dispatched. Attributed to the thread that
+	// MADE the calls, never to the threads they created - that join does not exist.
+	Spawned []string `json:"spawned,omitempty"`
+
+	// Name is the resolved row label, computed at snapshot time so the UI never has to
+	// reimplement the fallback order.
+	Name string `json:"name"`
 
 	Turns   int `json:"turns"`
 	Running int `json:"running"`
@@ -71,6 +93,7 @@ func (th *Thread) observe(t *turn.Turn, content bool) {
 	setIfNotEmpty(&th.SubagentKind, t.SubagentKind)
 	setIfNotEmpty(&th.ParentThreadID, t.ParentThreadID)
 	setIfNotEmpty(&th.ParentTurnID, t.ParentTurnID)
+	setIfNotEmpty(&th.ForkedFrom, t.ForkedFromThreadID)
 	setIfNotEmpty(&th.Model, t.Model)
 	setIfNotEmpty(&th.Effort, t.Effort)
 
@@ -83,14 +106,26 @@ func (th *Thread) observe(t *turn.Turn, content bool) {
 	th.ReasoningTokens += t.ReasoningTokens
 	th.TotalTokens += t.TotalTokens
 
-	setIfNotEmpty(&th.Headline, headlineOf(t, content))
+	setIfNotEmpty(&th.Ask, askOf(t, content))
+	setIfNotEmpty(&th.Latest, latestOf(t, content))
 	setIfNotEmpty(&th.Activity, activityOf(t, content))
+}
 
-	// A subagent whose own prompts yielded nothing - because they were withheld, or
-	// because its input carried no user-role message - still needs a label. Its kind is
-	// structural and always safe, and "explore" beats a blank row.
-	if th.Headline == "" && th.IsSubagent && th.SubagentKind != "" {
-		th.Headline = th.SubagentKind + " subagent"
+// name resolves the label a row leads with, best first. Task name is the only genuinely
+// identifying one; the rest are honest fallbacks that say what little is known rather
+// than leaving a blank row.
+func (th *Thread) name() string {
+	switch {
+	case th.TaskName != "":
+		return th.TaskName
+	case th.Ask != "":
+		return th.Ask
+	case th.IsSubagent && th.ForkedFrom != "":
+		return "fork"
+	case th.IsSubagent:
+		return "subagent"
+	default:
+		return "session"
 	}
 }
 

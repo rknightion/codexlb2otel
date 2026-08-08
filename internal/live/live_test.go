@@ -282,13 +282,13 @@ func TestCancel_IsIdempotent(t *testing.T) {
 	}
 }
 
-// A subagent with no usable prompt still needs a label rather than a blank row - and its
-// kind is structural, so it survives content being disabled.
-func TestSnapshot_SubagentFallsBackToItsKindForAHeadline(t *testing.T) {
+// A row must never be blank. With no task path and no ask, the name says what little is
+// known - and "fork" is meaningfully different from "subagent" to a reader.
+func TestSnapshot_NameFallsBackWhenNothingIdentifiesTheThread(t *testing.T) {
 	s := newTestStore(t, Options{Content: false})
 	child := completed("thread-child", "turn-2", 2)
 	child.IsSubagent = true
-	child.SubagentKind = "explore"
+	child.ForkedFromThreadID = "thread-parent"
 	child.Prompts = []turn.Prompt{{Role: "user", Text: "withheld"}}
 	emit(t, s, child)
 
@@ -296,7 +296,62 @@ func TestSnapshot_SubagentFallsBackToItsKindForAHeadline(t *testing.T) {
 	if len(snap.Roots) != 1 {
 		t.Fatalf("got %d roots, want 1", len(snap.Roots))
 	}
-	if got := snap.Roots[0].Headline; got != "explore subagent" {
-		t.Errorf("headline = %q, want %q", got, "explore subagent")
+	if got := snap.Roots[0].Name; got != "fork" {
+		t.Errorf("name = %q, want %q", got, "fork")
+	}
+}
+
+// The task path wins over every fallback: it is the only genuinely identifying name a
+// subagent has.
+func TestSnapshot_NameUsesTheTaskPathWhenThereIsOne(t *testing.T) {
+	s := newTestStore(t, Options{Content: true})
+	child := completed("thread-child", "turn-2", 2)
+	child.IsSubagent = true
+	child.AgentMessages = []turn.AgentMessage{
+		{Author: "/root", Recipient: "/root/final_integration_review_v2"},
+	}
+	emit(t, s, child)
+
+	snap := s.Snapshot()
+	if got := snap.Roots[0].Name; got != "final_integration_review_v2" {
+		t.Errorf("name = %q, want the task name", got)
+	}
+	if got := snap.Roots[0].TaskPath; got != "/root/final_integration_review_v2" {
+		t.Errorf("task path = %q", got)
+	}
+}
+
+// REGRESSION, #36. parent_turn_id is absent on every fork subagent in the corpus, and
+// where it does appear on a later turn it names a turn of the ROOT - so preferring it
+// reparented every descendant onto the root and collapsed a genuine four-level tree to
+// one level. parent_thread_id must win.
+func TestSnapshot_DeepChainIsNotFlattenedByAParentTurnPointingAtTheRoot(t *testing.T) {
+	s := newTestStore(t, Options{Content: true})
+
+	root := completed("root", "root-turn", 1)
+
+	mid := completed("mid", "mid-turn", 2)
+	mid.IsSubagent = true
+	mid.ParentThreadID = "root"
+	mid.ParentTurnID = "root-turn"
+
+	leaf := completed("leaf", "leaf-turn", 3)
+	leaf.IsSubagent = true
+	leaf.ParentThreadID = "mid"
+	// The trap: the leaf's parent TURN belongs to the root, two levels up.
+	leaf.ParentTurnID = "root-turn"
+
+	emit(t, s, root, mid, leaf)
+
+	snap := s.Snapshot()
+	if len(snap.Roots) != 1 {
+		t.Fatalf("got %d roots, want 1: %+v", len(snap.Roots), snap.Roots)
+	}
+	kids := snap.Roots[0].Children
+	if len(kids) != 1 || kids[0].ThreadID != "mid" {
+		t.Fatalf("root children = %+v, want just mid", kids)
+	}
+	if len(kids[0].Children) != 1 || kids[0].Children[0].ThreadID != "leaf" {
+		t.Fatalf("leaf did not nest under mid; the tree was flattened: %+v", kids[0].Children)
 	}
 }
