@@ -14,33 +14,47 @@ import (
 // request_kind values surface in the induced signature is the guard against that
 // specific miss recurring silently.
 //
-// n=7 is the smallest fixture.Any() count that reaches "memory" in this corpus,
-// checked empirically (2026-08-07): n=1..6 only ever produce prewarm/turn, or
-// occasionally compaction; "memory" first appears once the 7th-smallest archive is
-// included. If the corpus composition changes and this starts failing for lack of
-// coverage rather than a real regression, widen n rather than deleting the assertion.
+// The archive count was pinned at n=7 until 2026-08-08, chosen empirically as the
+// smallest fixture.Any() that reached "memory" - with a note saying to widen it if the
+// corpus composition changed. It did: a sync brought in two quiet overnight hours
+// (146 and 250 lines), fixture.Any returns the CHEAPEST n, and the seven cheapest then
+// held only prewarm and turn. So the test now widens ITSELF rather than carrying a
+// hand-tuned constant that decays every time the corpus grows a small file (#34).
+//
+// Exhausting the corpus without all four values is still a hard failure, not a skip -
+// that would mean this guard against #20's silent 4.3x over-count is asserting nothing.
 func TestInduceEmbedded_RequestKindValuesFoundInRealCorpus(t *testing.T) {
-	files := fixture.Any(t, 7)
+	want := []string{frame.KindTurn, frame.KindPrewarm, frame.KindCompaction, frame.KindMemory}
+	paths := []string{
+		"client_metadata." + frame.HdrTurnMetadata + "{}.request_kind",
+		"header." + frame.HdrTurnMetadata + "{}.request_kind",
+	}
 
+	all := fixture.Files(t)
 	p := New()
-	for _, path := range files {
+	var sig *Signature
+	for i, path := range all {
 		fp, _, err := ScanFile(path, DefaultChunk)
 		if err != nil {
 			t.Fatalf("scanning %s: %v", fixture.Name(path), err)
 		}
 		p.Merge(fp)
+		sig = p.Signature(Coverage{})
+		if haveAllKinds(sig, paths, want) {
+			t.Logf("all four request kinds found after %d/%d archives", i+1, len(all))
+			break
+		}
+		if i == len(all)-1 {
+			t.Fatalf("the corpus under %s does not contain all of %v across its %d "+
+				"archives - add an archive hour that does, otherwise this guard is "+
+				"asserting nothing", fixture.Root(t), want, len(all))
+		}
 	}
-	sig := p.Signature(Coverage{})
-
-	want := []string{frame.KindTurn, frame.KindPrewarm, frame.KindCompaction, frame.KindMemory}
 
 	// Both allowlisted sources are checked: the client_metadata copy nested in
 	// response.create (the one frame.TurnMeta's doc comment says is authoritative)
 	// and the header copy, which is stale but still on the allowlist per the issue.
-	for _, path := range []string{
-		"client_metadata." + frame.HdrTurnMetadata + "{}.request_kind",
-		"header." + frame.HdrTurnMetadata + "{}.request_kind",
-	} {
+	for _, path := range paths {
 		got := valuesAt(sig, path)
 		if got == nil {
 			t.Fatalf("path %q not found in any induced event; embedded descent did not run", path)
@@ -51,6 +65,24 @@ func TestInduceEmbedded_RequestKindValuesFoundInRealCorpus(t *testing.T) {
 			}
 		}
 	}
+}
+
+// haveAllKinds is the stopping condition for the widening loop above, and it asks
+// exactly what the assertions afterwards assert - so the loop cannot stop one archive
+// before the thing the test then demands.
+func haveAllKinds(sig *Signature, paths, want []string) bool {
+	for _, path := range paths {
+		got := valuesAt(sig, path)
+		if got == nil {
+			return false
+		}
+		for _, w := range want {
+			if !containsStr(got, w) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // A prompt or tool argument that happens to look like JSON must never be descended

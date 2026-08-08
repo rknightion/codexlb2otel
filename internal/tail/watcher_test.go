@@ -104,15 +104,30 @@ func TestWatcher_IncrementalAppendMatchesSinglePass(t *testing.T) {
 		t.Errorf("tailed %d turns, single pass produced %d", len(got), len(want))
 	}
 
-	seen := map[string]int{}
+	// Keyed by (request_id, response_id), NOT by request_id alone.
+	//
+	// One websocket connection carries many responses: the reducer emits a Turn per
+	// response.completed and reopens on the next frame with the same request_id, so
+	// two Turns sharing a request_id is the normal case and never meant a replay.
+	// Asserting on request_id alone passed only for as long as the cheapest archive
+	// in the corpus happened not to reuse one - a 2026-08-08 sync of two quiet hours
+	// ended that, and the test then reported a data-duplication bug in the ingest
+	// path that did not exist (issue #34).
+	//
+	// The real anti-replay check is the length comparison against singlePass above.
+	// This one is the finer-grained version of it, kept because it names WHICH record
+	// was duplicated rather than only that the counts differ.
+	seen := map[[2]string]int{}
 	for _, x := range got {
-		if x.RequestID != "" {
-			seen[x.RequestID]++
+		if x.RequestID == "" {
+			continue
 		}
+		seen[[2]string{x.RequestID, x.ResponseID}]++
 	}
-	for id, n := range seen {
+	for k, n := range seen {
 		if n > 1 {
-			t.Errorf("request %s emitted %d times; offsets are being replayed", id, n)
+			t.Errorf("response %s (request %s) emitted %d times; offsets are being replayed",
+				k[1], k[0], n)
 		}
 	}
 }
@@ -175,13 +190,16 @@ func TestWatcher_ResumesWithoutReplaying(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	firstIDs := map[string]bool{}
+	// (request_id, response_id), for the reason spelled out in the incremental test
+	// above: a websocket carries many responses, so the same request_id legitimately
+	// appears on both sides of the restart. What must not repeat is a RESPONSE.
+	firstIDs := map[[2]string]bool{}
 	for _, x := range first {
-		firstIDs[x.RequestID] = true
+		firstIDs[[2]string{x.RequestID, x.ResponseID}] = true
 	}
 	for _, x := range second {
-		if x.RequestID != "" && firstIDs[x.RequestID] {
-			t.Fatalf("request %s re-emitted after restart", x.RequestID)
+		if x.RequestID != "" && firstIDs[[2]string{x.RequestID, x.ResponseID}] {
+			t.Fatalf("response %s (request %s) re-emitted after restart", x.ResponseID, x.RequestID)
 		}
 	}
 	if len(second) == 0 {

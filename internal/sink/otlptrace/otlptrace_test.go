@@ -108,10 +108,16 @@ func reduceUntil(tb testing.TB, what string, want func([]*turn.Turn) bool) []*tu
 // --- determinism (acceptance criterion: re-processing is idempotent) ---
 
 func TestDeterminism_SameTurnTwiceYieldsIdenticalIDs(t *testing.T) {
-	turns := reduceFiles(t, fixture.Any(t, 2)...)
-	if len(turns) < 20 {
-		t.Fatalf("only %d turns; fixtures look wrong", len(turns))
-	}
+	// Asks for the turns it needs rather than for two archives that used to happen to
+	// hold them. `fixture.Any(t, 2)` takes the two CHEAPEST archives, so what this
+	// test reduces depends on the size distribution of whatever is in the corpus - and
+	// on 2026-08-08 a sync brought in two hours of 360KB and 530KB, which between them
+	// yielded 7 turns and failed the check below on a corpus that was entirely
+	// healthy. The property wanted here is only "enough turns for a meaningful
+	// comparison"; reduceUntil expresses that directly and keeps reading archives
+	// until it is true.
+	turns := reduceUntil(t, "at least 20 turns to compare across two runs",
+		func(ts []*turn.Turn) bool { return len(ts) >= 20 })
 
 	run := func() tracetest.SpanStubs {
 		s, exp := newTestSink(t)
