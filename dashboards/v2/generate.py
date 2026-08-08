@@ -59,7 +59,7 @@ ALL_METRICS = [
     "codexlb.tool_calls", "codexlb.tool_calls_per_operation", "codexlb.transport_events",
     "codexlb.turn.duration", "codexlb.turns", "codexlb.web_search_requests",
     "gen_ai.client.operation.duration", "gen_ai.client.token.usage",
-    "gen_ai.server.time_to_first_token",
+    "gen_ai.client.time_to_first_token",
 ]
 
 # Prometheus name for each OTel metric, as the Grafana Cloud OTLP gateway writes it.
@@ -125,7 +125,7 @@ PROM_NAME = {
     "codexlb.web_search_requests": "codexlb_web_search_requests_total",   # ZERO-TRAFFIC
     "gen_ai.client.operation.duration": "gen_ai_client_operation_duration_seconds",
     "gen_ai.client.token.usage": "gen_ai_client_token_usage",
-    "gen_ai.server.time_to_first_token": "gen_ai_server_time_to_first_token_seconds",
+    "gen_ai.client.time_to_first_token": "gen_ai_client_time_to_first_token_seconds",
 }
 
 # The nine record types the Loki sink emits, as observed live. verify() requires a
@@ -137,7 +137,7 @@ RECORD_TYPES = ["turn", "message", "agent_message", "prompt", "instructions",
 # expression of the same decomposition the latency tab shows as histograms.
 SPAN_NAMES = ["turn", "critical_path.pre_inference", "critical_path.engine_wall",
               "critical_path.sampling_and_stream", "critical_path.other",
-              "execute_tool", "chat"]
+              "execute_tool", "generateText", "streamText"]
 
 _covered_metrics = set()
 _covered_records = set()
@@ -157,13 +157,20 @@ F_FULL = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexl
 F_MODEL = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account"'
 F_ACCT = 'codexlb_account_id=~"$account"'
 
-# gen_ai.token.type is a NESTED taxonomy, not a flat enum: cached is a sub-bucket of
-# input and reasoning a sub-bucket of output. Only input+output may be summed or
-# stacked; doing it across all four double-counts. Confirmed against the live label
-# values (cached, input, output, reasoning) and against recordTokens' own doc comment,
-# after a panel querying the guessed value "cache_read" came back empty.
+# gen_ai.token.type is a NESTED taxonomy, not a flat enum: cache_read is a sub-bucket
+# of input and reasoning a sub-bucket of output. Only input+output may be summed or
+# stacked; doing it across all four double-counts.
+#
+# The cache bucket is spelled cache_read, and this file has now had it BOTH ways round.
+# It was "cached" here until issue #32 - and this comment used to record that
+# cache_read had been tried and "came back empty", which was true at the time and is
+# the exact wrong lesson to carry forward: the panel was empty because the emitter
+# spelled it "cached", not because cache_read was a guess. #32 renamed the emitted
+# value, because agent-observability's own dashboard matches cache_read literally in
+# five panels and read zero from all of them. Nothing standard was given up either way:
+# the registry's gen_ai.token.type enum defines only input and output.
 ADDITIVE_TOKENS = 'gen_ai_token_type=~"input|output"'
-NESTED_TOKENS = 'gen_ai_token_type=~"cached|reasoning"'
+NESTED_TOKENS = 'gen_ai_token_type=~"cache_read|reasoning"'
 
 # Not every response series carries a model - some frames report usage before the model
 # is known. Harmless in a rate panel, but in a pie chart the unlabelled series renders
@@ -382,7 +389,7 @@ of one another. Filtering to `turn` hides real spend.
                      f'{sel(ADDITIVE_TOKENS)}[$__range])))', "tokens", instant=True)],
         "stat", opts=stat_opts("none", "lastNotNull", 42), unit="short",
         desc="input + output ONLY. Summing every gen_ai.token.type would double-count: "
-             "cached is a sub-bucket nested inside input, and reasoning inside output, "
+             "cache_read is a sub-bucket nested inside input, and reasoning inside output, "
              "not additive siblings of them. See the Tokens tab."))
     p.append(panel(
         "Errors", [q(f'round(sum(increase({prom("codexlb.errors")}{sel(filt=F_MODEL)}[$__range])))', "errors", instant=True)],
@@ -419,7 +426,7 @@ of one another. Filtering to `turn` hides real spend.
             q(f'sum by (gen_ai_token_type) (rate({prom("codexlb.tokens")}'
               f'{sel(ADDITIVE_TOKENS)}[$__rate_interval]))', "{{gen_ai_token_type}}"),
         ], unit="short", opts=LEG, fieldcfg=STACK,
-        desc="Only input and output are stacked, because only they are additive. cached "
+        desc="Only input and output are stacked, because only they are additive. cache_read "
              "and reasoning are breakdowns NESTED inside them and appear on the Tokens "
              "tab, unstacked - stacking a sub-bucket on its parent silently doubles the "
              "total."))
@@ -547,14 +554,17 @@ def tab_turns():
 def tab_tokens():
     p = []
     p.append(text_panel("gen_ai.token.type is NOT a flat enum", """
-`input` and `output` are additive siblings. **`cached` is nested inside `input`** and **`reasoning` is
-nested inside `output`** - they are breakdowns of their parent, not peers of it. Summing or stacking all
-four double-counts, which is why the panels below keep the additive view and the nested view apart, and
-why the ratio panel divides `cached` by `input` rather than by `input + cached`.
+`input` and `output` are additive siblings. **`cache_read` is nested inside `input`** and **`reasoning`
+is nested inside `output`** - they are breakdowns of their parent, not peers of it. Summing or stacking
+all four double-counts, which is why the panels below keep the additive view and the nested view apart,
+and why the ratio panel divides `cache_read` by `input` rather than by `input + cache_read`.
+
+That nesting is also what `gen_ai_token_semantics="inclusive"` declares on these series, so a consumer
+never has to infer it from the provider name.
 
 The same trap is why `engine_uncached_prompt_tokens` is deliberately a separate metric rather than a
-fifth `gen_ai.token.type` value: `uncached = input - cached` is another nested breakdown, and putting it
-on the same axis would double-count against `input` for anyone who did not know to exclude it.
+fifth `gen_ai.token.type` value: `uncached = input - cache_read` is another nested breakdown, and putting
+it on the same axis would double-count against `input` for anyone who did not know to exclude it.
 """))
     p.append(panel(
         "Additive token volume (input + output)", [
@@ -564,14 +574,14 @@ on the same axis would double-count against `input` for anyone who did not know 
         desc="Safe to stack: these two do not overlap, so the stack height is the real "
              "total."))
     p.append(panel(
-        "Nested breakdowns (cached within input, reasoning within output)", [
+        "Nested breakdowns (cache_read within input, reasoning within output)", [
             q(f'sum by (gen_ai_token_type) (rate({prom("codexlb.tokens")}'
               f'{sel(NESTED_TOKENS)}[$__rate_interval]))', "{{gen_ai_token_type}}"),
         ], unit="short", opts=LEG,
         desc="Deliberately NOT stacked. Each line is a subset of one of the lines in the "
              "panel above, so stacking them together would be arithmetically meaningless."))
     tok = prom("codexlb.tokens")
-    cached = sel('gen_ai_token_type="cached"')
+    cached = sel('gen_ai_token_type="cache_read"')
     promptish = sel('gen_ai_token_type="input"')
     p.append(panel(
         "Cache read ratio", [
@@ -581,8 +591,8 @@ on the same axis would double-count against `input` for anyone who did not know 
         ], "gauge", unit="percent", maxv=100, minv=0,
         thresholds=[{"color": "red", "value": None}, {"color": "orange", "value": 40},
                     {"color": "green", "value": 70}],
-        desc="cached / input. The denominator is input alone, NOT input + cached, "
-             "because cached is already counted inside input - dividing by the sum would "
+        desc="cache_read / input. The denominator is input alone, NOT input + cache_read, "
+             "because cache_read is already counted inside input - dividing by the sum would "
              "understate the hit rate and can never reach 100%. This is the single "
              "biggest lever on spend, and it collapses whenever the prompt prefix "
              "changes: a system-prompt edit shows up here before it shows up on the bill."))
@@ -716,7 +726,7 @@ isolate what a stage costs by comparing two of them rather than trusting a singl
              "is not the problem."))
     p.append(panel(
         "Time to first token (gen_ai semconv)",
-        hist_quantiles("gen_ai.server.time_to_first_token", "gen_ai_request_model", "{{gen_ai_request_model}}"),
+        hist_quantiles("gen_ai.client.time_to_first_token", "gen_ai_request_model", "{{gen_ai_request_model}}"),
         unit="s", opts=LEG,
         desc="TTFT dominates perceived responsiveness far more than total duration does."))
     p.append(panel(
@@ -997,7 +1007,8 @@ def tab_traces():
 One trace per **logical turn**. The root span is `{span('turn')}`; under it sit the critical-path
 children - `{span('critical_path.pre_inference')}`, `{span('critical_path.engine_wall')}`,
 `{span('critical_path.sampling_and_stream')}` and `{span('critical_path.other')}` - plus a
-`{span('chat')} <model>` span per model call and an `{span('execute_tool')} <tool>` span per tool
+`{span('generateText')}`/`{span('streamText')} <model>` span per model call and an
+`{span('execute_tool')} <tool>` span per tool
 invocation. Span names follow the OTel GenAI convention of `<operation> <target>`, so the model and
 tool name are in the span name as well as in attributes.
 
@@ -1021,10 +1032,14 @@ specific slow turn; use the histograms when you need the shape across all of the
         desc="One span per tool call, carrying the bounded arguments. The 16KB bound is "
              "applied at a rune boundary, so a truncated argument is still valid UTF-8."))
     p.append(panel(
-        "Model call spans", [tempoq('{resource.service.name="codexlb2otel" && name=~"chat.*"}')],
+        "Model call spans", [tempoq('{resource.service.name="codexlb2otel" && '
+                                    'name=~"(generateText|streamText).*"}')],
         "table", opts=TABLE_OPTS,
-        desc="The gen_ai chat spans. Span name is `chat <model>` per GenAI semconv, so "
-             "the model is greppable without opening the span."))
+        desc="The inference spans. Span name is `<operation> <model>`, so the model is "
+             "greppable without opening the span, and the operation says whether the "
+             "response streamed. Named generateText/streamText rather than the GenAI "
+             "convention's `chat` because that is the vocabulary Grafana agent "
+             "observability recognises - see attr's GenAIOperationGenerateText (#32)."))
     p.append(panel(
         "Critical path spans", [tempoq('{resource.service.name="codexlb2otel" && '
                                        'name=~"critical_path.*"}')],

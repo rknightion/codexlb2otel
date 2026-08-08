@@ -68,13 +68,14 @@ codebase:
    `gen_ai_client_operation_duration_seconds_bucket` (also confirmed live, and also a name that
    doesn't accidentally double).
 
-**One live discrepancy worth recording, not a rule violation**: the *deployed* lab instance's live
-series (`gcx metrics series`, 2026-08-07) show `codexlb_time_to_first_token_seconds_*`, but the
-*current code*'s `attr.MetricTTFT` is `gen_ai.server.time_to_first_token` (mangled:
-`gen_ai_server_time_to_first_token_seconds_*`). The dashboards here use the **current code's** name,
-per this task's own "code, not issues" instruction - the discrepancy is simply that the deployed
-binary predates `MetricTTFT`'s rename (names.go's own comment documents the rename happened for
-GenAI-convention-compliance reasons). Redeploying will change what's live to match what's built here.
+**One live discrepancy worth recording, not a rule violation**: `attr.MetricTTFT` has now been renamed
+twice, so a deployed binary can be one of three names behind. It was `codexlb.time_to_first_token`,
+then `gen_ai.server.time_to_first_token` (issue #18/#23, for GenAI-convention compliance), and since
+issue #32 it is **`gen_ai.client.time_to_first_token`** (mangled:
+`gen_ai_client_time_to_first_token_seconds_*`) - agent-observability's name rather than the registry's,
+because its TTFT panels match that string literally and the spec-correct name had no consumer at all.
+The dashboards here always use the **current code's** name; redeploying is what makes the live series
+match.
 
 **Loki labels and structured metadata use the SAME dot-to-underscore mangling, no suffix logic at
 all** (Loki has no counter/histogram concept) - `attr.LokiKey`. Confirmed by reading `push.go`
@@ -97,7 +98,9 @@ panels' own descriptions rather than silently worked around:
   stream label on every record type including `turn`.
 - **No token-carrying instrument carries `codexlb.request.reasoning.level` (effort) or
   `codexlb.thread_source`.** `recordTokens`'s narrowed attribute set is exactly `(provider, operation,
-  request_model, response_model, account_id, request_kind, token_type)` - issue #14 asks for "token
+  request_model, response_model, account_id, request_kind, agent_name, agent_version, token_type,
+  token_semantics)` - the last four added by issue #32 - so effort and thread source are still absent.
+  Issue #14 asks for "token
   and cost shape by model, effort and thread source", and effort/thread-source are not achievable via
   PromQL against `codexlb_tokens_total` at all. Solved the same way as the family gap: LogQL `unwrap`
   aggregation against the turn record's own JSON body, which does carry both alongside the token

@@ -138,9 +138,33 @@ func TestCorpus_BoundedFieldsStayWithinTheirCaps(t *testing.T) {
 	}
 }
 
+// deliberateIdentityOverlap is the allowlist of (metric attribute -> identity field)
+// pairs that carry the SAME value on purpose, keyed by the metric attribute.
+//
+// The leak test below is a value-equality check, not a provenance check - it cannot
+// tell "this bounded field accidentally got handed an id" from "these two keys are two
+// routings of one deliberately-shared value". Exactly one pair is the latter, so it is
+// named here rather than the test being weakened for everything else. Anything not on
+// this list that matches by value is still a hard failure.
+var deliberateIdentityOverlap = map[string]string{
+	// gen_ai.agent.version IS codexlb.instructions_hash (issue #32) - see that
+	// constant's doc comment for why the system prompt's identity is the agent's
+	// version. The pairing is the point: a version in agent-observability's UI is
+	// meant to grep straight back to the Loki lines carrying the same hash.
+	//
+	// It is safe where a real leak would not be for the reason the leak test exists to
+	// catch: this value does not vary per request. It is sha256 of a system prompt
+	// codex ships, so it changes when codex ships a new prompt and not otherwise, and
+	// the field is capped at 32 with IDLike set precisely because its shape would
+	// otherwise trip the sibling id-shape heuristic in
+	// TestCorpus_BoundedFieldsStayBounded.
+	GenAIAgentVersion: InstructionsHash,
+}
+
 // The leak test, run against real records rather than a constructed turn: no value
 // that this package routes to a metric attribute may equal an identity value from the
-// same turn. That is the mistake no amount of careful naming prevents on its own.
+// same turn, unless the pair is on deliberateIdentityOverlap. That is the mistake no
+// amount of careful naming prevents on its own.
 func TestCorpus_NoIdentityValueReachesAMetricAttribute(t *testing.T) {
 	g := NewGuard()
 	turns := corpusTurns(t)
@@ -164,9 +188,16 @@ func TestCorpus_NoIdentityValueReachesAMetricAttribute(t *testing.T) {
 		}
 		checked++
 		for _, kv := range g.MetricAttrs(tn) {
-			if from, isID := ids[kv.Value]; isID {
-				t.Fatalf("metric attribute %s carries %s's value %q", kv.Key, from, kv.Value)
+			from, isID := ids[kv.Value]
+			if !isID {
+				continue
 			}
+			// Allowed only for the exact pair declared, not for any identity value
+			// that happens to collide with an allowlisted attribute.
+			if deliberateIdentityOverlap[kv.Key] == from {
+				continue
+			}
+			t.Fatalf("metric attribute %s carries %s's value %q", kv.Key, from, kv.Value)
 		}
 	}
 	if checked == 0 {

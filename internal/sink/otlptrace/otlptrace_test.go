@@ -482,12 +482,12 @@ func TestTemperatureTopPOnResponseSpanOnly(t *testing.T) {
 
 	var respSpan tracetest.SpanStub
 	for _, sp := range exp.GetSpans() {
-		if sp.Name == "chat gpt-5.6-sol" {
+		if sp.Name == "generateText gpt-5.6-sol" {
 			respSpan = sp
 		}
 	}
 	if respSpan.Name == "" {
-		t.Fatal("no response (chat) span exported")
+		t.Fatal("no response (generateText) span exported")
 	}
 
 	var gotTemp, gotTopP float64
@@ -510,7 +510,7 @@ func TestTemperatureTopPOnResponseSpanOnly(t *testing.T) {
 	// Never on any other span (turn root, phase children, tool_call children) - same
 	// single-claimant scoping GenAIOperation/GenAIProvider already have on this span.
 	for _, sp := range exp.GetSpans() {
-		if sp.Name == "chat gpt-5.6-sol" {
+		if sp.Name == "generateText gpt-5.6-sol" {
 			continue
 		}
 		for _, a := range sp.Attributes {

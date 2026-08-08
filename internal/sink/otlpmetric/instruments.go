@@ -225,9 +225,10 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 	must(attr.MetricTurnDuration, err)
 
 	i.ttft, err = meter.Float64Histogram(attr.MetricTTFT,
-		otelmetric.WithDescription("Time to first token, server-reported. Convention-compliant "+
-			"name (gen_ai.server.time_to_first_token) - see the MetricTTFT doc comment for why "+
-			"this is the server.* form and not client.*."),
+		otelmetric.WithDescription("Time to first token, server-reported. Named "+
+			"gen_ai.client.time_to_first_token, which is agent-observability's name rather "+
+			"than the GenAI registry's - see the MetricTTFT doc comment for why that trade "+
+			"was made and re-made."),
 		otelmetric.WithUnit("s"))
 	must(attr.MetricTTFT, err)
 

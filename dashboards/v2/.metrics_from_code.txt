@@ -53,5 +53,5 @@ codexlb.turn.duration
 codexlb.turns
 codexlb.web_search_requests
 gen_ai.client.operation.duration
+gen_ai.client.time_to_first_token
 gen_ai.client.token.usage
-gen_ai.server.time_to_first_token

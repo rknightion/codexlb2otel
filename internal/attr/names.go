@@ -39,6 +39,18 @@ const (
 	// GenAITokenType distinguishes the token counters, per the convention's own
 	// gen_ai.client.token.usage attribute.
 	GenAITokenType = "gen_ai.token.type"
+	// GenAITokenSemantics declares what the input bucket COVERS, so a consumer never
+	// has to guess whether the cache buckets are inside it or on top of it. The only
+	// value this service emits is TokenSemanticsInclusive.
+	//
+	// Not in the GenAI registry - it is agent-observability's own extension, and the
+	// name is theirs verbatim (apps/plugin's dashboard/queries.ts matches on
+	// gen_ai_token_semantics="inclusive"). Carried under gen_ai.* rather than
+	// codexlb.* precisely because it is not ours to rename: a consumer keying on the
+	// SDK's spelling has to see the SDK's spelling. Emitted on the two token
+	// instruments only, where it is the difference between a correct cost figure and
+	// one that counts every cached prompt token twice.
+	GenAITokenSemantics = "gen_ai.token.semantics"
 	// GenAIErrorType is the convention's low-cardinality error discriminator.
 	ErrorType = "error.type"
 
@@ -104,12 +116,48 @@ const (
 	// without the other.
 	ToolCallArguments = "gen_ai.tool.call.arguments"
 	ToolCallResult    = "gen_ai.tool.call.result"
-	// GenAIAgentName is ToolCall.TaskName - "populated for spawn_agent, describing the
-	// child agent" (turn.ToolCall's own doc comment) - carried only on the tool_call
-	// span this service classifies as invoke_agent (see otlptrace/spans.go's
-	// toolOperationName), matching the spec's own span-naming guidance for that
-	// operation ("invoke_agent {gen_ai.agent.name}").
+	// GenAIAgentName is WHICH AGENT this service is reporting on, as
+	// "codexlb/<originator>" - codexlb/codex-tui, codexlb/codex_exec,
+	// codexlb/codex_cli_rs. Bounded and Turn-derived, and 1:1 correlated with
+	// Originator below, so it costs no cardinality that codexlb.originator was not
+	// already costing.
+	//
+	// It exists because Grafana's agent-observability groups its whole Agents surface
+	// by this exact label - apps/plugin's agentRows.ts keys rows on gen_ai_agent_name
+	// and buckets everything without it as "anonymous", which is what every series
+	// this service emitted was, up to issue #32.
+	//
+	// UNTIL #32 THIS KEY CARRIED ToolCall.TaskName on invoke_agent spans, which was
+	// wrong twice over: a spawn_agent task label ("issue23_history_api") is a task
+	// description rather than an agent name, and it is unbounded by construction, so
+	// it both misstated the concept and flooded agent-observability's own `agent`
+	// search filter (sigil/pkg/searchcore/filter.go maps that filter to
+	// span.gen_ai.agent.name) with one-off values. It now lives on SubagentTask.
 	GenAIAgentName = "gen_ai.agent.name"
+	// GenAIAgentVersion is Turn.InstructionsHash - sha256(instructions)[:16], the
+	// identity of the system prompt this response ran under.
+	//
+	// NOT Turn.ClientVersion, which reads the `version` request header and is ALWAYS
+	// EMPTY: a census of 48,000 records across every corpus hour (issue #32) found
+	// authorization, chatgpt-account-id, openai-beta, originator, session-id,
+	// thread-id, traceparent, x-client-request-id, x-codex-installation-id,
+	// x-codex-beta-features, x-codex-turn-metadata, x-codex-turn-state,
+	// x-codex-window-id, x-codex-parent-thread-id, x-openai-subagent, tracestate and
+	// x-request-id - and no `version` at any point. reducer.go still reads the header
+	// so that a future codex client that starts sending it is picked up for free, but
+	// nothing may depend on it being populated.
+	//
+	// The instructions hash is the better answer regardless. Sigil's own notion of an
+	// agent version IS the system prompt's identity: agentmeta.resolveEffectiveVersion
+	// hashes the declared version when one is present and falls back to hashing the
+	// system prompt when it is not. Declaring it also avoids a fragmentation bug -
+	// this service's system_prompt is populated only on the response where the
+	// instructions hash first CHANGES (turn.go's dedup on Prompts/InstructionsHash),
+	// so with the field unset the server would hash the empty prompt for almost every
+	// generation and mint one meaningless catalog version. And it round-trips: a
+	// version string in sigil's UI greps straight back to codexlb_instructions_hash in
+	// Loki.
+	GenAIAgentVersion = "gen_ai.agent.version"
 
 	// GenAIUsage* are Turn's six token fields as SPAN attributes. Before issue #18 the
 	// only place token usage existed was internal/sink/otlpmetric's codexlb.tokens
@@ -123,6 +171,24 @@ const (
 	GenAIUsageCacheReadTokens  = "gen_ai.usage.cache_read.input_tokens"
 	GenAIUsageCacheWriteTokens = "gen_ai.usage.cache_creation.input_tokens"
 	GenAIUsageReasoningTokens  = "gen_ai.usage.reasoning.output_tokens"
+
+	// --- agento11y.* : Grafana agent-observability's own span markers (issue #32) ---
+	//
+	// Neither is a GenAI convention name, and neither is ours to rename - they are the
+	// keys that product's plugin reads, verbatim. A `sigil.*` legacy spelling of each
+	// exists for spans stored before the 2026-07-16 rename; this service never emitted
+	// one and never should.
+
+	// AgentO11ySDKName marks a span as belonging to agent-observability. Its
+	// conversation search requires it: with no other filter set, the compiled TraceQL
+	// carries (span.agento11y.sdk.name != "" || span.sigil.sdk.name != ""), so a span
+	// without it is unsearchable from that UI however complete the rest of it is.
+	AgentO11ySDKName = "agento11y.sdk.name"
+	// AgentO11yGenerationID binds a span to the Generation the agento11y sink pushes
+	// for the same response - it is what lets the conversation view attach a trace to
+	// a turn. See GenerationID for the value, which is shared with that sink rather
+	// than derived twice.
+	AgentO11yGenerationID = "agento11y.generation.id"
 
 	// --- codexlb.* : concepts the convention has no notion of ---
 
@@ -214,16 +280,22 @@ const (
 	// ForkedFromThreadID has no GenAI equivalent - forking a conversation is a
 	// codex-lb concept, not a model-API one - so it keeps a codexlb.* name.
 	ForkedFromThreadID = "codexlb.forked_from_thread_id"
-	TurnID             = "codexlb.turn_id"
-	ParentTurnID       = "codexlb.parent_turn_id"
-	LogicalTurnID      = "codexlb.logical_turn_id"
-	WindowID           = "codexlb.window_id"
-	InstallationID     = "codexlb.installation_id"
-	PromptCacheKey     = "codexlb.prompt_cache_key"
-	EngineIDs          = "codexlb.engine_ids"
-	InstructionsHash   = "codexlb.instructions_hash"
-	ErrorMessage       = "codexlb.error_message"
-	SafetyID           = "codexlb.safety_identifier"
+	// SubagentTask is ToolCall.TaskName - "populated for spawn_agent, describing the
+	// child agent" (turn.ToolCall's own doc comment) - carried only on the tool_call
+	// span this service classifies as invoke_agent. It held the standard
+	// gen_ai.agent.name key until issue #32; see GenAIAgentName above for why it was
+	// moved off it.
+	SubagentTask     = "codexlb.subagent_task"
+	TurnID           = "codexlb.turn_id"
+	ParentTurnID     = "codexlb.parent_turn_id"
+	LogicalTurnID    = "codexlb.logical_turn_id"
+	WindowID         = "codexlb.window_id"
+	InstallationID   = "codexlb.installation_id"
+	PromptCacheKey   = "codexlb.prompt_cache_key"
+	EngineIDs        = "codexlb.engine_ids"
+	InstructionsHash = "codexlb.instructions_hash"
+	ErrorMessage     = "codexlb.error_message"
+	SafetyID         = "codexlb.safety_identifier"
 	// TransportEvent is the server's plain-text reason for a websocket lifecycle event
 	// - "no close frame received or sent", "received 1012 (service restart)". Prose,
 	// so it is identity-class; FrameType is the bounded classification of the same
@@ -257,21 +329,72 @@ func LokiKey(key string) string { return strings.ReplaceAll(key, ".", "_") }
 // served the request.
 const GenAIProviderValue = "openai"
 
-// GenAIOperationValue is the convention's operation name for a chat-style completion.
+// The gen_ai.operation.name values this service emits.
+//
+// GenAIOperationGenerateText and GenAIOperationStreamText replaced a single "chat"
+// constant in issue #32, and this is a DELIBERATE DIVERGENCE FROM THE GENAI
+// CONVENTION, reversing that part of issue #18. The convention's value for a
+// chat-style completion is "chat"; agent-observability's vocabulary is the Vercel AI
+// SDK's generateText/streamText, and it is a closed set - apps/plugin's
+// conversation/attributes.ts recognises exactly generateText, streamText, embeddings,
+// execute_tool, framework_chain and framework_retriever.
+//
+// Emitting "chat" was not a soft mismatch. sigil-sdk's own llms.txt states the
+// failure: an unrecognised value "still reaches Tempo, but the UI classifies it as
+// unknown and renders a synthetic generation node with no attached span - the trace
+// does not appear inside the conversation and the T icon is absent even though
+// trace_id/span_id are set". On the ingest side the same value is stored verbatim:
+// sigil's generation service only substitutes a default when operation_name is EMPTY.
+//
+// Both sides of that vocabulary are non-semconv - sigil's own internal judge emits
+// generateText - so this is not "the spec versus a vendor", it is "a spec nobody
+// downstream of this service reads versus the one its only consumer does".
+//
+// Which of the two a response gets is Turn-derived, not constant: see OperationName.
 //
 // GenAIOperationExecuteTool and GenAIOperationInvokeAgent (issue #18) are the two
 // other operation values this service emits, on tool_call spans only - see
 // otlptrace/spans.go's emitToolCalls for which of the two a given tool call gets and
 // why, and its comment on the double-count trap fixed in 228c717 for why adding
 // these does not reopen it: that fix constrains how many spans per RESPONSE may
-// claim "chat" (the inference itself); execute_tool and invoke_agent describe a
+// claim to be the inference itself; execute_tool and invoke_agent describe a
 // different event (one tool call) on a different span, counted once each already,
-// not a second claim on the same inference.
+// not a second claim on the same inference. Both are in agent-observability's
+// recognised set too, so neither needed changing.
 const (
-	GenAIOperationValue       = "chat"
-	GenAIOperationExecuteTool = "execute_tool"
-	GenAIOperationInvokeAgent = "invoke_agent"
+	GenAIOperationGenerateText = "generateText"
+	GenAIOperationStreamText   = "streamText"
+	GenAIOperationExecuteTool  = "execute_tool"
+	GenAIOperationInvokeAgent  = "invoke_agent"
 )
+
+// AgentO11ySDKNameValue is what this service calls itself in AgentO11ySDKName.
+//
+// The SDKs put their own package name here (agento11y-sdk-go and friends). This
+// service is not one of them - it is a replay pipeline reading an archive - so it
+// gives its own name rather than impersonating an SDK it does not use. The field's
+// consumers only test it for non-emptiness; nothing downstream parses the value.
+const AgentO11ySDKNameValue = "codexlb2otel"
+
+// AgentNamePrefix and AgentNameFallback build GenAIAgentName. The split by originator
+// mirrors how the claude-code plugin splits its subagents (claude-code/general-purpose
+// and friends) in the same tenant, so the two read the same way side by side.
+const (
+	AgentNamePrefix   = "codexlb/"
+	AgentNameFallback = "codexlb"
+)
+
+// TokenSemanticsInclusive is the only value GenAITokenSemantics takes: input_tokens
+// covers every input token type, with the cache buckets as SUBSETS of it rather than
+// additions.
+//
+// A statement of fact about the source data, not a guess - the OpenAI Responses API
+// usage block has exactly that shape, and internal/sink/agento11y already declares the
+// proto equivalent (TOKEN_INPUT_SEMANTICS_INCLUSIVE) on every Generation for the same
+// reason. Absent, agent-observability's dashboard classifies the series as legacy
+// provider-raw and adds the cache buckets ON TOP of input, over-counting both tokens
+// and cost on every cached prompt - which is most of them.
+const TokenSemanticsInclusive = "inclusive"
 
 // Record types - the values RecordType takes, and the set of Loki line kinds.
 //
@@ -310,12 +433,18 @@ var RecordTypes = []string{
 // MetricTokens, not instead of it - the deviation above stays, re-affirmed on the
 // issue: "the question... is a sum". This one exists purely so anything querying the
 // convention's own instrument name sees us at all. It carries the same five
-// GenAITokenType values as MetricTokens (input/output/reasoning/cached/cache_write),
+// GenAITokenType values as MetricTokens (input/output/reasoning/cache_read/cache_write),
 // not only the two the registry's gen_ai.token.type enum lists as canonical
 // (input/output) - same reasoning as GenAITokenType's own doc comment: the cache and
 // reasoning breakdowns extend the axis rather than becoming separate instruments, and
 // that reasoning does not change just because this particular instrument now has a
 // standard name too.
+//
+// "Parallel" means same value and same fan-out, NOT same attributes - the two carried
+// identical attribute sets until issue #32 and deliberately no longer do. This one
+// additionally carries GenAIAgentName, GenAIAgentVersion and GenAITokenSemantics,
+// because it is the instrument agent observability reads and MetricTokens is not. See
+// recordTokens in internal/sink/otlpmetric for the full reasoning.
 const (
 	MetricTokens          = "codexlb.tokens"                  // counter, {token}, by GenAITokenType
 	MetricResponses       = "codexlb.responses"               // counter, {response}
@@ -354,22 +483,30 @@ const (
 	// Durations are seconds, as the convention requires for gen_ai.client.operation.duration.
 	MetricOperationDuration = "gen_ai.client.operation.duration" // histogram, s - convention-compliant
 	MetricTurnDuration      = "codexlb.turn.duration"            // histogram, s - client turn start to server completion
-	// MetricTTFT: issue #18 proposed gen_ai.client.time_to_first_token. Checked
-	// against the live registry (2026-08-07): that name does not exist. The current
-	// spec has gen_ai.server.time_to_first_token ("Time to generate first token for
-	// successful responses") and a differently-scoped
-	// gen_ai.client.operation.time_to_first_chunk ("measured from when the client
-	// issues the generation request"). Turn.TTFTMs is the server's own reported
-	// figure (from timing_metrics, not measured client-side), so
-	// gen_ai.server.time_to_first_token is the correct match - the issue had the
-	// right concept and the wrong namespace. Spec wins: renamed to the server.* form,
-	// not the client.* form the issue proposed.
-	MetricTTFT             = "gen_ai.server.time_to_first_token" // histogram, s - convention-compliant
-	MetricEngineWall       = "codexlb.engine_wall"               // histogram, s
-	MetricHarnessUnblocked = "codexlb.harness_unblocked"         // histogram, s
-	MetricPreInference     = "codexlb.pre_inference"             // histogram, s
-	MetricSamplingStream   = "codexlb.sampling_and_stream"       // histogram, s
-	MetricClientToolPause  = "codexlb.client_tool_pause"         // histogram, s
+	// MetricTTFT is gen_ai.client.time_to_first_token, and the history matters because
+	// this name has now been argued both ways.
+	//
+	// Issue #18 proposed the client.* form. Issue #23's work checked the live registry
+	// (semantic-conventions-genai, 2026-08-07) and found no such name: the spec has
+	// gen_ai.server.time_to_first_token and a differently-scoped
+	// gen_ai.client.operation.time_to_first_chunk. Turn.TTFTMs is the SERVER's own
+	// reported figure, from timing_metrics rather than measured client-side, so the
+	// server.* form was chosen as the honest match.
+	//
+	// Issue #32 reversed it. That reasoning is still correct about the spec and still
+	// wrong about the outcome: nothing reads gen_ai.server.time_to_first_token, and
+	// agent-observability's TTFT panels query gen_ai_client_time_to_first_token_seconds
+	// literally, so the spec-correct name bought a permanently empty panel and no
+	// consumer. Same trade as the operation-name and token-type values above, made the
+	// same way. The measurement is unchanged and still server-reported; only the name
+	// moved.
+	MetricTTFT = "gen_ai.client.time_to_first_token" // histogram, s - agent-observability's name, NOT the registry's
+
+	MetricEngineWall       = "codexlb.engine_wall"         // histogram, s
+	MetricHarnessUnblocked = "codexlb.harness_unblocked"   // histogram, s
+	MetricPreInference     = "codexlb.pre_inference"       // histogram, s
+	MetricSamplingStream   = "codexlb.sampling_and_stream" // histogram, s
+	MetricClientToolPause  = "codexlb.client_tool_pause"   // histogram, s
 	// MetricTokenUsage is the convention-compliant histogram - see the const block's
 	// own doc comment above.
 	MetricTokenUsage = "gen_ai.client.token.usage" // histogram, {token}, by GenAITokenType - convention-compliant
@@ -508,10 +645,19 @@ const (
 // input and output are the convention's own; the cache and reasoning breakdowns are
 // not in it but are the numbers that explain a bill, so they extend the same axis
 // rather than becoming separate instruments.
+// TokenCacheRead was "cached" until issue #32. Renamed for the same reason as the
+// operation values above: agent-observability's dashboard matches
+// gen_ai_token_type="cache_read" literally, in five separate panels (cache-hit rate,
+// cache reads, cache savings, the cache breakdown and the legacy-semantics cost
+// fallback), so "cached" made every one of them read zero. Neither spelling is in the
+// GenAI registry - its gen_ai.token.type enum defines only input and output, and the
+// cache and reasoning breakdowns are this contract's own extension either way - so
+// nothing standard was given up by taking the consumer's spelling. TokenCacheWrite
+// already matched.
 const (
 	TokenInput      = "input"
 	TokenOutput     = "output"
 	TokenReasoning  = "reasoning"
-	TokenCached     = "cached"
+	TokenCacheRead  = "cache_read"
 	TokenCacheWrite = "cache_write"
 )

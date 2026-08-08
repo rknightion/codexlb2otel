@@ -263,7 +263,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"cached\", gen_ai_request_model=~\"$model\"}[$__rate_interval])) / sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"input\", gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
+          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"cache_read\", gen_ai_request_model=~\"$model\"}[$__rate_interval])) / sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"input\", gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
           "refId": "A",
           "range": true,
           "instant": false,

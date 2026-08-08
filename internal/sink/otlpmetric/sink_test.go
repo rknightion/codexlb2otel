@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -306,7 +307,7 @@ func TestEngineUncachedPromptTokensIsItsOwnInstrument(t *testing.T) {
 	for _, dp := range tokens.Data.(metricdata.Sum[int64]).DataPoints {
 		if kind, _ := attrString(t, dp.Attributes, attr.GenAITokenType); kind != "" &&
 			kind != attr.TokenInput && kind != attr.TokenOutput && kind != attr.TokenReasoning &&
-			kind != attr.TokenCached && kind != attr.TokenCacheWrite {
+			kind != attr.TokenCacheRead && kind != attr.TokenCacheWrite {
 			t.Errorf("%s emitted an unexpected gen_ai.token.type value %q - uncached must not "+
 				"have joined this axis", attr.MetricTokens, kind)
 		}
@@ -835,6 +836,159 @@ func reduceFixture(t *testing.T, r *turn.Reducer, path string) []*turn.Turn {
 	})
 	if err != nil {
 		t.Fatalf("%s: %v", fixture.Name(path), err)
+	}
+	return out
+}
+
+// TestAgentO11yLabelsOnTheThreeInstrumentsItReads is issue #32's metric side, and the
+// direct fix for the bug that opened it: Grafana agent observability's Agents table
+// groups gen_ai_client_* by gen_ai_agent_name and buckets everything without that
+// label as "anonymous", which is where every series this service emitted was sitting.
+//
+// It also pins the three labels that were silently wrong rather than absent:
+//
+//   - gen_ai.token.semantics. Without it that dashboard classifies these series as
+//     provider-raw and adds the cache buckets ON TOP of input, over-counting tokens
+//     and cost on every cached prompt.
+//   - the cache_read spelling. Five of its panels match that value literally; "cached"
+//     made all five read zero.
+//   - error.type on operation.duration, which is how it splits success from failure.
+//
+// Deliberately asserts the SCOPE too. These labels are not blanket-added to every
+// instrument - adding gen_ai.agent.version everywhere would multiply series on ~40
+// instruments to satisfy three - so a well-meaning "make it consistent" change should
+// fail here rather than land as a cardinality incident.
+func TestAgentO11yLabelsOnTheThreeInstrumentsItReads(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+
+	tt := baseTurn("1")
+	tt.Originator = "codex_exec"
+	tt.InstructionsHash = "3dcc72f5c56809d0"
+	tt.ErrorType = "upstream_error"
+	tt.InputTokens, tt.CachedTokens = 100, 40
+	tt.TTFTMs = 250
+	tt.ServerCreatedAt = time.Now().Add(-2 * time.Second)
+	tt.ServerCompletedAt = time.Now()
+
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	rm := collect(t, reader)
+
+	// Every data point of these three must carry the agent identity, or the UI's
+	// per-agent aggregate silently under-reports by however many points lack it.
+	for _, name := range []string{attr.MetricTokenUsage, attr.MetricOperationDuration, attr.MetricTTFT} {
+		m, ok := findMetric(rm, name)
+		if !ok {
+			t.Fatalf("%s not recorded; the test turn should have produced one", name)
+		}
+		for _, set := range attrSets(t, m) {
+			if got, _ := attrString(t, set, attr.GenAIAgentName); got != "codexlb/codex_exec" {
+				t.Errorf("%s: gen_ai.agent.name = %q, want codexlb/codex_exec", name, got)
+			}
+			if got, _ := attrString(t, set, attr.GenAIAgentVersion); got != "3dcc72f5c56809d0" {
+				t.Errorf("%s: gen_ai.agent.version = %q, want the instructions hash", name, got)
+			}
+		}
+	}
+
+	usage, _ := findMetric(rm, attr.MetricTokenUsage)
+	var sawCacheRead bool
+	for _, set := range attrSets(t, usage) {
+		if got, _ := attrString(t, set, attr.GenAITokenSemantics); got != attr.TokenSemanticsInclusive {
+			t.Errorf("%s: gen_ai.token.semantics = %q, want %q - absent, a consumer adds the "+
+				"cache buckets on top of input", attr.MetricTokenUsage, got, attr.TokenSemanticsInclusive)
+		}
+		if kind, _ := attrString(t, set, attr.GenAITokenType); kind == attr.TokenCacheRead {
+			sawCacheRead = true
+		} else if kind == "cached" {
+			t.Errorf("%s still emits the pre-#32 gen_ai.token.type value %q", attr.MetricTokenUsage, kind)
+		}
+	}
+	if !sawCacheRead {
+		t.Errorf("%s never emitted gen_ai.token.type=%q despite CachedTokens=40",
+			attr.MetricTokenUsage, attr.TokenCacheRead)
+	}
+
+	dur, _ := findMetric(rm, attr.MetricOperationDuration)
+	for _, set := range attrSets(t, dur) {
+		if got, _ := attrString(t, set, attr.ErrorType); got != "upstream_error" {
+			t.Errorf("%s: error.type = %q, want upstream_error - the error-rate, error-count "+
+				"and error-by-type panels all select on error_type!=\"\"", attr.MetricOperationDuration, got)
+		}
+	}
+
+	// Scope. Five instruments may carry gen_ai.agent.version and no others.
+	//
+	// The three above are there because agent observability reads them. The two
+	// counters are there because they take attr.MetricAttrs UNNARROWED - carrying the
+	// complete bounded set is their documented job (see recordCounts), and the
+	// registry's own contract is that a bounded Turn-derived field lands on every
+	// instrument that does not narrow it away. Excluding these two would be the
+	// exception needing a justification, not the rule.
+	//
+	// Every other instrument narrows with attr.Only, so one appearing here means a
+	// narrowed set grew - which is how gen_ai.agent.version's multiplier reaches an
+	// instrument with no consumer for it.
+	//
+	// Only the version is policed. gen_ai.agent.name takes three values, is the label
+	// this whole change exists to provide, and is free wherever codexlb.originator is
+	// already present - so its spread is not worth a guard. The version is the one that
+	// grows with every system prompt codex ships.
+	mayCarryVersion := map[string]bool{
+		attr.MetricTokenUsage:        true,
+		attr.MetricOperationDuration: true,
+		attr.MetricTTFT:              true,
+		attr.MetricResponses:         true,
+		attr.MetricTurns:             true,
+	}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if mayCarryVersion[m.Name] {
+				continue
+			}
+			for _, set := range attrSets(t, m) {
+				if _, ok := attrString(t, set, attr.GenAIAgentVersion); ok {
+					t.Errorf("%s carries gen_ai.agent.version; only the three instruments "+
+						"agent observability reads and the two unnarrowed counters may - "+
+						"see this test's doc comment", m.Name)
+				}
+			}
+		}
+	}
+}
+
+// attrSets flattens whichever concrete data-point shape a metric happens to be into
+// its attribute sets. The four cases are every shape this package produces; a fifth
+// appearing would make this return nothing and quietly weaken every caller, so it
+// fails loudly instead.
+func attrSets(t *testing.T, m metricdata.Metrics) []attribute.Set {
+	t.Helper()
+	var out []attribute.Set
+	switch d := m.Data.(type) {
+	case metricdata.Sum[int64]:
+		for _, dp := range d.DataPoints {
+			out = append(out, dp.Attributes)
+		}
+	case metricdata.Gauge[int64]:
+		for _, dp := range d.DataPoints {
+			out = append(out, dp.Attributes)
+		}
+	case metricdata.Gauge[float64]:
+		for _, dp := range d.DataPoints {
+			out = append(out, dp.Attributes)
+		}
+	case metricdata.Histogram[int64]:
+		for _, dp := range d.DataPoints {
+			out = append(out, dp.Attributes)
+		}
+	case metricdata.Histogram[float64]:
+		for _, dp := range d.DataPoints {
+			out = append(out, dp.Attributes)
+		}
+	default:
+		t.Fatalf("%s has an unhandled data shape %T; attrSets must learn it or every "+
+			"caller silently checks nothing", m.Name, m.Data)
 	}
 	return out
 }

@@ -162,6 +162,25 @@ var registry = []Field{
 	{Key: Originator, Class: Bounded, Cap: 16,
 		Observed: []string{"codex-tui", "codex_exec", "codex_cli_rs"},
 		Of:       func(t *turn.Turn) string { return t.Originator }},
+	// GenAIAgentName is Originator wearing agent-observability's name: its value set is
+	// Originator's with a prefix and nothing else, so the cap matches Originator's.
+	//
+	// On any attribute set that already carries Originator the two are perfectly
+	// correlated and this adds no series at all. On the three narrowed gen_ai.client.*
+	// sets it is a genuinely new dimension (they do not carry Originator), so it costs
+	// its value count there - three today. That is the price of the fix, not a free
+	// lunch: without it those series have no agent at all.
+	{Key: GenAIAgentName, Class: Bounded, Cap: 16,
+		Observed: []string{"codexlb/codex-tui", "codexlb/codex_exec", "codexlb/codex_cli_rs"},
+		Of:       AgentName},
+	// Cap 32 against a value set that turns over rather than accumulates: the hash
+	// changes only when codex ships a new system prompt, and the guard's state is
+	// per-process, so a long-lived process sees a handful. It is IDLike because a
+	// truncated sha256 is exactly what the corpus test's "does this look like an
+	// identifier" heuristic is built to catch - here that shape is the point, not an
+	// accident, and the cap is what keeps the exception safe.
+	{Key: GenAIAgentVersion, Class: Bounded, Cap: 32, IDLike: true,
+		Of: func(t *turn.Turn) string { return t.InstructionsHash }},
 	{Key: ErrorType, Class: Bounded, Cap: 32,
 		Of: func(t *turn.Turn) string { return t.ErrorType }},
 	{Key: ErrorCode, Class: Bounded, Cap: 64,
@@ -206,7 +225,14 @@ var registry = []Field{
 		Observed: []string{"exec", "spawn_agent", "wait_agent", "list_agents", "send_message",
 			"followup_task", "interrupt_agent", "request_user_input", "wait"}},
 	{Key: GenAITokenType, Class: Bounded, Cap: 8,
-		Observed: []string{TokenInput, TokenOutput, TokenReasoning, TokenCached, TokenCacheWrite}},
+		Observed: []string{TokenInput, TokenOutput, TokenReasoning, TokenCacheRead, TokenCacheWrite}},
+	// One value, ever - but registered rather than hardcoded at the call site so it
+	// goes through the same Guard.With path as every other caller-supplied attribute,
+	// which is the rule this package exists to enforce. Cap 4 leaves room for the
+	// enum's other member (UNSPECIFIED) should a future path ever be unable to
+	// positively identify the shape.
+	{Key: GenAITokenSemantics, Class: Bounded, Cap: 4,
+		Observed: []string{TokenSemanticsInclusive}},
 	// ToolType is ToolCall.Kind: custom | function today, per turn.go's own comment on
 	// that field. Cap matches ToolName's caution about a field with no upstream
 	// guarantee of staying small, even though only two values have ever been seen.
@@ -259,10 +285,71 @@ var registry = []Field{
 	{Key: ToolCallID, Class: Identity},
 	{Key: ToolCallArguments, Class: Identity},
 	{Key: ToolCallResult, Class: Identity},
-	{Key: GenAIAgentName, Class: Identity},
+	// SubagentTask took over what GenAIAgentName carried here before issue #32 - see
+	// that constant's own doc comment. Identity, not Bounded, and that is the whole
+	// argument for moving it: a spawn_agent task label is caller-authored free text
+	// with no upstream bound, so under the capped standard key everything past the cap
+	// would have collapsed to _other.
+	{Key: SubagentTask, Class: Identity},
 
 	// --- sensitive ---
 	{Key: SafetyID, Class: Sensitive, Of: func(t *turn.Turn) string { return t.SafetyID }},
+}
+
+// AgentName is GenAIAgentName's value for one turn: "codexlb/<originator>", or a bare
+// "codexlb" when the originator is absent.
+//
+// Never empty, unlike almost every other Field.Of in the registry. An agent name that
+// sometimes disappears is worse than a coarse one: a turn with no originator header
+// would drop out of every per-agent series and reappear in agent-observability's
+// anonymous bucket - the exact failure issue #32 fixed - so the fallback keeps it in
+// the right agent at a coarser granularity instead.
+//
+// Exported because internal/sink/agento11y sets the same value on Generation.agent_name
+// and the two must not be able to disagree.
+func AgentName(t *turn.Turn) string {
+	if t.Originator == "" {
+		return AgentNameFallback
+	}
+	return AgentNamePrefix + t.Originator
+}
+
+// GenerationID is the id of the Generation representing this response - the value
+// internal/sink/agento11y pushes as Generation.id and internal/sink/otlptrace stamps
+// onto the response span as agento11y.generation.id.
+//
+// It lives HERE, in the package both sinks already depend on, because the two must be
+// byte-identical or the span/generation link resolves to nothing in agent
+// observability and the conversation view silently shows a turn with no trace - a
+// failure with no error anywhere. It was a private helper in the agento11y sink until
+// issue #32 gave the trace sink a reason to need the same value.
+//
+// ResponseID (resp_*) is the natural choice: the id of the exact model response this
+// Generation represents, one-to-one with the Turn, and stable across a retry or a
+// checkpoint replay so a repeated push dedups rather than duplicating. It is empty on
+// a response that never completed (a bare transport or error record), so RequestID -
+// always populated - is the fallback.
+func GenerationID(t *turn.Turn) string {
+	if t.ResponseID != "" {
+		return t.ResponseID
+	}
+	return t.RequestID
+}
+
+// OperationName is gen_ai.operation.name for one response: streamText when the
+// response delivered any text deltas over the websocket, generateText otherwise.
+//
+// The same test internal/sink/agento11y's mode() uses to pick between
+// GENERATION_MODE_STREAM and GENERATION_MODE_SYNC, and deliberately so: sigil's own
+// ingest defaults operation_name from mode with exactly this mapping
+// (defaultOperationNameForMode), so a Generation whose mode and operation name
+// disagreed would be self-contradictory on arrival. Exported for the same reason
+// AgentName is.
+func OperationName(t *turn.Turn) string {
+	if t.TextDeltaCount > 0 {
+		return GenAIOperationStreamText
+	}
+	return GenAIOperationGenerateText
 }
 
 // positiveItoa renders n, or "" for n <= 0 - see the token-usage Field.Of comments
@@ -411,7 +498,13 @@ func (g *Guard) MetricAttrs(t *turn.Turn) []KV {
 	out := make([]KV, 0, len(registry))
 	out = append(out,
 		KV{GenAIProvider, GenAIProviderValue},
-		KV{GenAIOperation, GenAIOperationValue},
+		// Turn-derived since issue #32 (generateText vs streamText), but still
+		// injected here rather than registered as a Field: it is not one of Turn's own
+		// attributes, it is this emitter's classification of the response, and the
+		// tool-call spans override it with their own operation value. A registry entry
+		// would put it in SpanAttrs and so onto every span, where those overrides
+		// would then be appending a second, contradictory copy of the same key.
+		KV{GenAIOperation, OperationName(t)},
 	)
 	for _, f := range registry {
 		if f.Class != Bounded || f.Of == nil {

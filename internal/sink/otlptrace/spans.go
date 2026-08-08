@@ -241,31 +241,56 @@ func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 	respEnd := clampEnd(respStart, firstNonZero(t.ServerCompletedAt, t.LastTS, respStart))
 	rsid := responseSpanID(t)
 
-	respName := "chat"
+	// generateText or streamText, not "chat" - see attr's GenAIOperationGenerateText
+	// doc comment for why this service uses agent-observability's vocabulary rather
+	// than the GenAI convention's here (issue #32).
+	respOp := attr.OperationName(t)
+	respName := respOp
 	if t.Model != "" {
 		// gen_ai.operation.name + gen_ai.request.model, per the GenAI convention's
-		// span-naming guidance - matches how attr.go aligns naming with the
-		// convention wherever it defines the concept.
-		respName = "chat " + t.Model
+		// span-naming guidance, which holds whatever vocabulary the operation value
+		// itself is drawn from.
+		respName = respOp + " " + t.Model
 	}
 	// gen_ai.operation.name and gen_ai.provider.name go on THIS span and nowhere else.
 	//
 	// The convention requires both on an inference span, and attr.Guard omits them from
-	// SpanAttrs because they are constants rather than Turn-derived fields - which meant
-	// no span carried either, and a consumer keying on gen_ai.operation.name saw nothing
-	// at all. Grafana's agent-observability backend is exactly such a consumer: it
-	// decodes per span and skips anything whose operation name is not one of chat,
-	// generate_content, text_completion or invoke_agent.
+	// SpanAttrs because neither is one of Turn's own attributes - which meant no span
+	// carried either, and a consumer keying on gen_ai.operation.name saw nothing at all.
+	// Grafana's agent-observability is exactly such a consumer, in two places: its
+	// conversation view classifies a span by this value against a closed vocabulary,
+	// and its tolerant OTLP decoder skips any span whose operation name is out of
+	// scope.
 	//
 	// Deliberately NOT added to SpanAttrs, which would put them on the turn root and the
 	// critical-path and tool-call children too. A consumer that turns each qualifying
 	// span into a record would then count one turn several times over - the parent and
 	// its child describing the same inference is a known double-count in that model, so
 	// exactly one span per response may claim to be the inference.
+	//
+	// The two agento11y.* attributes are scoped the same way, and for the same reason
+	// stated the other way round (issue #32):
+	//
+	//   - agento11y.sdk.name is the marker agent-observability uses to decide a span is
+	//     one of its own. Its conversation search compiles to a TraceQL query that,
+	//     with no other filter set, requires (span.agento11y.sdk.name != "" ||
+	//     span.sigil.sdk.name != ""), so without it these spans are simply not
+	//     searchable from that UI. Only the canonical spelling is emitted; the legacy
+	//     sigil.* one exists for spans stored before the 2026-07-16 rename, and nothing
+	//     this service has ever emitted is one of those.
+	//   - agento11y.generation.id is what binds this span to the Generation the
+	//     agento11y sink pushes for the same response, so the conversation view can
+	//     attach the trace to the turn. It MUST equal that sink's own id or the link
+	//     resolves to nothing, which is why it comes from the shared helper rather than
+	//     being re-derived here.
 	respAttrs := append(full[:len(full):len(full)],
-		attribute.String(attr.GenAIOperation, attr.GenAIOperationValue),
+		attribute.String(attr.GenAIOperation, respOp),
 		attribute.String(attr.GenAIProvider, attr.GenAIProviderValue),
+		attribute.String(attr.AgentO11ySDKName, attr.AgentO11ySDKNameValue),
 	)
+	if gid := attr.GenerationID(t); gid != "" {
+		respAttrs = append(respAttrs, attribute.String(attr.AgentO11yGenerationID, gid))
+	}
 	// gen_ai.request.temperature/top_p (issue #23): request parameters, scoped to
 	// THIS span only, same reasoning as GenAIOperation/GenAIProvider immediately
 	// above - a per-response request parameter belongs on the one span that claims to
@@ -440,16 +465,20 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 			attr.KV{Key: attr.ToolType, Value: tc.Kind},
 			attr.KV{Key: attr.ToolCallArguments, Value: boundArguments(tc.Input)},
 			attr.KV{Key: attr.ToolCallResult, Value: outputByCallID[tc.CallID]},
-			// GenAIAgentName only actually has a value when op is invoke_agent -
+			// SubagentTask only actually has a value when op is invoke_agent -
 			// TaskName is empty for every other tool - so this is a no-op KV on an
-			// execute_tool call rather than a branch.
-			attr.KV{Key: attr.GenAIAgentName, Value: tc.TaskName},
+			// execute_tool call rather than a branch. It carried the standard
+			// gen_ai.agent.name key until issue #32; see attr's GenAIAgentName doc
+			// comment for why a per-invocation task label had to come off it.
+			attr.KV{Key: attr.SubagentTask, Value: tc.TaskName},
 		)
 		otelAttrs := toAttrs(attrs)
-		// gen_ai.operation.name: constant per call, not Turn-derived and not
-		// caller-supplied-but-registered either (there is no Field for "which
-		// operation value" - GenAIOperation itself is injected the same way on the
-		// chat span, deliberately outside the registry; see that span's own comment).
+		// gen_ai.operation.name: constant per call, and not registered as a Field for
+		// the same reason it is not one on the response span - it is this emitter's
+		// classification of a span rather than one of Turn's attributes, and a registry
+		// entry would put a THIRD value of the same key on every one of these spans via
+		// SpanAttrs. Injected directly here, exactly as the response span injects its
+		// own; see that span's own comment.
 		otelAttrs = append(otelAttrs, attribute.String(attr.GenAIOperation, op))
 		if tc.Status != "" {
 			otelAttrs = append(otelAttrs, attribute.String(traceAttrToolCallState, tc.Status))
@@ -459,7 +488,10 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 		// {gen_ai.tool.name}" / "invoke_agent {gen_ai.agent.name}" - the latter uses
 		// TaskName (the spawned agent's own name), not tc.Name (which would just say
 		// "spawn_agent" on every one of these spans and tell a reader nothing about
-		// which agent).
+		// which agent). The NAME still follows that guidance after issue #32 even
+		// though the attribute it names moved to codexlb.subagent_task: the point of
+		// the guidance is that a reader can tell these spans apart, and the task label
+		// is the only thing that does.
 		name := op
 		switch {
 		case op == attr.GenAIOperationInvokeAgent && tc.TaskName != "":
