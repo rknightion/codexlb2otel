@@ -191,6 +191,7 @@ func (s *Store) rebuild() {
 	s.threads = make(map[string]*Thread, len(s.threads))
 	s.turnOwner = make(map[string]string, len(s.turnOwner))
 
+	byThread := map[string][]*turn.Turn{}
 	for _, t := range s.turns {
 		id := threadKey(t)
 		if id == "" {
@@ -202,6 +203,7 @@ func (s *Store) rebuild() {
 			s.threads[id] = th
 		}
 		th.observe(t, s.opts.Content)
+		byThread[id] = append(byThread[id], t)
 		if t.TurnID != "" {
 			s.turnOwner[t.TurnID] = id
 		}
@@ -210,7 +212,15 @@ func (s *Store) rebuild() {
 	for id, th := range s.threads {
 		if th.LastSeen.Before(cutoff) {
 			delete(s.threads, id)
+			continue
 		}
+		// Both of these need every turn of the thread at once rather than one at a
+		// time - the task path is a majority vote, and the spawn list is a dedup - so
+		// they run here rather than in observe.
+		th.TaskPath = TaskPath(byThread[id])
+		th.TaskName = TaskName(th.TaskPath)
+		th.Spawned = SpawnedTasks(byThread[id])
+		th.Name = th.name()
 	}
 }
 
@@ -267,16 +277,26 @@ func (s *Store) snapshotLocked() Snapshot {
 		}
 	}
 
-	// Parent by the spawning TURN where we know which thread ran it, falling back to the
-	// declared parent thread. Thread-level parenting alone only says which conversation
-	// a subagent came from; the turn is what says which step of it did.
+	// Parent by the declared PARENT THREAD, falling back to the spawning turn's owner.
+	//
+	// This order is the REVERSE of what #35 shipped, and the reversal is measured. The
+	// original reasoning - a turn is more specific than a thread, so prefer it - is
+	// sound for a spawn_agent child and wrong for the fork subagents that actually
+	// occur: across the 2026-08-08T16 capture, parent_turn_id is ABSENT on all 22 of
+	// them, while parent_thread_id forms a genuine four-level chain
+	// (019fe22f -> 019fe210 -> 019fe1ee -> 019fe148). Where parent_turn_id does turn up
+	// on a later turn of such a thread it names a turn of the ROOT, so preferring it
+	// reparented every descendant onto the root and collapsed the tree to one level.
+	//
+	// Corroborated independently: the collaboration task paths recovered by TaskPath
+	// nest the same way parent_thread_id does
+	// (/root/final_integration_review_v2/backend_contract_recheck under
+	// /root/final_integration_review_v2), and they disagree with the turn-derived
+	// shape. Two independent fields agreeing against a third settles it.
 	for id, th := range clones {
-		parent := ""
-		if th.ParentTurnID != "" {
+		parent := th.ParentThreadID
+		if parent == "" && th.ParentTurnID != "" {
 			parent = s.turnOwner[th.ParentTurnID]
-		}
-		if parent == "" {
-			parent = th.ParentThreadID
 		}
 		// A parent outside the retention window is not a parent we can show. Promote the
 		// orphan to a root rather than dropping it: a subagent whose parent has aged out

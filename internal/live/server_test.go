@@ -193,7 +193,7 @@ func TestServer_StreamDeliversSnapshots(t *testing.T) {
 // into two malformed events. Conversation text is full of them.
 func TestWriteEvent_EscapesNewlinesInContent(t *testing.T) {
 	var b strings.Builder
-	snap := Snapshot{Roots: []*Thread{{ThreadID: "t", Headline: "line one\nline two"}}}
+	snap := Snapshot{Roots: []*Thread{{ThreadID: "t", Latest: "line one\nline two"}}}
 	if err := writeEvent(&b, "snapshot", snap); err != nil {
 		t.Fatalf("writeEvent: %v", err)
 	}
