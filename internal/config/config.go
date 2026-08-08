@@ -8,6 +8,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"slices"
 	"strings"
@@ -83,6 +84,7 @@ type Config struct {
 	OTLP      OTLP      `yaml:"otlp" json:"otlp"`
 	AgentO11y AgentO11y `yaml:"agento11y" json:"agento11y"`
 	Health    Health    `yaml:"health" json:"health"`
+	Live      Live      `yaml:"live" json:"live"`
 	Log       Log       `yaml:"log" json:"log"`
 }
 
@@ -219,6 +221,35 @@ type Health struct {
 	Listen  string `yaml:"listen" json:"listen"`
 }
 
+// Live configures the in-process web view of recent conversation activity.
+//
+// Off by default, and loopback by default when on. Unlike Health, which leaks endpoint
+// URLs, this one serves CONVERSATION CONTENT - prompts, assistant messages and whole
+// command output. The README's content warning applies to a browser exactly as it
+// applies to Loki, which is why Validate refuses to bind it off-loopback without either
+// a token or an explicit acknowledgement.
+type Live struct {
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	Listen  string `yaml:"listen" json:"listen"`
+	// Token, when set, is required on every request as `Authorization: Bearer <token>`
+	// or as a `token` query parameter. Secret, so a config dump never echoes it.
+	Token Secret `yaml:"token" json:"token"`
+	// RetainTurns bounds the in-memory ring. Everything the view serves derives from it,
+	// so it is the feature's whole memory cost.
+	RetainTurns int `yaml:"retain_turns" json:"retain_turns"`
+	// RetainWindow hides threads idle for longer than this.
+	RetainWindow time.Duration `yaml:"retain_window" json:"retain_window"`
+	// Content serves message bodies. False gives a structural view - models, tool names,
+	// subagent kinds, timings, token counts - with no prose anywhere.
+	Content bool `yaml:"content" json:"content"`
+	// IncludeProbe keeps this service's own synthetic health traffic in the view.
+	IncludeProbe bool `yaml:"include_probe" json:"include_probe"`
+	// AllowInsecure permits a non-loopback listen with no token. Required explicitly,
+	// because the alternative - a warning - is a line in a log nobody reads on a
+	// listener serving every prompt and every command output to anyone who finds it.
+	AllowInsecure bool `yaml:"allow_insecure" json:"allow_insecure"`
+}
+
 // Log configures the service's own logging.
 type Log struct {
 	// Level is debug | info | warn | error.
@@ -272,7 +303,17 @@ func Default() Config {
 			MaxRetries: 5,
 		},
 		Health: Health{Enabled: true, Listen: "127.0.0.1:9464"},
-		Log:    Log{Level: "info", Format: "text"},
+		// Its own port, deliberately not shared with health: /healthz serves the whole
+		// config dump, and exposing the conversation view on a tailnet must not drag
+		// that along with it.
+		Live: Live{
+			Enabled:      false,
+			Listen:       "127.0.0.1:9465",
+			RetainTurns:  500,
+			RetainWindow: 2 * time.Hour,
+			Content:      true,
+		},
+		Log: Log{Level: "info", Format: "text"},
 	}
 }
 
@@ -363,8 +404,37 @@ func (c Config) Validate() error {
 		}
 	}
 
-	if !c.Loki.Enabled && !c.OTLP.Metrics.Enabled && !c.OTLP.Traces.Enabled && !c.AgentO11y.Enabled {
+	// Live counts as a destination here even though it is a volatile view: with it on,
+	// the archive is being tailed FOR something, and refusing to start would block the
+	// legitimate "just show me what is happening" deployment.
+	if !c.Loki.Enabled && !c.OTLP.Metrics.Enabled && !c.OTLP.Traces.Enabled && !c.AgentO11y.Enabled && !c.Live.Enabled {
 		add("every sink is disabled; the service would tail the archive and discard it")
+	}
+
+	if c.Live.Enabled {
+		if c.Live.Listen == "" {
+			add("live.listen is empty but live.enabled is true")
+		}
+		if c.Live.RetainTurns <= 0 {
+			add("live.retain_turns must be positive, got %d", c.Live.RetainTurns)
+		}
+		if c.Live.RetainWindow <= 0 {
+			add("live.retain_window must be positive, got %s", c.Live.RetainWindow)
+		}
+		// Unlike every other Secret here, this one is OPTIONAL - a loopback view needs no
+		// token - so an empty value must not be run through Resolve, which correctly
+		// treats "not set" as an error for a credential that is required.
+		var token string
+		if c.Live.Token != "" {
+			var err error
+			if token, err = c.Live.Token.Resolve(); err != nil {
+				add("live.token: %v", err)
+			}
+		}
+		if c.Live.Listen != "" && !loopbackListen(c.Live.Listen) && token == "" && !c.Live.AllowInsecure {
+			add("live.listen %q is not loopback and live.token is empty; this endpoint serves conversation content, "+
+				"so set live.token or set live.allow_insecure: true to say you meant it", c.Live.Listen)
+		}
 	}
 
 	switch c.Log.Level {
@@ -385,3 +455,24 @@ func (c Config) Validate() error {
 }
 
 func validRecordType(rt string) bool { return slices.Contains(attr.RecordTypes, rt) }
+
+// loopbackListen reports whether a host:port binds only to the local machine.
+//
+// The empty host is the case that matters and the one an eyeball misreads: ":9465" and
+// "0.0.0.0:9465" both bind every interface, and the first looks far more innocent than
+// the second. Anything it cannot parse is treated as NOT loopback, so an unfamiliar
+// form fails closed.
+func loopbackListen(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
