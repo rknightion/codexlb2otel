@@ -153,6 +153,14 @@ var registry = []Field{
 	{Key: ServiceTier, Class: Bounded, Cap: 8,
 		Observed: []string{"default", "auto"},
 		Of:       func(t *turn.Turn) string { return t.ServiceTier }},
+	// Observed is one value, not two: before the 2026-08-08 cutover the field was
+	// absent from response.create entirely, and an absent field yields "" and is
+	// omitted rather than emitted blank. So the corpus shows priority alone even
+	// though most of it predates priority - which is exactly the "off" state, not a
+	// gap in the sample.
+	{Key: ServiceTierRequested, Class: Bounded, Cap: 8,
+		Observed: []string{"priority"},
+		Of:       func(t *turn.Turn) string { return t.ServiceTierRequested }},
 	{Key: ThreadSource, Class: Bounded, Cap: 8,
 		Observed: []string{"user", "subagent"},
 		Of:       func(t *turn.Turn) string { return t.ThreadSource }},
@@ -173,13 +181,24 @@ var registry = []Field{
 	{Key: GenAIAgentName, Class: Bounded, Cap: 16,
 		Observed: []string{"codexlb/codex-tui", "codexlb/codex_exec", "codexlb/codex_cli_rs"},
 		Of:       AgentName},
-	// Cap 32 against a value set that turns over rather than accumulates: the hash
-	// changes only when codex ships a new system prompt, and the guard's state is
-	// per-process, so a long-lived process sees a handful. It is IDLike because a
-	// truncated sha256 is exactly what the corpus test's "does this look like an
-	// identifier" heuristic is built to catch - here that shape is the point, not an
-	// accident, and the cap is what keeps the exception safe.
-	{Key: GenAIAgentVersion, Class: Bounded, Cap: 32, IDLike: true,
+	// A value set that turns over rather than accumulates: the hash changes only when
+	// codex ships a new system prompt, and the guard's state is per-process, so a
+	// long-lived process sees a handful. It is IDLike because a truncated sha256 is
+	// exactly what the corpus test's "does this look like an identifier" heuristic is
+	// built to catch - here that shape is the point, not an accident, and the cap is
+	// what keeps the exception safe.
+	//
+	// Cap raised 32 -> 96 on 2026-08-08, when the corpus reached 35 distinct hashes
+	// over 10,290 turns and the old cap failed. The premise still holds and this is
+	// not a slow leak: the corpus is an ACCUMULATION of every archive ever synced
+	// (26 hours across three days by then), while the guard only ever sees one
+	// process's lifetime. The two count different things, and the corpus number is
+	// always the larger one - so the cap has to be sized against the corpus, which
+	// grows, rather than against the runtime, which does not. 96 is roughly the
+	// observed rate (~12/day of retained corpus) times two months of headroom; if it
+	// fails again, check the growth rate before raising it, because a JUMP rather
+	// than a drift would mean the hash has stopped tracking system-prompt identity.
+	{Key: GenAIAgentVersion, Class: Bounded, Cap: 96, IDLike: true,
 		Of: func(t *turn.Turn) string { return t.InstructionsHash }},
 	{Key: ErrorType, Class: Bounded, Cap: 32,
 		Of: func(t *turn.Turn) string { return t.ErrorType }},

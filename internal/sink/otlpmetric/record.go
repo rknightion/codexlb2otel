@@ -248,9 +248,17 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 			// gen_ai.agent.name/version for the same reason as recordTokens above -
 			// this is the instrument that drives the Agents table's request, error and
 			// latency columns.
+			// ServiceTierRequested joins the three latency sets (here, turnDuration
+			// and ttft below) and nowhere else. It is the only place the tier can pay
+			// for itself: the whole reason to ask for priority is latency, and both
+			// tier attributes were narrowed out of every duration instrument, so the
+			// contract could say which tier a response ran under while no instrument
+			// could say whether it made any difference. Its value set is at most one
+			// per deployment at a time, so it costs ~nothing beyond the changeover.
 			attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
 				attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Status,
-				attr.ErrorType, attr.GenAIAgentName, attr.GenAIAgentVersion)
+				attr.ErrorType, attr.GenAIAgentName, attr.GenAIAgentVersion,
+				attr.ServiceTierRequested)
 			s.inst.operationDuration.Record(ctx, d, otelmetric.WithAttributes(toOtel(attrs)...))
 		}
 	}
@@ -261,7 +269,7 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 	if t.RequestKind == requestKindTurn && !t.TurnStart.IsZero() && !t.ServerCompletedAt.IsZero() {
 		if d := t.ServerCompletedAt.Sub(t.TurnStart).Seconds(); d >= 0 {
 			attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-				attr.GenAIRequestModel, attr.AccountID)
+				attr.GenAIRequestModel, attr.AccountID, attr.ServiceTierRequested)
 			s.inst.turnDuration.Record(ctx, d, otelmetric.WithAttributes(toOtel(attrs)...))
 		}
 	}
@@ -269,7 +277,7 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 	if t.TTFTMs > 0 {
 		attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
 			attr.GenAIRequestModel, attr.AccountID, attr.RequestKind,
-			attr.GenAIAgentName, attr.GenAIAgentVersion)
+			attr.GenAIAgentName, attr.GenAIAgentVersion, attr.ServiceTierRequested)
 		s.inst.ttft.Record(ctx, msToS(t.TTFTMs), otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 

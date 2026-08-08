@@ -42,12 +42,17 @@ var semconvJustified = map[string]string{
 	ErrorCode:            "the provider's own error code enum; error.type (the convention's low-cardinality discriminator) is already mapped as a separate field",
 
 	// --- codex-lb's own load-balancing and account model ---
-	AccountID:    "which load-balanced account served the request - no GenAI concept",
-	PlanType:     "the subscription tier the rate limits are measured against - no GenAI concept",
-	ServiceTier:  "codex-lb's default/auto tier - not verified equivalent to openai.response.service_tier (a different, provider-specific namespace); left unmapped rather than guessed",
-	ThreadSource: "user vs subagent thread origin - no GenAI concept at this granularity",
-	SubagentKind: "how a subagent thread was created - no GenAI concept",
-	Originator:   "the client binary (codex-tui / codex_exec / the probe) - no GenAI concept",
+	AccountID:   "which load-balanced account served the request - no GenAI concept",
+	PlanType:    "the subscription tier the rate limits are measured against - no GenAI concept",
+	ServiceTier: "codex-lb's default/auto tier - not verified equivalent to openai.response.service_tier (a different, provider-specific namespace); left unmapped rather than guessed",
+	// Same provider-specific namespace question as its sibling, plus one the registry
+	// does not raise at all: the convention has no notion of a REQUESTED tier as
+	// distinct from a served one. openai.response.service_tier is, by its name, the
+	// response's - there is no openai.request.service_tier to map this to.
+	ServiceTierRequested: "the tier the client asked for, which the convention has no key for at all - openai.response.service_tier names the served value and this is deliberately not that; see the ServiceTierRequested const",
+	ThreadSource:         "user vs subagent thread origin - no GenAI concept at this granularity",
+	SubagentKind:         "how a subagent thread was created - no GenAI concept",
+	Originator:           "the client binary (codex-tui / codex_exec / the probe) - no GenAI concept",
 
 	// --- identifiers and lifecycle detail below gen_ai.conversation.id / gen_ai.response.id ---
 	// Forking a conversation is a codex-lb concept, not a model-API one, so there is

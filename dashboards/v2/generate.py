@@ -730,6 +730,29 @@ isolate what a stage costs by comparing two of them rather than trusting a singl
         unit="s", opts=LEG,
         desc="TTFT dominates perceived responsiveness far more than total duration does."))
     p.append(panel(
+        "Time to first token by REQUESTED service tier",
+        hist_quantiles("gen_ai.client.time_to_first_token", "codexlb_service_tier_requested",
+                       "asked={{codexlb_service_tier_requested}}"),
+        unit="s", opts=LEG,
+        desc="Whether priority processing is worth having. Grouped by what the client "
+             "ASKED for, because what the server reports having served is not a usable "
+             "answer: across every response after the 2026-08-08 cutover the request said "
+             "priority and the response said default, never once priority. So this panel, "
+             "and the mean below, are the measurement - the served label is not. "
+             "The series with no tier is the pre-cutover baseline, absent rather than "
+             "empty; once every request asks for a tier it stops advancing and the "
+             "comparison becomes historical rather than live."))
+    p.append(panel(
+        "Turn duration mean by requested service tier",
+        hist_avg("codexlb.turn.duration", "codexlb_service_tier_requested",
+                 "asked={{codexlb_service_tier_requested}}"),
+        unit="s", opts=LEG,
+        desc="The mean, not a quantile, and end-to-end rather than to-first-token: a "
+             "tier change should move the whole distribution, and comparing two p95s "
+             "across a changeover conflates the shift with whatever else moved in the "
+             "window. Read it alongside the TTFT panel above - TTFT is where a queueing "
+             "change shows up first and largest."))
+    p.append(panel(
         "Response duration, with stages excluded", [
             q(f'histogram_quantile(0.95, sum by (le) (rate({prom("codexlb.responses_excl_engine_and_tool", "_bucket")}'
               f'{sel()}[$__rate_interval])))', "excl engine and tool", "A"),
@@ -877,6 +900,19 @@ def tab_limits():
         ], "table", opts=TABLE_OPTS,
         desc="Plan governs the limits; tier governs the queue. Both change what a given "
              "latency number means."))
+    p.append(panel(
+        "Requested vs served service tier", [
+            q(f'sum by (codexlb_service_tier_requested, codexlb_service_tier) '
+              f'(increase({prom("codexlb.responses")}{sel()}[$__range]))', "", instant=True),
+        ], "table", opts=TABLE_OPTS,
+        desc="What was asked for against what the platform says it served. These do NOT "
+             "agree and are not expected to: measured over the 332 responses following "
+             "the 2026-08-08 priority cutover, every request asked priority and every "
+             "response reported default (321) or auto (9). Whether that is the platform "
+             "declining to serve priority or simply not reporting it is not answerable "
+             "from the capture, so both sides are carried and this panel shows the "
+             "disagreement rather than resolving it. The latency tab is where the "
+             "question of whether it MATTERS gets answered."))
     p.append(panel(
         "Engine calls by account", [
             q(f'sum by (codexlb_account_id) (rate({prom("codexlb.engine_calls")}{sel()}[$__rate_interval]))',

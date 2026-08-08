@@ -272,6 +272,10 @@ type createEvent struct {
 	Text struct {
 		Verbosity string `json:"verbosity"`
 	} `json:"text"`
+	// ServiceTier is the tier the client ASKS for, and is top-level on response.create
+	// rather than nested under a response object the way the server's own reading is.
+	// See Turn.ServiceTierRequested for why the two are kept apart.
+	ServiceTier    string         `json:"service_tier"`
 	Instructions   string         `json:"instructions"`
 	PrevResponseID string         `json:"previous_response_id"`
 	PromptCacheKey string         `json:"prompt_cache_key"`
@@ -438,6 +442,7 @@ func (r *Reducer) applyCreate(t *Turn, ev frame.Event) {
 	t.ReasoningCtx = c.Reasoning.Context
 	t.ReasoningMode = c.Reasoning.Mode
 	t.Verbosity = c.Text.Verbosity
+	t.ServiceTierRequested = c.ServiceTier
 	t.InputItems = len(c.Input)
 	t.PrevResponseID = c.PrevResponseID
 	t.PromptCacheKey = c.PromptCacheKey

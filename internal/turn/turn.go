@@ -56,13 +56,24 @@ type Turn struct {
 	PromptCacheKey     string `json:"prompt_cache_key,omitempty"`
 
 	// Low cardinality - safe as metric attributes.
-	Model       string `json:"model,omitempty"`
-	Status      string `json:"status,omitempty"`
-	Effort      string `json:"reasoning_effort,omitempty"`
-	Verbosity   string `json:"verbosity,omitempty"`
-	ServiceTier string `json:"service_tier,omitempty"`
-	PlanType    string `json:"plan_type,omitempty"`
-	IsSubagent  bool   `json:"is_subagent"`
+	Model     string `json:"model,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Effort    string `json:"reasoning_effort,omitempty"`
+	Verbosity string `json:"verbosity,omitempty"`
+	// ServiceTier is the tier the SERVER reports, from response.created and
+	// response.completed. ServiceTierRequested is what the CLIENT asked for, from
+	// response.create. They are two sides of the wire and they do not agree: over the
+	// 332 responses following the 2026-08-08T12:13:41Z priority cutover, every request
+	// asked for "priority" and every response came back "default" (321) or "auto" (9),
+	// never "priority". Whether that is the platform declining to serve priority or
+	// simply not reporting it is not decidable from the capture - TTFT moved ~30% in
+	// the same window, which says the request is doing something - so both are carried
+	// and neither is allowed to overwrite the other. Collapsing them into one field
+	// would have made the question unaskable.
+	ServiceTier          string `json:"service_tier,omitempty"`
+	ServiceTierRequested string `json:"service_tier_requested,omitempty"`
+	PlanType             string `json:"plan_type,omitempty"`
+	IsSubagent           bool   `json:"is_subagent"`
 
 	// Temperature and TopP are request parameters read from response.completed. #18
 	// recorded both as absent - wrong, per #22 item 2: they are present on every

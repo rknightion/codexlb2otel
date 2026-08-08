@@ -641,7 +641,10 @@ func report(w io.Writer, t *turn.Turn, maxText int) {
 	kv(w, "verbosity", t.Verbosity)
 	kv(w, "reasoning context", t.ReasoningCtx)
 	kv(w, "reasoning mode", t.ReasoningMode)
-	kv(w, "service tier", t.ServiceTier)
+	// Both sides, always, and labelled as such: they routinely disagree, and a single
+	// "service tier" line would silently pick a winner.
+	kv(w, "service tier (asked)", t.ServiceTierRequested)
+	kv(w, "service tier (served)", t.ServiceTier)
 	kv(w, "parallel tool calls", fmt.Sprint(t.ParallelTools))
 	fmt.Fprintln(w)
 	// Request kind and thread source are the actual "why": a subagent turn inherits
