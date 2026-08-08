@@ -163,6 +163,38 @@ health:
   # endpoint URLs and internal state) is meant to be reachable off the box.
   listen: "127.0.0.1:9464"
 
+live:
+  # enabled turns on the in-process web view of recent conversation activity: parent
+  # threads, the subagents they spawned, and what each is doing - completed turns and
+  # responses still running.
+  #
+  # It is a WINDOW, not a destination. Nothing is persisted; a restart empties it.
+  enabled: false
+  # listen is its OWN port, deliberately not shared with health. /healthz serves the
+  # whole config dump, and exposing this view must not drag that along with it.
+  listen: "127.0.0.1:9465"
+  # token, when set, is required on every request as `Authorization: Bearer <token>`
+  # or as a `token` query parameter. The query form exists because a browser's
+  # EventSource cannot set headers. Supports ${ENV} and file: like every other secret.
+  token: ""
+  # retain_turns bounds the in-memory ring. Everything the view serves derives from
+  # it, so it is this feature's entire memory cost.
+  retain_turns: 500
+  # retain_window hides threads that have been idle longer than this.
+  retain_window: 2h
+  # content serves message bodies. This page shows prompts, assistant messages and
+  # whole command output - the README's content warning applies to a browser exactly
+  # as it applies to Loki. Set false for a structural view: models, tool names,
+  # subagent kinds, timings and token counts, with no prose anywhere.
+  content: true
+  # include_probe keeps this service's own synthetic health traffic in the view. Off
+  # by default; it would otherwise dominate a quiet period.
+  include_probe: false
+  # allow_insecure permits a non-loopback listen with no token. Without it, that
+  # combination is a STARTUP ERROR rather than a warning - an unauthenticated
+  # transcript feed is not something to discover from a log line later.
+  allow_insecure: false
+
 log:
   # level is debug | info | warn | error.
   level: info

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codexlb2otel — live</title>
+<style>
+  /* Light unconditionally, NOT via prefers-color-scheme. That media query would hand the
+     decision to the viewer's OS, which is exactly what makes a page open dark on a
+     dark-mode machine no matter what the page intended. Dark is reachable, but only by
+     asking for it. Every colour is defined here first; the dark block below only
+     re-points them, so nothing has its sole definition inside a conditional. */
+  :root {
+    --bg: #fbfbfd; --panel: #ffffff; --line: #dcdfe6; --fg: #1c1f26;
+    --dim: #5f6774; --accent: #2c5fd0; --run: #1c7a3f; --err: #bc2f47; --sub: #6b3fa0;
+    --shadow: 0 1px 2px rgba(16, 20, 30, .06);
+  }
+  :root[data-theme="dark"] {
+    --bg: #12141a; --panel: #1a1d26; --line: #2a2f3d; --fg: #e6e8ee;
+    --dim: #8b93a7; --accent: #7aa2f7; --run: #9ece6a; --err: #f7768e; --sub: #bb9af7;
+    --shadow: none;
+  }
+  #theme { margin-left: auto; background: none; border: 1px solid var(--line); color: var(--dim);
+           font: inherit; font-size: 12px; padding: .1rem .5rem; border-radius: 4px; cursor: pointer; }
+  #theme:hover { color: var(--fg); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  header { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap;
+           padding: .75rem 1rem; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .meta { color: var(--dim); font-size: 12px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--err); margin-right: .4rem; }
+  .dot.up { background: var(--run); }
+  main { padding: 1rem; display: grid; gap: .5rem; max-width: 1200px; }
+  .thread { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: .6rem .8rem; box-shadow: var(--shadow); }
+  .thread.child { margin-left: 1.5rem; border-left: 2px solid var(--sub); }
+  .row1 { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+  .id { color: var(--dim); font-size: 11px; }
+  .model { color: var(--accent); font-size: 12px; }
+  .badge { font-size: 11px; padding: .05rem .4rem; border-radius: 3px; border: 1px solid var(--line); color: var(--dim); }
+  .badge.sub { color: var(--sub); border-color: var(--sub); }
+  .badge.run { color: var(--run); border-color: var(--run); }
+  .badge.err { color: var(--err); border-color: var(--err); }
+  .headline { margin-top: .25rem; overflow-wrap: anywhere; }
+  .activity { margin-top: .15rem; color: var(--dim); font-size: 12px; overflow-wrap: anywhere; }
+  .activity.live { color: var(--run); }
+  .stats { color: var(--dim); font-size: 11px; margin-top: .3rem; }
+  .empty { color: var(--dim); padding: 2rem 1rem; }
+  .warn { color: var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <h1><span id="dot" class="dot"></span>codexlb2otel live</h1>
+  <span class="meta" id="status">connecting…</span>
+  <span class="meta" id="counts"></span>
+  <span class="meta" id="lag"></span>
+  <button id="theme" type="button">dark</button>
+</header>
+<main id="root"><div class="empty">waiting for the first snapshot…</div></main>
+
+<script>
+(function () {
+  var root = document.getElementById("root");
+  var statusEl = document.getElementById("status");
+  var countsEl = document.getElementById("counts");
+  var lagEl = document.getElementById("lag");
+  var dot = document.getElementById("dot");
+  var pollMs = 0;
+
+  // Light is the default; dark is opt-in and remembered per browser. Deliberately not
+  // seeded from prefers-color-scheme - that would put the OS back in charge of a default
+  // this page has already chosen.
+  var themeBtn = document.getElementById("theme");
+  function applyTheme(t) {
+    if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
+    else document.documentElement.removeAttribute("data-theme");
+    themeBtn.textContent = t === "dark" ? "light" : "dark";
+  }
+  var stored = null;
+  // localStorage throws outright in some privacy modes; a theme toggle is not worth
+  // taking the whole page down for.
+  try { stored = localStorage.getItem("codexlb2otel-theme"); } catch (e) { /* ignore */ }
+  applyTheme(stored);
+  themeBtn.addEventListener("click", function () {
+    var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    applyTheme(next);
+    try { localStorage.setItem("codexlb2otel-theme", next); } catch (e) { /* ignore */ }
+  });
+
+  // The token travels in the query string because EventSource cannot set headers.
+  var token = new URLSearchParams(location.search).get("token");
+  var qs = token ? "?token=" + encodeURIComponent(token) : "";
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    // textContent, never innerHTML: everything below is conversation text the model
+    // wrote, and this page exists to display exactly the untrusted string.
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function ago(iso) {
+    var d = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (!isFinite(d)) return "";
+    if (d < 60) return Math.max(0, Math.round(d)) + "s ago";
+    if (d < 3600) return Math.round(d / 60) + "m ago";
+    return Math.round(d / 3600) + "h ago";
+  }
+
+  function renderThread(t, isChild, content) {
+    var box = el("div", "thread" + (isChild ? " child" : ""));
+
+    var row = el("div", "row1");
+    if (t.is_subagent) row.appendChild(el("span", "badge sub", t.subagent_kind || "subagent"));
+    if (t.running > 0) row.appendChild(el("span", "badge run", t.running + " running"));
+    if (t.errors > 0) row.appendChild(el("span", "badge err", t.errors + " err"));
+    if (t.orphaned) row.appendChild(el("span", "badge", "parent aged out"));
+    if (t.model) row.appendChild(el("span", "model", t.model + (t.reasoning_effort ? " · " + t.reasoning_effort : "")));
+    row.appendChild(el("span", "id", t.thread_id));
+    box.appendChild(row);
+
+    if (t.headline) {
+      box.appendChild(el("div", "headline", t.headline));
+    } else if (!content) {
+      box.appendChild(el("div", "headline warn", "(content disabled)"));
+    }
+    if (t.activity) {
+      box.appendChild(el("div", "activity" + (t.running > 0 ? " live" : ""), "→ " + t.activity));
+    }
+
+    box.appendChild(el("div", "stats",
+      t.turns + " turns · " + (t.total_tokens || 0).toLocaleString() + " tok" +
+      (t.reasoning_tokens ? " (" + t.reasoning_tokens.toLocaleString() + " reasoning)" : "") +
+      " · " + ago(t.last_seen)));
+
+    var frag = document.createDocumentFragment();
+    frag.appendChild(box);
+    (t.children || []).forEach(function (c) {
+      frag.appendChild(renderThread(c, true, content));
+    });
+    return frag;
+  }
+
+  function render(snap) {
+    if (snap.poll_interval_ms) pollMs = snap.poll_interval_ms;
+    var roots = snap.roots || [];
+    var running = (snap.running || []).length;
+    countsEl.textContent = roots.length + " threads · " + running + " running";
+    lagEl.textContent = pollMs
+      ? "in-flight refreshes every " + Math.round(pollMs / 1000) + "s"
+      : "";
+
+    root.replaceChildren();
+    if (!roots.length) {
+      root.appendChild(el("div", "empty", "no activity in the retention window."));
+      return;
+    }
+    roots.forEach(function (t) { root.appendChild(renderThread(t, false, snap.content)); });
+  }
+
+  function connect() {
+    var es = new EventSource("/api/stream" + qs);
+    es.addEventListener("open", function () {
+      dot.className = "dot up";
+      statusEl.textContent = "live";
+    });
+    es.addEventListener("snapshot", function (e) {
+      render(JSON.parse(e.data));
+    });
+    es.addEventListener("error", function () {
+      dot.className = "dot";
+      statusEl.textContent = "reconnecting…";
+      // EventSource retries on its own; closing here would defeat that.
+    });
+  }
+
+  // The snapshot carries poll_interval_ms only on the REST route, so fetch once for it
+  // and then live on the stream.
+  fetch("/api/threads" + qs)
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(render)
+    .catch(function (e) { statusEl.textContent = "error: " + e; })
+    .finally(connect);
+})();
+</script>
+</body>
+</html>

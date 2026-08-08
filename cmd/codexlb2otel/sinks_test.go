@@ -57,7 +57,7 @@ func TestBuildSinks_OneEntryPerEnabledDestination(t *testing.T) {
 			credentialed(t, &cfg)
 			tc.cfg(&cfg)
 
-			got, guard, metricsSink, err := buildSinks(t.Context(), cfg, log)
+			got, guard, metricsSink, _, err := buildSinks(t.Context(), cfg, log)
 			if err != nil {
 				t.Fatalf("buildSinks: %v", err)
 			}
@@ -98,7 +98,7 @@ func TestBuildSinks_AllSinksShareOneGuard(t *testing.T) {
 	cfg.Loki.Enabled, cfg.OTLP.Metrics.Enabled, cfg.OTLP.Traces.Enabled = true, true, true
 	cfg.AgentO11y.Enabled = true
 
-	snk, guard, _, err := buildSinks(t.Context(), cfg, slog.New(slog.DiscardHandler))
+	snk, guard, _, _, err := buildSinks(t.Context(), cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("buildSinks: %v", err)
 	}

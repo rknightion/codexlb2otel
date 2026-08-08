@@ -17,6 +17,7 @@ import (
 
 	"github.com/rknightion/codexlb2otel/internal/config"
 	"github.com/rknightion/codexlb2otel/internal/health"
+	"github.com/rknightion/codexlb2otel/internal/live"
 	"github.com/rknightion/codexlb2otel/internal/selfobs"
 	"github.com/rknightion/codexlb2otel/internal/sink"
 	"github.com/rknightion/codexlb2otel/internal/sink/otlpmetric"
@@ -69,13 +70,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	snk, _, metricsSink, err := buildSinks(ctx, cfg, log)
+	snk, _, metricsSink, liveStore, err := buildSinks(ctx, cfg, log)
 	if err != nil {
 		log.Error("build sinks", "err", err)
 		os.Exit(1)
 	}
 
-	if err := run(ctx, cfg, log, snk, metricsSink); err != nil && !errors.Is(err, context.Canceled) {
+	if err := run(ctx, cfg, log, snk, metricsSink, liveStore); err != nil && !errors.Is(err, context.Canceled) {
 		log.Error("exited with error", "err", err)
 		os.Exit(1)
 	}
@@ -123,7 +124,9 @@ func newLogger(cfg config.Log) *slog.Logger {
 // metricsSink is nil whenever OTLP metrics are disabled (buildSinks' own doc
 // comment); self-observability (issue #8) is then simply not wired up, since there is
 // no metrics pipeline for it to share.
-func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink, metricsSink *otlpmetric.Sink) error {
+// liveStore is nil whenever the live view is disabled, in which case no second
+// listener is started and nothing observes the watcher's in-flight snapshot.
+func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink, metricsSink *otlpmetric.Sink, liveStore *live.Store) error {
 	reducer := turn.New()
 	w, err := tail.New(tail.Config{
 		Dir:            cfg.Archive.Dir,
@@ -154,6 +157,32 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 	if cfg.Health.Enabled {
 		hsrv = health.New(cfg, log)
 		go func() { healthDone <- hsrv.Run(ctx) }()
+	}
+
+	liveDone := make(chan error, 1)
+	if liveStore != nil {
+		// The in-flight source is wired here for the same reason self-observability is:
+		// it needs w, which did not exist when buildSinks ran. Watcher.InFlight takes no
+		// lock (see its doc comment and issue #29), so an HTTP handler calling it cannot
+		// contend with, let alone deadlock against, the poll goroutine.
+		liveStore.SetInFlightSource(w.InFlight)
+		// Resolve rather than dereference: the token may be an ${ENV} or file: reference,
+		// and Validate has already proved it resolves. Empty is skipped rather than
+		// resolved - the token is optional here, and Resolve rightly rejects an unset
+		// value for a credential that is required.
+		var token string
+		if cfg.Live.Token != "" {
+			var err error
+			if token, err = cfg.Live.Token.Resolve(); err != nil {
+				return fmt.Errorf("live.token: %w", err)
+			}
+		}
+		lsrv := live.NewServer(liveStore, live.ServerConfig{
+			Listen:       cfg.Live.Listen,
+			Token:        token,
+			PollInterval: cfg.Archive.PollInterval,
+		}, log)
+		go func() { liveDone <- lsrv.Run(ctx) }()
 	}
 
 	log.Info("starting",
@@ -188,8 +217,12 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 	if hsrv != nil {
 		healthErr = <-healthDone
 	}
+	var liveErr error
+	if liveStore != nil {
+		liveErr = <-liveDone
+	}
 
-	return errors.Join(runErr, flushErr, closeErr, healthErr)
+	return errors.Join(runErr, flushErr, closeErr, healthErr, liveErr)
 }
 
 // sinkEmit adapts a Sink into the tail.Emit function Watcher.Run/Poll call.

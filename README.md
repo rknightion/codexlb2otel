@@ -21,8 +21,14 @@ which appears in codex-lb's own metrics or its Postgres request log.
 
 This ships **full conversation content** to Loki — assistant messages, tool input, and complete
 command stdout. Anything the agent printed, including a secret it happened to `cat`, lands in your
-log store. That is a deliberate choice for a private, single-tenant deployment. Set
-`emit.loki.content: false` for an event timeline without bodies.
+log store. That is a deliberate choice for a private, single-tenant deployment.
+
+Each content kind is its own Loki line, so `loki.record_types` is the control: listing only
+`turn`, `transport` and `error` gives an event timeline with no bodies, dropping `prompt`,
+`message`, `tool_call`, `tool_output`, `agent_message` and `instructions`. Empty means all of them.
+
+The same warning applies to the [live view](#live-view), which serves that content to a browser and
+has its own `live.content` switch.
 
 ## The corpus
 
@@ -150,6 +156,46 @@ Tool `parameters` and `format` subtrees are recorded opaquely. They are JSON Sch
 writes to describe its own tool config, and walking them buried two real findings under 217 noise
 items the first time a capture contained a tool the baseline lacked. Tool identity is still tracked
 at `tools[].name`, so a genuinely new tool still surfaces.
+
+## Live view
+
+A web view of what is happening right now: parent threads, the subagents they spawned nested
+underneath, and a one-liner on what each is doing. Off by default; served by the daemon itself on
+its own port.
+
+```yaml
+live:
+  enabled: true
+  listen: "127.0.0.1:9465"
+```
+
+Then open `http://127.0.0.1:9465`. It streams over SSE and needs no build step — the page is
+embedded in the binary and loads nothing from the network.
+
+Each thread shows what it was **asked** to do (the newest human prompt, or for a subagent the task
+it was spawned with) and what it is **doing** (the newest tool call, or `thinking` / `writing`).
+Subagents attach to the exact turn that spawned them via `parent_turn_id`, falling back to
+`parent_thread_id`; one whose parent has aged out is promoted to the top level and flagged rather
+than hidden.
+
+`/api/threads` and `/api/stream` serve the same data as JSON if you would rather build something
+else on it.
+
+**It is a window, not a store.** Nothing is persisted — a restart empties it, and Loki remains the
+record. `retain_turns` (default 500) bounds the ring everything else is derived from.
+
+**Latency is bounded by `archive.poll_interval`**, 5s by default. Running responses refresh at that
+cadence; this is not token-by-token streaming, and the page says so in its header.
+
+Two things worth setting deliberately:
+
+- **It serves conversation content.** `live.content: false` gives a structural view — models, tool
+  names, subagent kinds, timings, token counts — with no prose anywhere.
+- **Exposing it off-loopback requires a decision.** A non-loopback `live.listen` with no
+  `live.token` is a startup error, not a warning; set the token, or set
+  `live.allow_insecure: true` to say you meant it. `live.token` is accepted as
+  `Authorization: Bearer <token>` or as `?token=` — the query form exists because a browser's
+  `EventSource` cannot set headers.
 
 ## Status
 

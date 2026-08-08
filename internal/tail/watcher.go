@@ -127,6 +127,16 @@ type Watcher struct {
 	// one, which for an operational metric is not a cost at all.
 	progress atomic.Pointer[Progress]
 
+	// inflight is the published view InFlight returns, for internal/live's "what is
+	// running right now" rows. Kept as a SEPARATE pointer from progress rather than a
+	// field on it, because Progress is what internal/selfobs consumes on the metrics
+	// SDK's collection path: folding a slice that grows with concurrent responses into
+	// the struct an async instrument callback copies on every scrape would make a
+	// metrics tick pay for a UI feature.
+	//
+	// Everything the progress field says about locking applies here identically.
+	inflight atomic.Pointer[[]turn.InFlight]
+
 	// Stats are cumulative counters for self-observability.
 	Stats Stats
 }
@@ -195,9 +205,26 @@ func (w *Watcher) Progress() Progress {
 	return Progress{}
 }
 
-// publishProgress snapshots the watcher for Progress to serve. The caller must hold
-// mu for writing - every field it reads is one Poll mutates, and reducer.Open() walks
-// a map Poll writes to.
+// InFlight reports the responses the reducer had open as of the last completed pass,
+// oldest first. Never nil.
+//
+// Like Progress it TAKES NO LOCK, for the same reason and with the same force: see the
+// progress field's comment for the self-deadlock (#29) that reading watcher state under
+// mu from a caller outside the poll goroutine produced. A live view refreshing over HTTP
+// is a second such caller, and it is not permitted to be the one that reintroduces it.
+//
+// Freshness is therefore bounded by archive.poll_interval, not by how often it is
+// called. Callers that show this to a human should say so.
+func (w *Watcher) InFlight() []turn.InFlight {
+	if p := w.inflight.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+// publishProgress snapshots the watcher for Progress and InFlight to serve. The caller
+// must hold mu for writing - every field it reads is one Poll mutates, and both
+// reducer.Open() and reducer.InFlight() walk a map Poll writes to.
 func (w *Watcher) publishProgress() {
 	var offset int64
 	if w.currentFile != "" {
@@ -212,6 +239,8 @@ func (w *Watcher) publishProgress() {
 		ReducerSeriesCount: w.reducerStateEntries[0],
 		ReducerThreadCount: w.reducerStateEntries[1],
 	})
+	f := w.reducer.InFlight()
+	w.inflight.Store(&f)
 }
 
 // New builds a Watcher, restoring reducer state and offsets from the checkpoint.
