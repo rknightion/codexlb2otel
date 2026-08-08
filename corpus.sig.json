@@ -1,9 +1,9 @@
 {
   "version": 3,
   "coverage": {
-    "files": 16,
-    "file_bytes": 1932055791,
-    "read_bytes": 1932055791,
+    "files": 26,
+    "file_bytes": 2178562038,
+    "read_bytes": 2178562038,
     "sampled": false
   },
   "storage": {
@@ -288,7 +288,7 @@
       }
     },
     "codex.rate_limits": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "additional_rate_limits": {
           "types": [
@@ -459,7 +459,7 @@
       }
     },
     "codex.response.metadata": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "headers": {
           "types": [
@@ -493,7 +493,7 @@
       }
     },
     "error": {
-      "magnitude": 0,
+      "magnitude": 1,
       "paths": {
         "error": {
           "types": [
@@ -546,7 +546,7 @@
       }
     },
     "response.completed": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "response": {
           "types": [
@@ -1167,7 +1167,7 @@
       }
     },
     "response.content_part.added": {
-      "magnitude": 2,
+      "magnitude": 3,
       "paths": {
         "content_index": {
           "types": [
@@ -1228,7 +1228,7 @@
       }
     },
     "response.content_part.done": {
-      "magnitude": 2,
+      "magnitude": 3,
       "paths": {
         "content_index": {
           "types": [
@@ -1289,7 +1289,7 @@
       }
     },
     "response.create": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "client_metadata": {
           "types": [
@@ -1787,6 +1787,14 @@
             "xhigh"
           ]
         },
+        "service_tier": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "priority"
+          ]
+        },
         "store": {
           "types": [
             "bool"
@@ -1909,7 +1917,7 @@
       }
     },
     "response.created": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "response": {
           "types": [
@@ -2604,7 +2612,7 @@
       }
     },
     "response.in_progress": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "response": {
           "types": [
@@ -3535,7 +3543,7 @@
       }
     },
     "response.output_text.done": {
-      "magnitude": 2,
+      "magnitude": 3,
       "paths": {
         "content_index": {
           "types": [
@@ -3578,7 +3586,7 @@
       }
     },
     "responsesapi.websocket_timing": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "timing_metrics": {
           "types": [

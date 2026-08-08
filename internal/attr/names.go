@@ -234,8 +234,15 @@ const (
 	AccountID = "codexlb.account_id"
 	// PlanType is the subscription tier the rate limits are measured against.
 	PlanType = "codexlb.plan_type"
-	// ServiceTier is default | auto.
+	// ServiceTier is the tier the SERVER reported: default | auto.
 	ServiceTier = "codexlb.service_tier"
+	// ServiceTierRequested is the tier the CLIENT asked for: priority, or absent when
+	// the request named none. Deliberately a separate key rather than a second value
+	// set on ServiceTier, because the two disagree on every response measured since
+	// priority processing was switched on - see Turn.ServiceTierRequested. A dashboard
+	// that wants to know whether priority is worth having has to be able to select on
+	// what was asked for, independently of what the server says it did.
+	ServiceTierRequested = "codexlb.service_tier_requested"
 	// ThreadSource is user | subagent.
 	ThreadSource = "codexlb.thread_source"
 	// SubagentKind describes how a subagent thread was created.

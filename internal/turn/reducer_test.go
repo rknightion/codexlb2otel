@@ -72,6 +72,32 @@ func reduceUntil(t *testing.T, what string, want func([]*Turn) bool) []*Turn {
 	return out
 }
 
+// enoughArchivesFor returns the fewest archives, cheapest first, that between them
+// reduce to at least want turns - and always an even number, so a caller splitting
+// the list in half gets two non-empty sides.
+//
+// For the tests that need the FILE LIST rather than just the turns. Same contract as
+// reduceUntil otherwise, including exhausting the corpus being a hard failure rather
+// than a silent pass over too little data.
+func enoughArchivesFor(t *testing.T, want int) []string {
+	t.Helper()
+	total := len(fixture.Files(t))
+	// fixture.Any is what selects the cheapest k AND puts them back in chronological
+	// order. Reducing them in size order instead would put the restart split at an
+	// arbitrary point in time, which is not the thing being tested.
+	for k := 2; k <= total; k += 2 {
+		files := fixture.Any(t, k)
+		if n := len(reduceFiles(t, files...)); n >= want {
+			t.Logf("%d turns across the %d cheapest archives", n, k)
+			return files
+		}
+	}
+	t.Fatalf("the corpus under %s does not reduce to %d turns across all %d archives. "+
+		"Add an archive hour - otherwise the property is tested against too little "+
+		"data to mean anything.", fixture.Root(t), want, total)
+	return nil
+}
+
 func feed(t *testing.T, r *Reducer, path string) []*Turn {
 	t.Helper()
 	res, err := archive.DecodeMembers(fixture.Load(t, path))
@@ -96,10 +122,11 @@ func feed(t *testing.T, r *Reducer, path string) []*Turn {
 // cumulative over a logical turn, so summing them raw overcounts by ~5.7x. Summed as
 // deltas they must instead track the independent per-response usage figure.
 func TestReducer_DeltasTrackUsage(t *testing.T) {
-	turns := corpusTurns(t, 3)
-	if len(turns) < 100 {
-		t.Fatalf("only %d turns; fixtures look wrong", len(turns))
-	}
+	// Asks for the turns it needs, not for three archives that used to hold them:
+	// corpusTurns takes the CHEAPEST n, and a 2026-08-08 sync of two quiet overnight
+	// hours (146 and 250 lines) left the three cheapest holding 13 turns. See #34.
+	turns := reduceUntil(t, "at least 100 turns to measure the delta ratio against",
+		func(ts []*Turn) bool { return len(ts) >= 100 })
 
 	// Exclude cold-start responses: with no prior baseline their delta absorbs work
 	// done before the reducer started watching, which is an over-count by definition
@@ -214,12 +241,19 @@ func TestReducer_EveryTurnHasIdentity(t *testing.T) {
 // A restart must not turn the next cumulative reading into one giant fake delta.
 // This is the reason Snapshot/Restore exists.
 func TestReducer_StateSurvivesRestart(t *testing.T) {
-	// Enough archives that the comparison below has real weight: two of the smallest
-	// left only 47 turns spanning the restart, which is thin evidence for the one
-	// mechanism this test exists to prove.
-	files := fixture.Any(t, 4)
+	// Enough archives that the comparison below has real weight, chosen by how many
+	// turns they actually hold rather than by a fixed count of files. Four of the
+	// cheapest was the previous rule and it decayed twice: to 47 turns once, and to 8
+	// after a 2026-08-08 sync of two quiet overnight hours (#34). A file count is a
+	// proxy for a turn count, and it is the proxy that keeps going stale.
+	//
+	// This test cannot use reduceUntil like its neighbours - it needs the FILE LIST to
+	// split into a before and an after, not just the turns - so it grows the list
+	// itself, on the same principle.
+	files := enoughArchivesFor(t, 200)
 	full := reduceFiles(t, files...)
-	before, after := files[:2], files[2:]
+	half := len(files) / 2
+	before, after := files[:half], files[half:]
 
 	r1 := New()
 	for _, f := range before {
@@ -462,8 +496,27 @@ func TestReducer_TurnIdentityComesFromClientMetadata(t *testing.T) {
 // critical_path is scoped per-response by the server, so it needs no delta conversion
 // and should agree with the delta arithmetic where both are available. Divergence
 // means one of the two is being misread.
+// comparableToDelta is the subset this test can actually check: critical_path was
+// captured AND the server called it trustworthy AND the delta path had a baseline to
+// diff against. Shared between the fixture predicate and the loop so the two cannot
+// drift into disagreeing about what "comparable" means.
+func comparableToDelta(x *Turn) bool {
+	return x.CriticalPath.Complete() && !x.BaselineReset && x.CriticalPath.EngineCalls != 0
+}
+
 func TestReducer_CriticalPathAgreesWithDeltas(t *testing.T) {
-	turns := corpusTurns(t, 3)
+	// Widened from the three cheapest archives for the reason in #34: a quiet hour
+	// carries few responses and proportionally fewer that clear the bar above.
+	turns := reduceUntil(t, "at least 20 responses comparable against the delta path",
+		func(ts []*Turn) bool {
+			n := 0
+			for _, x := range ts {
+				if comparableToDelta(x) {
+					n++
+				}
+			}
+			return n >= 20
+		})
 
 	var complete, partial, agree, compared int
 	for _, x := range turns {
@@ -477,7 +530,7 @@ func TestReducer_CriticalPathAgreesWithDeltas(t *testing.T) {
 		}
 		// Engine calls are integers reported by both paths, so they can be compared
 		// exactly. Skip cold starts, whose deltas absorb unobserved work.
-		if x.BaselineReset || !x.CriticalPath.Complete() || x.CriticalPath.EngineCalls == 0 {
+		if !comparableToDelta(x) {
 			continue
 		}
 		compared++
@@ -938,6 +991,61 @@ func TestReducer_RequestKindsAreNamed(t *testing.T) {
 		}
 	}
 	t.Logf("request kinds present: %v", kinds.keys())
+}
+
+// The requested and the served service tier are two fields and must stay two fields.
+//
+// Constructed rather than corpus-driven on purpose: the disagreement this pins is a
+// property of the wire protocol, but "priority" only entered the capture at
+// 2026-08-08T12:13:41Z, so a corpus test would assert nothing at all against any
+// archive set older than that - and would do it silently, which is the exact failure
+// mode internal/fixture exists to prevent. The values below are the real observed
+// combination (asked priority, served default), not an invented one.
+func TestReducer_RequestedAndServedServiceTiersAreSeparate(t *testing.T) {
+	r := New()
+	base := time.Date(2026, 8, 8, 12, 13, 41, 0, time.UTC)
+	var got *Turn
+	for i, ev := range []struct {
+		dir  string
+		text string
+	}{
+		{frame.ToServer, `{"type":"response.create","model":"gpt-5.6-sol",` +
+			`"service_tier":"priority","reasoning":{"effort":"medium"}}`},
+		// The server reports "auto" while streaming and settles on "default" - both
+		// are fed, because the last one wins and the completed value is the one the
+		// contract calls served.
+		{frame.ToCodex, `{"type":"response.created","response":{"id":"resp_x",` +
+			`"model":"gpt-5.6-sol","service_tier":"auto"}}`},
+		{frame.ToCodex, `{"type":"response.completed","response":{"id":"resp_x",` +
+			`"model":"gpt-5.6-sol","status":"completed","service_tier":"default",` +
+			`"usage":{"input_tokens":12,"output_tokens":3,"total_tokens":15}}}`},
+	} {
+		done, err := r.Add(&frame.Record{
+			RequestID: "ws_481fa8fa32724155a2ff8f372d7448ce",
+			Kind:      "responses",
+			Transport: "websocket",
+			Direction: ev.dir,
+			Headers:   frame.Headers{"originator": "codex-tui"},
+			Timestamp: base.Add(time.Duration(i) * time.Second),
+			Payload:   frame.Payload{Text: ev.text},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done != nil {
+			got = done
+		}
+	}
+	if got == nil {
+		t.Fatal("no turn emitted")
+	}
+	if got.ServiceTierRequested != "priority" {
+		t.Errorf("requested tier = %q, want priority - response.create's top-level "+
+			"service_tier is the only record of what was asked for", got.ServiceTierRequested)
+	}
+	if got.ServiceTier != "default" {
+		t.Errorf("served tier = %q, want default", got.ServiceTier)
+	}
 }
 
 // The *float64/*int/*bool idiom on timingEvent exists so a genuinely missing
