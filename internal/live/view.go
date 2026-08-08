@@ -12,9 +12,12 @@ type Snapshot struct {
 	At time.Time `json:"at"`
 	// Content reports whether bodies are being served, so the UI can say "content
 	// disabled" rather than render a conversation that looks mysteriously empty.
-	Content bool      `json:"content"`
-	Roots   []*Thread `json:"roots"`
-	Running []Running `json:"running"`
+	Content bool `json:"content"`
+	// StallAfterMs is the configured stall threshold, echoed so the UI can explain what
+	// "stalled" means rather than asserting it.
+	StallAfterMs int64     `json:"stall_after_ms,omitempty"`
+	Roots        []*Thread `json:"roots"`
+	Running      []Running `json:"running"`
 }
 
 // Thread is one conversation - a parent, or a subagent spawned by one.
@@ -63,6 +66,10 @@ type Thread struct {
 
 	Turns   int `json:"turns"`
 	Running int `json:"running"`
+	// Stalled counts this thread's open responses that have gone quiet past the
+	// threshold - the wedged case, which otherwise reads identically to a busy one
+	// because both display "thinking" forever.
+	Stalled int `json:"stalled"`
 	Errors  int `json:"errors"`
 
 	InputTokens     int `json:"input_tokens"`
@@ -106,7 +113,14 @@ func (th *Thread) observe(t *turn.Turn, content bool) {
 	th.ReasoningTokens += t.ReasoningTokens
 	th.TotalTokens += t.TotalTokens
 
-	setIfNotEmpty(&th.Ask, askOf(t, content))
+	// Only a root thread can have been asked anything. A fork inherits the parent's
+	// ENTIRE prompt history, so a user-role message found on one was addressed to the
+	// parent - deriving an ask from it stamped the same human sentence onto every
+	// subagent on screen, each claiming to have been told something it never was. A
+	// subagent's real instruction is the spawn message, which is encrypted.
+	if !t.IsSubagent {
+		setIfNotEmpty(&th.Ask, askOf(t, content))
+	}
 	setIfNotEmpty(&th.Latest, latestOf(t, content))
 	setIfNotEmpty(&th.Activity, activityOf(t, content))
 }
@@ -149,7 +163,11 @@ type Running struct {
 	// ARCHIVE's own clock. Deliberately not wall-clock-minus-start: the tail may be
 	// catching up on a backlog, and a row claiming a response has run for six hours
 	// because the file is old would be worse than useless.
-	ElapsedMs  int64     `json:"elapsed_ms"`
+	ElapsedMs int64 `json:"elapsed_ms"`
+	// QuietMs is how long since this response last produced a frame, measured on the
+	// archive's clock, and Stalled is that exceeding the threshold.
+	QuietMs    int64     `json:"quiet_ms"`
+	Stalled    bool      `json:"stalled,omitempty"`
 	StartedAt  time.Time `json:"started_at"`
 	LastFrame  time.Time `json:"last_frame"`
 	TextDeltas int       `json:"text_deltas"`

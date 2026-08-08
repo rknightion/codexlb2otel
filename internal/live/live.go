@@ -43,6 +43,9 @@ type Options struct {
 	// names, subagent kinds, timings - and no prompt or message bodies anywhere,
 	// including in the per-thread detail endpoint.
 	Content bool
+	// StallAfter is how long a response may go without a frame before it is reported
+	// stalled. Zero disables the check.
+	StallAfter time.Duration
 	// IncludeProbe keeps synthetic health-check traffic (Family "probe") in the view.
 	// Off by default: it is this service's own noise and it would otherwise dominate a
 	// quiet period.
@@ -58,6 +61,9 @@ func (o *Options) setDefaults() {
 	}
 	if o.RetainWindow <= 0 {
 		o.RetainWindow = 2 * time.Hour
+	}
+	if o.StallAfter < 0 {
+		o.StallAfter = 0
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -209,11 +215,11 @@ func (s *Store) rebuild() {
 		}
 	}
 
+	for _, id := range s.evictable(cutoff) {
+		delete(s.threads, id)
+	}
+
 	for id, th := range s.threads {
-		if th.LastSeen.Before(cutoff) {
-			delete(s.threads, id)
-			continue
-		}
 		// Both of these need every turn of the thread at once rather than one at a
 		// time - the task path is a majority vote, and the spawn list is a dedup - so
 		// they run here rather than in observe.
@@ -222,6 +228,74 @@ func (s *Store) rebuild() {
 		th.Spawned = SpawnedTasks(byThread[id])
 		th.Name = th.name()
 	}
+}
+
+// evictable lists the threads that may be dropped for being idle past cutoff.
+//
+// Two things are deliberately protected from the age check, because dropping either
+// makes the view lie rather than merely makes it shorter:
+//
+//   - A thread with a response still OPEN. Its newest completed turn can be arbitrarily
+//     old precisely because it has not finished one - so a plain age check evicts, with
+//     priority, the wedged agent that is the single most useful thing on the page.
+//
+//   - An ANCESTOR of anything kept. Eviction is per thread but the view is a tree, and
+//     removing a parent does not remove its children: they resurface as orphaned roots,
+//     so the run appears to gain top-level agents as it ages.
+func (s *Store) evictable(cutoff time.Time) []string {
+	keep := map[string]bool{}
+
+	var protect func(id string)
+	protect = func(id string) {
+		th := s.threads[id]
+		if th == nil || keep[id] {
+			return
+		}
+		keep[id] = true
+		if th.ParentThreadID != "" {
+			protect(th.ParentThreadID)
+		}
+		if th.ParentTurnID != "" {
+			protect(s.turnOwner[th.ParentTurnID])
+		}
+	}
+
+	if s.inFlightSrc != nil {
+		for _, f := range s.inFlightSrc() {
+			protect(f.ThreadID)
+		}
+	}
+	for id, th := range s.threads {
+		if !th.LastSeen.Before(cutoff) {
+			protect(id)
+		}
+	}
+
+	var out []string
+	for id := range s.threads {
+		if !keep[id] {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// newestTS is the archive's own clock: the newest timestamp anything has produced,
+// across both completed turns and open responses. See snapshotLocked for why this and
+// not time.Now.
+func (s *Store) newestTS(running []turn.InFlight) time.Time {
+	var newest time.Time
+	for _, t := range s.turns {
+		if t.LastTS.After(newest) {
+			newest = t.LastTS
+		}
+	}
+	for _, f := range running {
+		if f.LastTS.After(newest) {
+			newest = f.LastTS
+		}
+	}
+	return newest
 }
 
 // threadKey is the identity a thread is grouped under. ThreadID is the real one; a turn
@@ -264,16 +338,31 @@ func (s *Store) snapshotLocked() Snapshot {
 		clones[id] = &c
 	}
 
-	out := Snapshot{At: s.opts.Now(), Content: s.opts.Content}
+	// The reference for "how long has this been quiet" is the ARCHIVE's own newest
+	// timestamp, never wall clock. Wall clock would mark every response stalled whenever
+	// ingestion falls behind - replaying a backlog, or a slow poll - which is the one
+	// situation where a false stall alarm is guaranteed rather than merely possible.
+	//
+	// The consequence is deliberate: if EVERYTHING stops producing frames, nothing is
+	// reported stalled, because that is an ingestion outage rather than a wedged agent
+	// and /healthz is what answers for it.
+	ref := s.newestTS(running)
+
+	out := Snapshot{At: s.opts.Now(), Content: s.opts.Content, StallAfterMs: s.opts.StallAfter.Milliseconds()}
 	for _, f := range running {
 		if !s.opts.IncludeProbe && f.Family == "probe" {
 			continue
 		}
 		r := newRunning(f, s.opts.Content)
+		r.QuietMs = ref.Sub(f.LastTS).Milliseconds()
+		r.Stalled = s.opts.StallAfter > 0 && ref.Sub(f.LastTS) > s.opts.StallAfter
 		out.Running = append(out.Running, r)
 		if th := clones[f.ThreadID]; th != nil {
 			th.Running++
 			th.Activity = r.Activity
+			if r.Stalled {
+				th.Stalled++
+			}
 		}
 	}
 

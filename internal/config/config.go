@@ -238,7 +238,16 @@ type Live struct {
 	// so it is the feature's whole memory cost.
 	RetainTurns int `yaml:"retain_turns" json:"retain_turns"`
 	// RetainWindow hides threads idle for longer than this.
+	//
+	// It is an ADAPTIVE window, not a plain age cutoff: a thread with a response still
+	// open is kept however long it has been quiet, and so is any ancestor of a thread
+	// that is kept. Otherwise the view evicts, with priority, the wedged agent that is
+	// the most useful thing on it - and orphans the children of anything it drops.
 	RetainWindow time.Duration `yaml:"retain_window" json:"retain_window"`
+	// StallAfter is how long an open response may go without producing a frame before
+	// it is flagged stalled. Measured on the ARCHIVE's clock rather than wall clock, so
+	// ingestion falling behind does not mark everything stalled at once. Zero disables.
+	StallAfter time.Duration `yaml:"stall_after" json:"stall_after"`
 	// Content serves message bodies. False gives a structural view - models, tool names,
 	// subagent kinds, timings, token counts - with no prose anywhere.
 	Content bool `yaml:"content" json:"content"`
@@ -307,10 +316,16 @@ func Default() Config {
 		// config dump, and exposing the conversation view on a tailnet must not drag
 		// that along with it.
 		Live: Live{
-			Enabled:      false,
-			Listen:       "127.0.0.1:9465",
-			RetainTurns:  500,
-			RetainWindow: 2 * time.Hour,
+			Enabled: false,
+			Listen:  "127.0.0.1:9465",
+			// The ring is a MEMORY backstop, not the retention policy - retain_window is.
+			// At 500 it was the thing actually evicting: measured against a real fan-out on
+			// camden, 5 threads produced 238 turns in 19 minutes, so 500 turns held roughly
+			// 41 minutes and a wider fan-out would have held far less. Retention has to mean
+			// what it says, so the ring is set high enough not to bind first.
+			RetainTurns:  20000,
+			RetainWindow: 30 * time.Minute,
+			StallAfter:   5 * time.Minute,
 			Content:      true,
 		},
 		Log: Log{Level: "info", Format: "text"},
@@ -420,6 +435,9 @@ func (c Config) Validate() error {
 		}
 		if c.Live.RetainWindow <= 0 {
 			add("live.retain_window must be positive, got %s", c.Live.RetainWindow)
+		}
+		if c.Live.StallAfter < 0 {
+			add("live.stall_after cannot be negative, got %s", c.Live.StallAfter)
 		}
 		// Unlike every other Secret here, this one is OPTIONAL - a loopback view needs no
 		// token - so an empty value must not be run through Resolve, which correctly
