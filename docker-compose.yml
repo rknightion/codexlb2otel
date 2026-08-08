@@ -1,23 +1,34 @@
-# codexlb2otel compose fragment for codex-lb's own stack (issue #10's binding
-# decision, 2026-08-07): docker image + compose fragment ADDED to codex-lb's own
-# services section, so codexlb2otel starts and stops with codex-lb on camden.
-# Explicitly NOT a systemd unit, and NOT a standalone stack of its own.
+# codexlb2otel's OWN compose project. Deploys to /opt/codexlb2otel/compose.yml on
+# camden, alongside the .env it already reads from that directory.
 #
-# NOT RUNNABLE ON ITS OWN. This is a `services:` block meant to be merged into
-# codex-lb's own compose file on camden (/opt/codex-lb/compose.yml) - paste the
-# `codexlb2otel:` service straight into that file's own `services:` section. It
-# declares no top-level `volumes:` (the checkpoint is a relative bind, so it
-# resolves against whichever compose file it ends up in), no `build:` context
-# (ships as a published GHCR image - see .github/workflows/publish.yml), and no
-# network of its own:
-# merged into codex-lb's compose project it shares that project's default network
-# automatically, which this service does not even need - it never talks to
-# codex-lb over the network, only reads its archive directory from disk and talks
-# out to Grafana Cloud.
+# SUPERSEDES the original arrangement (issue #10, 2026-08-07), where this was a
+# fragment pasted into codex-lb's own /opt/codex-lb/compose.yml so the two started
+# and stopped together. That coupling is the thing being removed: restarting this
+# exporter meant `docker compose up` against codex-lb's project, putting the service
+# being OBSERVED at risk to redeploy the observer. Its own project makes a restart
+# here `docker compose -f /opt/codexlb2otel/compose.yml up -d` and nothing else.
 #
-# DO NOT `docker compose up` THIS FILE AGAINST CAMDEN OR ANY REAL HOST. Per issue
-# #10's binding decision, deployment is deliberately the LAST step, not this one -
-# this fragment is packaging only.
+# Still not a systemd unit, and still ships as a published GHCR image rather than
+# building from source - see .github/workflows/publish.yml.
+#
+# It declares no network: it never talks to codex-lb over one. It reads codex-lb's
+# archive directory from disk and talks out to Grafana Cloud, which is why splitting
+# the projects costs nothing - the only coupling was ever the compose file itself.
+#
+# MIGRATING AN EXISTING HOST OFF THE OLD FRAGMENT - the order is the whole trick:
+#   1. Write this file to /opt/codexlb2otel/compose.yml, and move the config and
+#      checkpoint into that directory (they were relative to codex-lb's file).
+#   2. `docker stop codexlb2otel && docker rm codexlb2otel` - only this container.
+#   3. `docker compose -f /opt/codexlb2otel/compose.yml up -d`.
+#   4. Delete the codexlb2otel service block from /opt/codex-lb/compose.yml, as a
+#      TEXT EDIT ONLY.
+#
+#   NEVER run `docker compose` against /opt/codex-lb to complete step 4. Compose
+#   would reconcile that whole project, and `--remove-orphans` there would delete
+#   the container step 3 just created. The file edit alone has no runtime effect;
+#   codex-lb keeps running untouched and simply no longer declares this service.
+#   Step 4 still matters before anyone next brings codex-lb up, or its project would
+#   try to create a second container with the same container_name and fail.
 #
 # ARCHIVE MOUNT - RESOLVED against camden 2026-08-07, do not re-litigate:
 #   codex-lb mounts it as a BIND, not a named volume. `docker inspect` on the
@@ -41,12 +52,12 @@
 #   `Z` is inert - but if SELinux is ever enabled, this mount wants a lowercase
 #   `z` (shared) or no label flag at all, never `Z`.
 #
-# CONFIG FILE - RESOLVED against camden 2026-08-07:
-#   it sits beside codex-lb's own compose file, which is /opt/codex-lb/compose.yml,
-#   so the relative source below resolves to /opt/codex-lb/codexlb2otel.config.yaml.
-#   Named codexlb2otel.config.yaml rather than config.yaml because that directory
-#   already holds codex-lb's own compose.yml, .env and README - a bare config.yaml
-#   there would read as codex-lb's.
+# CONFIG FILE:
+#   it sits beside THIS compose file, so the relative source below resolves to
+#   /opt/codexlb2otel/config.yaml. It was previously
+#   /opt/codex-lb/codexlb2otel.config.yaml, disambiguated by that prefix because it
+#   shared a directory with codex-lb's own compose.yml, .env and README. In a
+#   directory of its own the prefix is noise, so the move renames it back.
 #
 #   It is a copy of this repo's config.example.yaml, which needs no edits for this
 #   host: archive.dir and archive.checkpoint already match the mounts below, and
@@ -58,7 +69,7 @@
 #   Unlike env_file, which the DAEMON reads as root before the container exists, a
 #   bind-mounted config file is read by the process itself. Owned root, grouped 1000:
 #       sudo install -o root -g 1000 -m 0640 config.example.yaml \
-#            /opt/codex-lb/codexlb2otel.config.yaml
+#            /opt/codexlb2otel/config.yaml
 #   Get this wrong and the container exits immediately with
 #   "config: read ...: permission denied" - loud, at least, unlike the archive
 #   permission trap above.
@@ -129,6 +140,26 @@ services:
     # repo keeps having to design against.
     env_file:
       - /opt/codexlb2otel/.env
+    # The live conversation view (live.enabled in the config). Commented out by
+    # default because the config ships with live.enabled false, and a published port
+    # with nothing behind it is just a confusing open socket.
+    #
+    # THE CONTAINER-SIDE BIND MUST BE 0.0.0.0. A host address here restricts who can
+    # reach the port; it does NOT change what the process inside binds to, and that
+    # process has no interface holding the host's address. Setting live.listen to a
+    # host IP makes it fail to bind and the container restart-loop.
+    #
+    # So live.listen is 0.0.0.0:9465 inside, and the LEFT-HAND side below is the
+    # actual access control. Which in turn is why config.Validate demands a token or
+    # live.allow_insecure for a 0.0.0.0 bind: it is judging the container's bind, and
+    # it cannot see this line. On camden that is allow_insecure with the port
+    # published on the TAILNET address only - reachable from tailnet devices,
+    # invisible to the rest of the LAN. Docker publishes ports via its own iptables
+    # chain, ahead of any host firewall, so "0.0.0.0:9465:9465" here really does mean
+    # every interface regardless of what the host firewall says.
+    #
+    # ports:
+    #   - "100.91.77.97:9465:9465"   # camden's tailscale0 address
     volumes:
       # Archive: WRITABLE, which REVERSES issue #10's read-only constraint. Rob,
       # 2026-08-07: "it's okay for yesterdays and older to be gone this is a me only
@@ -146,9 +177,9 @@ services:
       # own archive.dir default works unedited - one less place for the two to drift
       # apart. The host path is verified - see the ARCHIVE MOUNT block above.
       - /opt/codex-lb/data/codex-lb/conversation-archive:/opt/codex-lb/data/codex-lb/conversation-archive
-      # Config file: read-only single-file bind mount, resolved relative to
-      # codex-lb's own compose file. See the CONFIG FILE block above.
-      - ./codexlb2otel.config.yaml:/etc/codexlb2otel/config.yaml:ro
+      # Config file: read-only single-file bind mount, resolved relative to THIS
+      # compose file. See the CONFIG FILE block above.
+      - ./config.yaml:/etc/codexlb2otel/config.yaml:ro
       # Checkpoint: the ONLY writable mount, and it holds nothing but byte offsets
       # and per-series cumulative counters - no archive content (see
       # internal/turn/state.go: every persisted field is an int or a float, and the
@@ -163,8 +194,15 @@ services:
       # Docker would create it root:root 0755 and the first checkpoint write would
       # fail with EACCES. A host directory can simply be chowned to the uid that has
       # to write it. Create it before first start:
-      #     sudo install -d -o 1000 -g 1000 -m 0750 /opt/codex-lb/data/codexlb2otel
-      - ./data/codexlb2otel:/var/lib/codexlb2otel
+      #     sudo install -d -o 1000 -g 1000 -m 0750 /opt/codexlb2otel/data
+      #
+      # MOVING an existing checkpoint rather than starting fresh is worth the small
+      # effort: it holds the per-series cumulative baselines, and a service that
+      # restarts without them treats each series' next cumulative reading as if it
+      # were a delta - one flagged cold-start turn per series, reporting the whole
+      # logical turn's tokens and wall time as a single response's. Correct, but
+      # noisy, and avoidable by moving one file. See internal/turn/state.go.
+      - ./data:/var/lib/codexlb2otel
     healthcheck:
       # Redundant with the image's own Dockerfile HEALTHCHECK by default - stated
       # explicitly here anyway so this compose file owns the interval/timing
