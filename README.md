@@ -178,11 +178,26 @@ Subagents attach to the exact turn that spawned them via `parent_turn_id`, falli
 `parent_thread_id`; one whose parent has aged out is promoted to the top level and flagged rather
 than hidden.
 
+Click a row to expand its recent turns in place; the caret collapses a subtree. The URL carries the
+open thread (`#thread=<id>`), so a link reopens on it.
+
 `/api/threads` and `/api/stream` serve the same data as JSON if you would rather build something
 else on it.
 
 **It is a window, not a store.** Nothing is persisted — a restart empties it, and Loki remains the
-record. `retain_turns` (default 500) bounds the ring everything else is derived from.
+record.
+
+Retention is `retain_window` (default 30m), and it is **adaptive**: a thread with a response still
+open is never evicted for being idle, because its newest completed turn goes stale precisely while
+it hangs — a plain age cutoff removes the wedged agent first. Nor is any ancestor of a thread that
+is kept, since dropping a parent re-roots its children rather than removing them. `retain_turns`
+(default 20000) is a memory backstop that should not bind before the window does.
+
+An open response that produces no frames for `stall_after` (default 5m) is flagged **stalled** — the
+wedged case, which otherwise reads exactly like a busy one because both sit on `thinking` forever.
+It is measured on the archive's own clock, so ingestion falling behind does not mark everything
+stalled at once; the trade is that if *everything* goes quiet nothing is flagged, which is an
+ingestion outage rather than a wedged agent and is `/healthz`'s job.
 
 **Latency is bounded by `archive.poll_interval`**, 5s by default. Running responses refresh at that
 cadence; this is not token-by-token streaming, and the page says so in its header.

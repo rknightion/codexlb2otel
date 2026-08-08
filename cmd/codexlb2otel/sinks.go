@@ -84,6 +84,7 @@ func buildSinks(ctx context.Context, cfg config.Config, log *slog.Logger) (sink.
 		liveStore = live.New(live.Options{
 			RetainTurns:  cfg.Live.RetainTurns,
 			RetainWindow: cfg.Live.RetainWindow,
+			StallAfter:   cfg.Live.StallAfter,
 			Content:      cfg.Live.Content,
 			IncludeProbe: cfg.Live.IncludeProbe,
 		})

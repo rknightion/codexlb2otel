@@ -355,3 +355,134 @@ func TestSnapshot_DeepChainIsNotFlattenedByAParentTurnPointingAtTheRoot(t *testi
 		t.Fatalf("leaf did not nest under mid; the tree was flattened: %+v", kids[0].Children)
 	}
 }
+
+// The plain age check evicted, with priority, the single most useful thing on the page:
+// a thread whose response is still open has by definition not completed a turn recently,
+// so its newest COMPLETED turn is exactly what goes stale while it hangs.
+func TestSnapshot_AThreadWithAnOpenResponseSurvivesTheIdleWindow(t *testing.T) {
+	s := New(Options{
+		RetainWindow: 10 * time.Minute,
+		Content:      true,
+		Now:          func() time.Time { return ts(40) },
+	})
+	emit(t, s, completed("wedged", "turn-1", 1), completed("recent", "turn-2", 35))
+	s.SetInFlightSource(func() []turn.InFlight {
+		return []turn.InFlight{{RequestID: "ws_open", ThreadID: "wedged", FirstTS: ts(1), LastTS: ts(1)}}
+	})
+	// Eviction happens in rebuild, so it must be re-run now the source is wired.
+	emit(t, s)
+
+	ids := map[string]bool{}
+	for _, r := range s.Snapshot().Roots {
+		ids[r.ThreadID] = true
+	}
+	if !ids["wedged"] {
+		t.Error("the thread with an open response was evicted for being idle; that is the wedged agent")
+	}
+	if !ids["recent"] {
+		t.Error("the recent thread was evicted")
+	}
+}
+
+// Eviction is per thread but the view is a tree: dropping a parent does not drop its
+// children, it re-roots them, so the run appears to GAIN top-level agents as it ages.
+func TestSnapshot_AnAncestorOfAKeptThreadIsNotEvicted(t *testing.T) {
+	s := New(Options{
+		RetainWindow: 10 * time.Minute,
+		Content:      true,
+		Now:          func() time.Time { return ts(40) },
+	})
+	oldParent := completed("parent", "p-turn", 1)
+	child := completed("child", "c-turn", 35)
+	child.IsSubagent = true
+	child.ParentThreadID = "parent"
+	emit(t, s, oldParent, child)
+
+	snap := s.Snapshot()
+	if len(snap.Roots) != 1 || snap.Roots[0].ThreadID != "parent" {
+		t.Fatalf("roots = %+v, want the stale parent kept so the child stays nested", snap.Roots)
+	}
+	if len(snap.Roots[0].Children) != 1 {
+		t.Fatalf("child was re-rooted: %+v", snap.Roots[0])
+	}
+}
+
+func TestSnapshot_StallIsMeasuredOnTheArchiveClock(t *testing.T) {
+	s := New(Options{
+		Content:    true,
+		StallAfter: 5 * time.Minute,
+		// Generous, so this test is about stalls and not about eviction.
+		RetainWindow: 72 * time.Hour,
+		// Wall clock is hours ahead of the fixture data. If stall used it, EVERYTHING
+		// would be stalled - which is what happens whenever ingestion falls behind.
+		Now: func() time.Time { return ts(30).Add(48 * time.Hour) },
+	})
+	emit(t, s, completed("busy", "turn-1", 20))
+	s.SetInFlightSource(func() []turn.InFlight {
+		return []turn.InFlight{
+			{RequestID: "fresh", ThreadID: "busy", FirstTS: ts(18), LastTS: ts(20)},
+			{RequestID: "wedged", ThreadID: "busy", FirstTS: ts(1), LastTS: ts(2)},
+		}
+	})
+
+	snap := s.Snapshot()
+	got := map[string]bool{}
+	for _, r := range snap.Running {
+		got[r.RequestID] = r.Stalled
+	}
+	if got["fresh"] {
+		t.Error("a response producing frames at the newest archive timestamp was called stalled")
+	}
+	if !got["wedged"] {
+		t.Error("a response quiet for 18 archive-minutes was not called stalled")
+	}
+	if snap.Roots[0].Stalled != 1 {
+		t.Errorf("thread reports %d stalled, want 1", snap.Roots[0].Stalled)
+	}
+}
+
+func TestSnapshot_NothingIsStalledWhenTheWholeArchiveIsQuiet(t *testing.T) {
+	// Everything quiet is an INGESTION outage, not a fleet of wedged agents. /healthz
+	// answers for that; a page full of false stall badges would not.
+	s := New(Options{
+		Content:      true,
+		StallAfter:   5 * time.Minute,
+		RetainWindow: 72 * time.Hour,
+		Now:          func() time.Time { return ts(30).Add(48 * time.Hour) },
+	})
+	emit(t, s, completed("a", "turn-1", 1))
+	s.SetInFlightSource(func() []turn.InFlight {
+		return []turn.InFlight{{RequestID: "x", ThreadID: "a", FirstTS: ts(1), LastTS: ts(1)}}
+	})
+
+	for _, r := range s.Snapshot().Running {
+		if r.Stalled {
+			t.Errorf("%s was called stalled when nothing in the archive is newer", r.RequestID)
+		}
+	}
+}
+
+// A fork inherits the parent's entire prompt history, so a user-role message on one was
+// addressed to the parent. Deriving an ask from it stamped the same human sentence onto
+// every subagent on screen.
+func TestSnapshot_AForkDoesNotClaimTheParentsAsk(t *testing.T) {
+	s := newTestStore(t, Options{Content: true})
+	root := completed("root", "r-turn", 1)
+	root.Prompts = []turn.Prompt{{Role: "user", Text: "those defaults look good to me"}}
+
+	child := completed("child", "c-turn", 2)
+	child.IsSubagent = true
+	child.ParentThreadID = "root"
+	child.ForkedFromThreadID = "root"
+	// The inherited history, verbatim.
+	child.Prompts = []turn.Prompt{{Role: "user", Text: "those defaults look good to me"}}
+	emit(t, s, root, child)
+
+	snap := s.Snapshot()
+	if snap.Roots[0].Ask == "" {
+		t.Error("the root lost its own ask")
+	}
+	if got := snap.Roots[0].Children[0].Ask; got != "" {
+		t.Errorf("fork claims ask %q, which was addressed to its parent", got)
+	}
+}

@@ -66,6 +66,14 @@
   }
   .tag.fork { color: var(--fork); }
   .tag.err { color: var(--err); }
+  .tag.stall { color: var(--err); border-width: 2px; font-weight: 700; }
+  /* Collapse control. A fixed-width box so names stay aligned whether or not a row has
+     children - a caret that only sometimes takes space shifts every sibling. */
+  .caret { color: var(--faint); width: 1.1ch; flex: none; text-align: center; }
+  .caret.has { cursor: pointer; }
+  .caret.has:hover { color: var(--fg); }
+  .row.target > .cell { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
+  .status.stalled { color: var(--err); }
   /* Capped and clipped: a tool call's arguments are unbounded, and without this the
      longest one on screen pushes the figures column off the right edge for every row. */
   .status {
@@ -119,11 +127,28 @@
   var lagEl = document.getElementById("lag");
   var dot = document.getElementById("dot");
   var pollMs = 0;
+  var stallMs = 0;
   var latest = null;
   // Which threads are expanded, and their fetched detail. Kept outside the render so a
   // 5s snapshot does not collapse a panel the user just opened.
   var open = {};
   var detail = {};
+  // Collapsed subtrees, and the thread named by the URL fragment. Both survive a
+  // 5s snapshot, which would otherwise undo whatever the user just did.
+  var closed = {};
+  var targetId = (location.hash.match(/^#thread=(.+)$/) || [])[1] || null;
+  var quiet = {};
+
+  function descendants(t) {
+    var n = 0;
+    (function walk(x) { (x.children || []).forEach(function (c) { n++; walk(c); }); })(t);
+    return n + (n === 1 ? " agent" : " agents");
+  }
+
+  function quietOf(id) {
+    var ms = quiet[id];
+    return ms == null ? "a while" : (ms < 60000 ? Math.round(ms / 1000) + "s" : Math.round(ms / 60000) + "m");
+  }
 
   var token = new URLSearchParams(location.search).get("token");
   var qs = token ? "?token=" + encodeURIComponent(token) : "";
@@ -215,24 +240,53 @@
   function renderThread(frag, t, last, content) {
     var isOpen = !!open[t.thread_id];
 
-    var row = el("div", "row" + (isOpen ? " open" : ""));
+    var row = el("div", "row" + (isOpen ? " open" : "") + (isTarget ? " target" : ""));
+    var kids = t.children || [];
+    var collapsed = !!closed[t.thread_id];
+    var isTarget = t.thread_id === targetId;
+
     var leadCell = el("div", "cell");
     var lead = el("div", "lead");
     lead.appendChild(el("span", "tree", prefix(last)));
+    var caret = el("span", "caret" + (kids.length ? " has" : ""), kids.length ? (collapsed ? "▸" : "▾") : " ");
+    if (kids.length) {
+      caret.addEventListener("click", function (ev) {
+        // Collapsing a subtree and expanding a row's turns are different intents on the
+        // same row, so the caret must not also toggle the detail panel.
+        ev.stopPropagation();
+        if (closed[t.thread_id]) delete closed[t.thread_id]; else closed[t.thread_id] = true;
+        render(latest);
+      });
+    }
+    lead.appendChild(caret);
 
     var nm = el("span", "nm" + (t.forked_from_thread_id ? " forked" : (t.is_subagent ? " sub" : "")), t.name);
     lead.appendChild(nm);
     // A fork inherits its parent's entire history, so anything it says about its own
     // past is really the parent's. Worth a badge rather than a footnote.
     if (t.forked_from_thread_id) lead.appendChild(el("span", "tag fork", "fork"));
+    if (t.stalled > 0) lead.appendChild(el("span", "tag stall", "stalled"));
     if (t.errors > 0) lead.appendChild(el("span", "tag err", t.errors + " err"));
     leadCell.appendChild(lead);
     row.appendChild(leadCell);
 
     var stCell = el("div", "cell");
-    var st = el("span", "status" + (t.running > 0 ? " live" : ""),
-      t.running > 0 ? "● " + (t.activity || "running") : (t.activity || "idle") + " " + ago(t.last_seen));
-    if (t.running > 0) st.classList.add("pulse");
+    var st;
+    if (t.stalled > 0) {
+      // Quiet for longer than the threshold while still open. Reads identically to a
+      // busy agent otherwise, because both sit on "thinking" indefinitely.
+      st = el("span", "status stalled", "◼ no frames for " + quietOf(t.thread_id));
+      // Say what the badge MEANS rather than just asserting it - the threshold is
+      // configurable, so "stalled" is a claim about a setting the reader cannot see.
+      st.title = "still open, but silent for longer than the " +
+        (stallMs ? Math.round(stallMs / 60000) + "m" : "configured") +
+        " stall threshold (measured on the archive's clock, not wall clock)";
+    } else if (t.running > 0) {
+      st = el("span", "status live", "● " + (t.activity || "running"));
+      st.classList.add("pulse");
+    } else {
+      st = el("span", "status", (t.activity || "idle") + " " + ago(t.last_seen));
+    }
     stCell.appendChild(st);
     row.appendChild(stCell);
 
@@ -284,12 +338,28 @@
     }
 
     row.addEventListener("click", function () {
-      if (open[t.thread_id]) { delete open[t.thread_id]; delete detail[t.thread_id]; }
-      else open[t.thread_id] = true;
+      if (open[t.thread_id]) {
+        delete open[t.thread_id];
+        delete detail[t.thread_id];
+        if (targetId === t.thread_id) { targetId = null; history.replaceState(null, "", location.pathname + location.search); }
+      } else {
+        open[t.thread_id] = true;
+        targetId = t.thread_id;
+        // replaceState, not a hash assignment: setting location.hash pushes a history
+        // entry per click, so Back walks the expand history instead of leaving the page.
+        history.replaceState(null, "", location.pathname + location.search + "#thread=" + encodeURIComponent(t.thread_id));
+      }
       render(latest);
     });
 
-    var kids = t.children || [];
+    if (collapsed) {
+      if (kids.length) {
+        var hid = el("div", "under spawned", "… " + descendants(t) + " hidden");
+        hid.style.paddingLeft = pad;
+        frag.appendChild(hid);
+      }
+      return;
+    }
     kids.forEach(function (c, i) {
       renderThread(frag, c, last.concat([i === kids.length - 1]), content);
     });
@@ -298,13 +368,25 @@
   function render(snap) {
     if (!snap) return;
     latest = snap;
+    // A link arriving with #thread= should land with that row already open.
+    if (targetId && !open[targetId]) open[targetId] = true;
     if (snap.poll_interval_ms) pollMs = snap.poll_interval_ms;
+    if (snap.stall_after_ms) stallMs = snap.stall_after_ms;
 
     var roots = snap.roots || [];
+    quiet = {};
+    (snap.running || []).forEach(function (r) {
+      if (r.stalled && (quiet[r.thread_id] == null || r.quiet_ms > quiet[r.thread_id])) {
+        quiet[r.thread_id] = r.quiet_ms;
+      }
+    });
     var running = (snap.running || []).length;
     var total = 0;
     (function count(list) { list.forEach(function (t) { total++; count(t.children || []); }); })(roots);
-    countsEl.textContent = total + (total === 1 ? " thread · " : " threads · ") + running + " running";
+    var stalled = (snap.running || []).filter(function (r) { return r.stalled; }).length;
+    countsEl.textContent = total + (total === 1 ? " thread · " : " threads · ") + running + " running" +
+      (stalled ? " · " + stalled + " stalled" : "");
+    countsEl.className = stalled ? "meta warn" : "meta";
     lagEl.textContent = pollMs ? "refresh " + Math.round(pollMs / 1000) + "s" : "";
 
     root.replaceChildren();
