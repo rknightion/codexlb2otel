@@ -115,7 +115,7 @@ var tokenTypes = []struct {
 	{attr.TokenInput, func(t *turn.Turn) int { return t.InputTokens }},
 	{attr.TokenOutput, func(t *turn.Turn) int { return t.OutputTokens }},
 	{attr.TokenReasoning, func(t *turn.Turn) int { return t.ReasoningTokens }},
-	{attr.TokenCached, func(t *turn.Turn) int { return t.CachedTokens }},
+	{attr.TokenCacheRead, func(t *turn.Turn) int { return t.CachedTokens }},
 	{attr.TokenCacheWrite, func(t *turn.Turn) int { return t.CacheWriteTokens }},
 }
 
@@ -125,21 +125,51 @@ var tokenTypes = []struct {
 // prefer here and no delta arithmetic involved.
 //
 // Records into BOTH tokens (the codexlb.* counter) and tokenUsage (the
-// gen_ai.client.token.usage histogram) with the same attrs and the same value - see
-// names.go's MetricTokenUsage doc comment for why this is a deliberate parallel
-// instrument rather than a replacement.
+// gen_ai.client.token.usage histogram), with the same value - see names.go's
+// MetricTokenUsage doc comment for why this is a deliberate parallel instrument rather
+// than a replacement.
+//
+// The two instruments took IDENTICAL attribute sets until issue #32 and now
+// deliberately do not. Three attributes go on the convention-named histogram alone:
+//
+//   - gen_ai.agent.name / gen_ai.agent.version. gen_ai.client.token.usage is one of
+//     the three instruments Grafana agent observability reads, and its Agents table
+//     groups by the agent name - without it, every series this service emitted sat in
+//     that UI's "anonymous" bucket, which is the bug #32 opened on.
+//   - gen_ai.token.semantics. Absent, the same dashboard classifies these series as
+//     provider-raw and adds cache_read and cache_write ON TOP of input, over-counting
+//     tokens and cost on every cached prompt. See attr.TokenSemanticsInclusive.
+//
+// codexlb.tokens keeps the older, narrower set because it has no such consumer and
+// would pay for them: neither the agent version nor the semantics marker is a
+// dimension anything queries this counter by, and the version multiplies its series by
+// the number of distinct system prompts for nothing. The agent NAME would in fact be
+// free here (it is a pure function of codexlb.originator), but splitting on the one
+// attribute that costs nothing while keeping the two that do would be a distinction no
+// reader could infer - the two sets differ by "what the sigil-facing instrument needs",
+// which is one rule rather than three.
+//
+// The instruments stay parallel in what they MEASURE, which is what
+// names.go's MetricTokenUsage doc comment means by a deliberate parallel: same value,
+// same fan-out over token types, different instrument type. Not the same attributes.
 func (s *Sink) recordTokens(ctx context.Context, t *turn.Turn, base []attr.KV) {
 	narrowed := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
 		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind)
+	forSigil := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
+		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
+		attr.GenAIAgentName, attr.GenAIAgentVersion)
 	for _, tt := range tokenTypes {
 		v := tt.value(t)
 		if v <= 0 {
 			continue
 		}
-		attrs := s.guard.With(narrowed, attr.KV{Key: attr.GenAITokenType, Value: tt.kind})
-		otelAttrs := toOtel(attrs)
-		s.inst.tokens.Add(ctx, int64(v), otelmetric.WithAttributes(otelAttrs...))
-		s.inst.tokenUsage.Record(ctx, int64(v), otelmetric.WithAttributes(otelAttrs...))
+		kind := attr.KV{Key: attr.GenAITokenType, Value: tt.kind}
+		s.inst.tokens.Add(ctx, int64(v),
+			otelmetric.WithAttributes(toOtel(s.guard.With(narrowed, kind))...))
+		s.inst.tokenUsage.Record(ctx, int64(v),
+			otelmetric.WithAttributes(toOtel(s.guard.With(forSigil, kind,
+				attr.KV{Key: attr.GenAITokenSemantics, Value: attr.TokenSemanticsInclusive},
+			))...))
 	}
 }
 
@@ -207,8 +237,20 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 	// server's own round trip, independent of how long the client waited.
 	if !t.ServerCreatedAt.IsZero() && !t.ServerCompletedAt.IsZero() {
 		if d := t.ServerCompletedAt.Sub(t.ServerCreatedAt).Seconds(); d >= 0 {
+			// error.type joins the set in issue #32. It was already a registry field
+			// and already on spans and Loki metadata, but narrowed out HERE - and this
+			// is the one instrument agent-observability splits success from failure on
+			// (its error-rate, error-count and error-by-type panels all select
+			// error_type!="" on gen_ai.client.operation.duration), so every one of them
+			// read zero. Field.Of returns "" for a turn that did not error, so the
+			// label is simply absent there, which is what error_type="" matches.
+			//
+			// gen_ai.agent.name/version for the same reason as recordTokens above -
+			// this is the instrument that drives the Agents table's request, error and
+			// latency columns.
 			attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-				attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Status)
+				attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Status,
+				attr.ErrorType, attr.GenAIAgentName, attr.GenAIAgentVersion)
 			s.inst.operationDuration.Record(ctx, d, otelmetric.WithAttributes(toOtel(attrs)...))
 		}
 	}
@@ -226,7 +268,8 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 
 	if t.TTFTMs > 0 {
 		attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-			attr.GenAIRequestModel, attr.AccountID, attr.RequestKind)
+			attr.GenAIRequestModel, attr.AccountID, attr.RequestKind,
+			attr.GenAIAgentName, attr.GenAIAgentVersion)
 		s.inst.ttft.Record(ctx, msToS(t.TTFTMs), otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 

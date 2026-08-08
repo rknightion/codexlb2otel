@@ -15,11 +15,19 @@ import (
 // only by ExportGenerations or its own tolerant OTLP-span decoder; the existing
 // otlptrace sink to Tempo is untouched by this package).
 //
+// agent_name and agent_version ARE now set (issue #32). This comment used to claim
+// they could not be - "no agent-name concept exists anywhere in the capture; codex-lb
+// has no notion of which agent, only which account and client binary served a request.
+// Permanent gap, not an oversight." THAT WAS WRONG, and expensively so: with the field
+// unset, everything this service reported landed in agent-observability's anonymous
+// bucket. "Which client binary served the request" is precisely an agent identity at
+// the granularity that product means it, and the claude-code plugin in the same tenant
+// names its agents on exactly that basis. See attr.AgentName and attr.GenAIAgentVersion
+// for the values and why the version is the instructions hash rather than
+// Turn.ClientVersion (which is always empty - the `version` header does not exist).
+//
 // Fields the proto defines but this function never sets, and why:
 //
-//   - agent_name / agent_version: no agent-name concept exists anywhere in the
-//     capture - codex-lb has no notion of "which agent", only which account and
-//     client binary served a request. Permanent gap, not an oversight.
 //   - max_tokens / tool_choice / thinking_enabled: request parameters that never
 //     reach the reducer at all; Turn has no field for any of them.
 //   - metadata (a free-form Struct) and raw_artifacts: nothing in the brief asked
@@ -74,18 +82,25 @@ import (
 // resolves to nothing in sigil's id space, which is worse than the field being absent.
 func buildGeneration(t *turn.Turn, guard *attr.Guard) wireGeneration {
 	g := wireGeneration{
-		ID:             generationID(t),
+		ID:             attr.GenerationID(t),
 		ConversationID: t.ThreadID,
-		OperationName:  attr.GenAIOperationValue, // "chat" - same value the existing GenAI metrics/spans use
-		Mode:           mode(t),
-		TraceID:        t.TraceID,
-		SpanID:         t.SpanID,
-		Model:          &wireModelRef{Provider: attr.GenAIProviderValue, Name: t.Model},
-		ResponseID:     t.ResponseID,
-		ResponseModel:  responseModel(t),
-		StartedAt:      rfc3339(startedAt(t)),
-		CompletedAt:    rfc3339(completedAt(t)),
-		CallError:      callError(t),
+		// generateText | streamText - the same value the metrics and the response span
+		// now carry, from the same helper. Sigil substitutes a default only when this
+		// field is EMPTY (its generation service's normalizeGeneration), so a value it
+		// does not recognise is stored verbatim and classified as unknown; sending
+		// "chat" here was not a harmless approximation.
+		OperationName: attr.OperationName(t),
+		Mode:          mode(t),
+		TraceID:       t.TraceID,
+		SpanID:        t.SpanID,
+		Model:         &wireModelRef{Provider: attr.GenAIProviderValue, Name: t.Model},
+		ResponseID:    t.ResponseID,
+		ResponseModel: responseModel(t),
+		AgentName:     attr.AgentName(t),
+		AgentVersion:  t.InstructionsHash,
+		StartedAt:     rfc3339(startedAt(t)),
+		CompletedAt:   rfc3339(completedAt(t)),
+		CallError:     callError(t),
 	}
 
 	if tags := tagsOf(guard, t); len(tags) > 0 {
@@ -131,21 +146,13 @@ func toolsOf(defs []turn.ToolDef) []wireToolDefinition {
 	return out
 }
 
-// generationID is what a repeated push (retry, or a checkpoint replay) must agree on,
-// so sigil's own dedup - if it has any - has something stable to key on. ResponseID
-// (resp_*) is the natural choice: it is the id of the exact model response this
-// Generation represents, one-to-one with the Turn. It is empty on responses that never
-// completed (a bare transport or error record), so RequestID - always populated - is
-// the fallback.
-func generationID(t *turn.Turn) string {
-	if t.ResponseID != "" {
-		return t.ResponseID
-	}
-	return t.RequestID
-}
-
 // mode is STREAM when this response delivered any text deltas over the websocket,
 // SYNC otherwise. Always one or the other - never GENERATION_MODE_UNSPECIFIED.
+//
+// The same test attr.OperationName applies to pick streamText over generateText, and
+// that is not a coincidence to be tidied away: sigil's own ingest derives the default
+// operation name FROM the mode with exactly this mapping, so the two disagreeing would
+// make a generation self-contradictory on arrival.
 func mode(t *turn.Turn) string {
 	if t.TextDeltaCount > 0 {
 		return modeStream

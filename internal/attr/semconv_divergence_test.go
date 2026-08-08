@@ -57,6 +57,16 @@ var semconvJustified = map[string]string{
 	// previous_response_id as its own example, so it takes the standard name. That
 	// asymmetry between two fields added together is exactly what this test is for.
 	ForkedFromThreadID: "forking a conversation into a new thread is codex-lb's own concept - no GenAI equivalent",
+	// The one entry here that names a standard key it was deliberately moved OFF,
+	// rather than one that never had a standard equivalent. gen_ai.agent.name looks
+	// like the match and is not: the spec's span-naming guidance for invoke_agent
+	// ("invoke_agent {gen_ai.agent.name}") is about the agent, and codex's spawn_agent
+	// TaskName is a per-invocation task label, unbounded by construction. Under the
+	// standard key it also collided with the real agent identity, which #32 needed
+	// that key for - see GenAIAgentName's own doc comment.
+	SubagentTask: "codex's spawn_agent task label - a task description, not an agent " +
+		"name, and unbounded per invocation; gen_ai.agent.name carries this service's " +
+		"own agent identity instead (issue #32)",
 
 	RequestID:        idJustification,
 	SessionID:        idJustification,

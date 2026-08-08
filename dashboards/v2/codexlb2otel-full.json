@@ -2,10 +2,7 @@
   "apiVersion": "dashboard.grafana.app/v2",
   "kind": "Dashboard",
   "metadata": {
-    "name": "codexlb2otel-full",
-    "annotations": {
-      "grafana.app/folder": "codexlb2otel"
-    }
+    "name": "codexlb2otel-full"
   },
   "spec": {
     "title": "codexlb2otel - Full Telemetry",
@@ -535,7 +532,7 @@
         "spec": {
           "id": 5,
           "title": "Tokens",
-          "description": "input + output ONLY. Summing every gen_ai.token.type would double-count: cached is a sub-bucket nested inside input, and reasoning inside output, not additive siblings of them. See the Tokens tab.",
+          "description": "input + output ONLY. Summing every gen_ai.token.type would double-count: cache_read is a sub-bucket nested inside input, and reasoning inside output, not additive siblings of them. See the Tokens tab.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -968,7 +965,7 @@
         "spec": {
           "id": 10,
           "title": "Token rate (additive: input + output)",
-          "description": "Only input and output are stacked, because only they are additive. cached and reasoning are breakdowns NESTED inside them and appear on the Tokens tab, unstacked - stacking a sub-bucket on its parent silently doubles the total.",
+          "description": "Only input and output are stacked, because only they are additive. cache_read and reasoning are breakdowns NESTED inside them and appear on the Tokens tab, unstacked - stacking a sub-bucket on its parent silently doubles the total.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -1950,7 +1947,7 @@
             "spec": {
               "options": {
                 "mode": "markdown",
-                "content": "\n`input` and `output` are additive siblings. **`cached` is nested inside `input`** and **`reasoning` is\nnested inside `output`** - they are breakdowns of their parent, not peers of it. Summing or stacking all\nfour double-counts, which is why the panels below keep the additive view and the nested view apart, and\nwhy the ratio panel divides `cached` by `input` rather than by `input + cached`.\n\nThe same trap is why `engine_uncached_prompt_tokens` is deliberately a separate metric rather than a\nfifth `gen_ai.token.type` value: `uncached = input - cached` is another nested breakdown, and putting it\non the same axis would double-count against `input` for anyone who did not know to exclude it.\n"
+                "content": "\n`input` and `output` are additive siblings. **`cache_read` is nested inside `input`** and **`reasoning`\nis nested inside `output`** - they are breakdowns of their parent, not peers of it. Summing or stacking\nall four double-counts, which is why the panels below keep the additive view and the nested view apart,\nand why the ratio panel divides `cache_read` by `input` rather than by `input + cache_read`.\n\nThat nesting is also what `gen_ai_token_semantics=\"inclusive\"` declares on these series, so a consumer\nnever has to infer it from the provider name.\n\nThe same trap is why `engine_uncached_prompt_tokens` is deliberately a separate metric rather than a\nfifth `gen_ai.token.type` value: `uncached = input - cache_read` is another nested breakdown, and putting\nit on the same axis would double-count against `input` for anyone who did not know to exclude it.\n"
               },
               "fieldConfig": {
                 "defaults": {},
@@ -2038,7 +2035,7 @@
         "kind": "Panel",
         "spec": {
           "id": 25,
-          "title": "Nested breakdowns (cached within input, reasoning within output)",
+          "title": "Nested breakdowns (cache_read within input, reasoning within output)",
           "description": "Deliberately NOT stacked. Each line is a subset of one of the lines in the panel above, so stacking them together would be arithmetically meaningless.",
           "links": [],
           "data": {
@@ -2058,7 +2055,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=~\"cached|reasoning\"}[$__rate_interval]))",
+                        "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=~\"cache_read|reasoning\"}[$__rate_interval]))",
                         "legendFormat": "{{gen_ai_token_type}}"
                       }
                     }
@@ -2105,7 +2102,7 @@
         "spec": {
           "id": 26,
           "title": "Cache read ratio",
-          "description": "cached / input. The denominator is input alone, NOT input + cached, because cached is already counted inside input - dividing by the sum would understate the hit rate and can never reach 100%. This is the single biggest lever on spend, and it collapses whenever the prompt prefix changes: a system-prompt edit shows up here before it shows up on the bill.",
+          "description": "cache_read / input. The denominator is input alone, NOT input + cache_read, because cache_read is already counted inside input - dividing by the sum would understate the hit rate and can never reach 100%. This is the single biggest lever on spend, and it collapses whenever the prompt prefix changes: a system-prompt edit shows up here before it shows up on the bill.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -2124,7 +2121,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "100 * sum(rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=\"cached\"}[$__rate_interval])) / clamp_min(sum(rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=\"input\"}[$__rate_interval])), 0.001)",
+                        "expr": "100 * sum(rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=\"cache_read\"}[$__rate_interval])) / clamp_min(sum(rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=\"input\"}[$__rate_interval])), 0.001)",
                         "legendFormat": "cache read %"
                       }
                     }
@@ -3487,7 +3484,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(gen_ai_server_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p50 {{gen_ai_request_model}}"
                       }
                     }
@@ -3506,7 +3503,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_server_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p95 {{gen_ai_request_model}}"
                       }
                     }
@@ -3525,7 +3522,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(gen_ai_server_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p99 {{gen_ai_request_model}}"
                       }
                     }
@@ -5777,7 +5774,7 @@
             "spec": {
               "options": {
                 "mode": "markdown",
-                "content": "One trace per **logical turn**. The root span is `turn`; under it sit the critical-path\nchildren - `critical_path.pre_inference`, `critical_path.engine_wall`,\n`critical_path.sampling_and_stream` and `critical_path.other` - plus a\n`chat <model>` span per model call and an `execute_tool <tool>` span per tool\ninvocation. Span names follow the OTel GenAI convention of `<operation> <target>`, so the model and\ntool name are in the span name as well as in attributes.\n\nThe same decomposition appears as histograms on the **Latency** tab. Use these when you need one\nspecific slow turn; use the histograms when you need the shape across all of them."
+                "content": "One trace per **logical turn**. The root span is `turn`; under it sit the critical-path\nchildren - `critical_path.pre_inference`, `critical_path.engine_wall`,\n`critical_path.sampling_and_stream` and `critical_path.other` - plus a\n`generateText`/`streamText <model>` span per model call and an\n`execute_tool <tool>` span per tool\ninvocation. Span names follow the OTel GenAI convention of `<operation> <target>`, so the model and\ntool name are in the span name as well as in attributes.\n\nThe same decomposition appears as histograms on the **Latency** tab. Use these when you need one\nspecific slow turn; use the histograms when you need the shape across all of them."
               },
               "fieldConfig": {
                 "defaults": {},
@@ -5975,7 +5972,7 @@
         "spec": {
           "id": 77,
           "title": "Model call spans",
-          "description": "The gen_ai chat spans. Span name is `chat <model>` per GenAI semconv, so the model is greppable without opening the span.",
+          "description": "The inference spans. Span name is `<operation> <model>`, so the model is greppable without opening the span, and the operation says whether the response streamed. Named generateText/streamText rather than the GenAI convention's `chat` because that is the vocabulary Grafana agent observability recognises - see attr's GenAIOperationGenerateText (#32).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -5994,7 +5991,7 @@
                         "name": "grafanacloud-traces"
                       },
                       "spec": {
-                        "query": "{resource.service.name=\"codexlb2otel\" && name=~\"chat.*\"}",
+                        "query": "{resource.service.name=\"codexlb2otel\" && name=~\"(generateText|streamText).*\"}",
                         "queryType": "traceql",
                         "limit": 20,
                         "tableType": "traces"

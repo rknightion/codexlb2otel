@@ -61,10 +61,10 @@ func TestSemconv_OnlyTheResponseSpanClaimsToBeTheInference(t *testing.T) {
 			if provider != "" {
 				t.Errorf("span %q carries gen_ai.provider.name with no gen_ai.operation.name", sp.Name)
 			}
-		case attr.GenAIOperationValue:
+		case attr.GenAIOperationGenerateText, attr.GenAIOperationStreamText:
 			chatClaimants = append(chatClaimants, sp.Name)
 			if provider == "" {
-				t.Errorf("chat span %q has no gen_ai.provider.name; the convention requires "+
+				t.Errorf("inference span %q has no gen_ai.provider.name; the convention requires "+
 					"both together on an inference span", sp.Name)
 			}
 		case attr.GenAIOperationExecuteTool, attr.GenAIOperationInvokeAgent:
@@ -79,11 +79,11 @@ func TestSemconv_OnlyTheResponseSpanClaimsToBeTheInference(t *testing.T) {
 	}
 
 	if len(chatClaimants) != 1 {
-		t.Fatalf("%d spans claim to be the chat inference (%v); want exactly the response span, "+
+		t.Fatalf("%d spans claim to be the inference (%v); want exactly the response span, "+
 			"or a consumer counts this turn once per claimant", len(chatClaimants), chatClaimants)
 	}
-	if chatClaimants[0] != "chat gpt-5.6-sol" {
-		t.Errorf("the inference span is %q, want the chat span", chatClaimants[0])
+	if chatClaimants[0] != "generateText gpt-5.6-sol" {
+		t.Errorf("the inference span is %q, want the response span", chatClaimants[0])
 	}
 	if len(toolClaimants) != 1 {
 		t.Fatalf("%d spans claim execute_tool/invoke_agent (%v); want exactly one, for the "+
@@ -140,4 +140,120 @@ func TestBoundArguments_CapsTheTailWithoutSplittingARune(t *testing.T) {
 				"drop the attribute entirely rather than send a large one")
 		}
 	})
+}
+
+// TestAgentO11yContract_OnTheResponseSpanOnly pins issue #32's span side.
+//
+// Every attribute below is one Grafana agent observability reads and this service did
+// not emit, and each failed SILENTLY - an empty search result, a conversation with no
+// trace attached, an "anonymous" row - with nothing in any log to say why. There is no
+// other guard on them: they are not registry fields (the two agento11y.* ones are
+// stamped directly on the response span) or their value is derived (the agent name),
+// so a refactor could drop any of them and every other test would still pass.
+//
+// The scoping half matters as much as the presence half. agento11y.sdk.name marks a
+// span as agent-observability's own, and agento11y.generation.id claims to BE a
+// particular generation - putting either on the turn root or a phase child would make
+// several spans claim one generation, which is the same double-count the inference
+// claim above is scoped to avoid.
+func TestAgentO11yContract_OnTheResponseSpanOnly(t *testing.T) {
+	s, exp := newTestSink(t)
+
+	now := time.Now()
+	if err := s.Emit(context.Background(), []*turn.Turn{{
+		RequestID: "ws_1", ResponseID: "resp_1", ThreadID: "019fdb99-a66a", TurnID: "t1",
+		Model: "gpt-5.6-sol", Status: "completed", Family: "websocket", RequestKind: "turn",
+		Originator: "codex-tui", InstructionsHash: "3dcc72f5c56809d0",
+		AccountID: "acct-1", FirstTS: now.Add(-time.Minute), LastTS: now,
+		ServerCreatedAt: now.Add(-time.Minute), ServerCompletedAt: now,
+		CriticalPath: turn.CriticalPath{EngineWallMs: 10, Coverage: "complete"},
+		ToolCalls:    []turn.ToolCall{{Kind: "custom", Name: "exec", CallID: "c1"}},
+	}}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	const respName = "generateText gpt-5.6-sol"
+
+	// Present on the response span, with the exact values the far end matches on.
+	want := map[string]string{
+		attr.AgentO11ySDKName:      attr.AgentO11ySDKNameValue,
+		attr.AgentO11yGenerationID: "resp_1", // MUST equal the agento11y sink's Generation.id
+		attr.GenAIAgentName:        "codexlb/codex-tui",
+		attr.GenAIAgentVersion:     "3dcc72f5c56809d0",
+		attr.GenAIOperation:        attr.GenAIOperationGenerateText,
+	}
+	var found bool
+	for _, sp := range exp.GetSpans() {
+		if sp.Name != respName {
+			continue
+		}
+		found = true
+		got := map[string]string{}
+		for _, a := range sp.Attributes {
+			got[string(a.Key)] = a.Value.AsString()
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("response span %s = %q, want %q", k, got[k], v)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no span named %q was exported", respName)
+	}
+
+	// Scoped to that span alone.
+	for _, sp := range exp.GetSpans() {
+		if sp.Name == respName {
+			continue
+		}
+		for _, a := range sp.Attributes {
+			switch string(a.Key) {
+			case attr.AgentO11ySDKName, attr.AgentO11yGenerationID:
+				t.Errorf("span %q carries %s; it belongs to the response span alone, or "+
+					"several spans claim one generation", sp.Name, a.Key)
+			}
+		}
+	}
+}
+
+// TestOperationName_FollowsTheStreamSignal covers the other half of the operation
+// value: a response that delivered text deltas is streamText, and it must agree with
+// the mode the agento11y sink derives from the same signal, because sigil's ingest
+// defaults one from the other.
+func TestOperationName_FollowsTheStreamSignal(t *testing.T) {
+	s, exp := newTestSink(t)
+
+	now := time.Now()
+	if err := s.Emit(context.Background(), []*turn.Turn{{
+		RequestID: "ws_2", ResponseID: "resp_2", ThreadID: "019fdb99-b77b", TurnID: "t2",
+		Model: "gpt-5.6-sol", Status: "completed", Family: "websocket", RequestKind: "turn",
+		TextDeltaCount: 4,
+		FirstTS:        now.Add(-time.Minute), LastTS: now,
+		ServerCreatedAt: now.Add(-time.Minute), ServerCompletedAt: now,
+	}}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	var names []string
+	for _, sp := range exp.GetSpans() {
+		names = append(names, sp.Name)
+		if sp.Name != "streamText gpt-5.6-sol" {
+			continue
+		}
+		for _, a := range sp.Attributes {
+			if string(a.Key) == attr.GenAIOperation && a.Value.AsString() != attr.GenAIOperationStreamText {
+				t.Errorf("span name says streamText but gen_ai.operation.name is %q",
+					a.Value.AsString())
+			}
+		}
+		return
+	}
+	t.Fatalf("no streamText span among %v; a response with text deltas must not be generateText", names)
 }

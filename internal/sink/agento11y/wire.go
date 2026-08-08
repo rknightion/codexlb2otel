@@ -144,8 +144,8 @@ type wireTokenUsage struct {
 }
 
 // wireGeneration is one Generation, protojson-UseProtoNames-shaped. Fields the proto
-// defines but this emitter never populates (metadata, raw_artifacts, agent_name,
-// agent_version, max_tokens, tool_choice, thinking_enabled) are simply absent from this
+// defines but this emitter never populates (metadata, raw_artifacts, max_tokens,
+// tool_choice, thinking_enabled) are simply absent from this
 // struct rather than present-and-always-empty: omitempty cannot be trusted to hide a
 // struct or slice consistently across every Go version's json/v1 semantics, and an
 // absent field is the same shape actual proto zero-values take on the wire per trap #4,
@@ -173,6 +173,8 @@ type wireGeneration struct {
 	Model               *wireModelRef        `json:"model,omitempty"`
 	ResponseID          string               `json:"response_id,omitempty"`
 	ResponseModel       string               `json:"response_model,omitempty"`
+	AgentName           string               `json:"agent_name,omitempty"`
+	AgentVersion        string               `json:"agent_version,omitempty"`
 	SystemPrompt        string               `json:"system_prompt,omitempty"`
 	Input               []wireMessage        `json:"input,omitempty"`
 	Output              []wireMessage        `json:"output,omitempty"`

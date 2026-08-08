@@ -29,6 +29,8 @@ func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
 		ThreadID:          "thread-1",
 		Model:             "gpt-5.6-sol",
 		Status:            "completed",
+		Originator:        "codex_exec",
+		InstructionsHash:  "3dcc72f5c56809d0",
 		TraceID:           "0af7651916cd43dd8448eb211c80319c",
 		SpanID:            "b7ad6b7169203331",
 		TextDeltaCount:    5, // >0, so mode must come out STREAM
@@ -92,8 +94,20 @@ func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
 	if got.GetConversationId() != "thread-1" {
 		t.Errorf("conversation_id = %q, want thread-1", got.GetConversationId())
 	}
-	if got.GetOperationName() != "chat" {
-		t.Errorf("operation_name = %q, want chat", got.GetOperationName())
+	// Issue #32. Unset, these two put every generation this service emits into agent
+	// observability's "anonymous" bucket and give its agent catalog nothing to key on,
+	// which is a silent failure at the far end of the pipeline - so they are pinned
+	// here rather than left to the shape check alone.
+	if got.GetAgentName() != "codexlb/codex_exec" {
+		t.Errorf("agent_name = %q, want codexlb/codex_exec", got.GetAgentName())
+	}
+	if got.GetAgentVersion() != "3dcc72f5c56809d0" {
+		t.Errorf("agent_version = %q, want the instructions hash", got.GetAgentVersion())
+	}
+	// streamText, not "chat": agent-observability's vocabulary, and it must agree with
+	// the mode asserted immediately below - see attr.OperationName (issue #32).
+	if got.GetOperationName() != "streamText" {
+		t.Errorf("operation_name = %q, want streamText", got.GetOperationName())
 	}
 	if got.GetMode() != agento11yv1.GenerationMode_GENERATION_MODE_STREAM {
 		t.Errorf("mode = %v, want GENERATION_MODE_STREAM", got.GetMode())
