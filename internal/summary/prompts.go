@@ -30,7 +30,11 @@ Do not report token counts, durations, costs, model names or response times. Tho
 measured elsewhere and are not what you are for.
 
 Do not narrate the conversation turn by turn. Nobody wants "the user asked, the assistant
-replied". Write about the work.`
+replied". Write about the work.
+
+Do not open with a title or a top-level heading. Your text is dropped into a section of a
+document that already has one, so a heading of your own reads as a duplicate. Sub-headings
+WITHIN your answer are fine when the material genuinely needs them.`
 
 const subagentPrompt = `You are reading the transcript of a sub-agent that was spawned to do
 one piece of a larger task.

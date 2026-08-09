@@ -7,6 +7,8 @@ package summary
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -28,6 +30,12 @@ type OpenRouterOptions struct {
 	Timeout time.Duration
 	// MaxRetries bounds the backoff on 429 and 5xx. Zero means no retry.
 	MaxRetries int
+	// ReasoningEffort is sent on every request. Empty sends nothing and takes the model's
+	// own default.
+	ReasoningEffort string
+	// ResponseCache opts every request into OpenRouter's response cache, where a
+	// byte-identical request is served free and never reaches a provider.
+	ResponseCache bool
 
 	// ZDR restricts routing to zero-data-retention endpoints; DataCollection is "allow"
 	// or "deny". Both are sent on EVERY request rather than configured once on the
@@ -41,6 +49,30 @@ type OpenRouterOptions struct {
 type OpenRouter struct {
 	sdk  *openrouter.OpenRouter
 	opts OpenRouterOptions
+	// session pins every call of one run to one provider endpoint. See newSessionID.
+	session string
+}
+
+// newSessionID mints the sticky-routing key for one run.
+//
+// Without it, OpenRouter derives the key by hashing the first system message and the first
+// non-system message. Every call here shares a system prompt but carries a DIFFERENT digest
+// as its first user message, so every call hashes differently and scatters across
+// providers - and a prompt cache that is never landed on twice is no cache at all. With a
+// session id, stickiness also starts on the first successful request rather than only once
+// a cache hit has been observed.
+//
+// Random per run rather than constant: a fixed value would pin every run this tool ever
+// makes onto one provider forever, which is load-balancing sabotage for a cache that
+// expires after minutes of inactivity anyway.
+func newSessionID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// Not worth failing a summarising run over. Losing the session id costs cache
+		// warmth, not correctness.
+		return "clbsum"
+	}
+	return "clbsum-" + hex.EncodeToString(b[:])
 }
 
 // NewOpenRouter builds a live client.
@@ -69,7 +101,29 @@ func NewOpenRouter(o OpenRouterOptions) (*OpenRouter, error) {
 		sdkOpts = append(sdkOpts, openrouter.WithServerURL(o.BaseURL))
 	}
 
-	return &OpenRouter{sdk: openrouter.New(sdkOpts...), opts: o}, nil
+	if o.ResponseCache {
+		// The SDK exposes no per-request header hook, so the opt-in rides on the HTTP
+		// client. Harmless when the header is unrecognised.
+		sdkOpts = append(sdkOpts, openrouter.WithClient(&headerClient{
+			base:    &http.Client{Timeout: o.Timeout},
+			headers: map[string]string{"X-OpenRouter-Cache": "true"},
+		}))
+	}
+
+	return &OpenRouter{sdk: openrouter.New(sdkOpts...), opts: o, session: newSessionID()}, nil
+}
+
+// headerClient adds fixed headers to every request the SDK makes.
+type headerClient struct {
+	base    *http.Client
+	headers map[string]string
+}
+
+func (c *headerClient) Do(req *http.Request) (*http.Response, error) {
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+	return c.base.Do(req)
 }
 
 // Complete sends one non-streaming completion and returns its text.
@@ -80,6 +134,8 @@ func (c *OpenRouter) Complete(ctx context.Context, system, user string) (string,
 	req := components.ChatRequest{
 		Model:  &c.opts.Model,
 		Stream: &stream,
+		// Pins this run to one provider endpoint so the shared system prefix stays cached.
+		SessionID: &c.session,
 		Provider: optionalnullable.From(&components.ProviderPreferences{
 			Zdr:            optionalnullable.From(&c.opts.ZDR),
 			DataCollection: optionalnullable.From(&dc),
@@ -96,10 +152,15 @@ func (c *OpenRouter) Complete(ctx context.Context, system, user string) (string,
 		},
 	}
 
+	if c.opts.ReasoningEffort != "" {
+		effort := components.ChatRequestReasoningEffort(c.opts.ReasoningEffort)
+		req.ReasoningEffort = optionalnullable.From(&effort)
+	}
+
 	send := func() (string, error) {
 		res, err := c.sdk.Chat.Send(ctx, req, nil)
 		if err != nil {
-			if retryable(err) {
+			if retryable(ctx, err) {
 				return "", err
 			}
 			return "", backoff.Permanent(err)
@@ -161,8 +222,14 @@ func textOf(res *operations.SendChatCompletionRequestResponse) (string, error) {
 // connection, a DNS blip - which is retryable. A context cancellation is not, and is
 // checked first because it otherwise falls into that same bucket and a Ctrl-C would then
 // retry five times before giving up.
-func retryable(err error) bool {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+func retryable(ctx context.Context, err error) bool {
+	// Ask the PARENT CONTEXT, never the returned error. Both a Ctrl-C and the HTTP
+	// client's own per-request timeout surface as context.DeadlineExceeded/Canceled, and
+	// they need opposite answers: a cancelled run must stop, while a single call that ran
+	// out of time is the most retryable failure there is. Matching on the error treated
+	// the second as the first, which is how one slow combining pass discarded 86 calls
+	// that had already succeeded and been paid for.
+	if ctx.Err() != nil {
 		return false
 	}
 	var apiErr *sdkerrors.APIError

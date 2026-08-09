@@ -230,10 +230,27 @@ summarize:
   # api_key is the OpenRouter credential. Supports ${ENV} and file: like every other
   # secret here, and is masked everywhere a config is printed.
   api_key: "${OPENROUTER_API_KEY}"
-  # model is an OpenRouter model slug. The default has a 1,048,576-token context, which
-  # is what keeps a whole session in ONE call rather than chunking it into several -
-  # chunking costs more, takes longer and produces a vaguer narrative.
-  model: "deepseek/deepseek-v4-flash"
+  # model is an OpenRouter model slug, and the default is a FLOATING alias.
+  #
+  # The "~" prefix makes OpenRouter resolve to the newest model in that family, and the
+  # response reports which concrete model actually served it. Watch out for the lookalike:
+  # "deepseek/deepseek-v4-flash" (no tilde, no -latest) is NOT an alias - it is the April
+  # 2026 "0423" release, so setting it silently freezes this tool on an old model.
+  #
+  # A "~latest" slug also carries a compatibility contract a concrete slug does not: if
+  # the alias retargets to a model that rejects a reasoning parameter sent below,
+  # OpenRouter remaps it to the nearest supported value instead of returning 400.
+  #
+  # The family has a 1,048,576-token context, which is what keeps a whole session in ONE
+  # call rather than chunking it - chunking costs more, takes longer and is vaguer.
+  model: "~deepseek/deepseek-v4-flash-latest"
+  # reasoning_effort is how much of the token budget goes to thinking rather than writing.
+  # "high" allocates roughly 80%, against ~95% for "xhigh"/"max". Summarising is reading a
+  # transcript and reporting what happened, which does not repay the extra budget - and
+  # the first live run against an 8h session timed out on its final pass, so the cost is
+  # not hypothetical. Empty sends nothing and takes the model's own default.
+  # One of: none, minimal, low, medium, high, xhigh, max.
+  reasoning_effort: high
   # base_url overrides the OpenRouter endpoint, for a proxy. Empty uses the default.
   base_url: ""
   # max_chars_per_session bounds one thread's digest. Over it, the digest is split at
@@ -255,8 +272,9 @@ summarize:
   # retried - a rejected key will still be rejected the fifth time.
   max_retries: 5
   # timeout bounds one model call. A whole session in one 375k-character call is a slow
-  # request, so this is minutes rather than seconds.
-  timeout: 5m
+  # request, so this is many minutes rather than seconds: 5m was not enough for the final
+  # pass of an 8h session folding 81 sub-agent summaries together.
+  timeout: 20m
   # zdr restricts routing to zero-data-retention endpoints, and data_collection is
   # allow | deny - deny uses only providers that do not store user data. Both are sent
   # on EVERY request, so the guarantee travels with the request instead of depending on
@@ -264,6 +282,15 @@ summarize:
   # is "allow"; this is deliberately not that.
   zdr: true
   data_collection: deny
+  # response_cache opts every request into OpenRouter's own response cache, where a
+  # byte-identical request is served free and never reaches a provider.
+  #
+  # On by default because of this tool's worst failure mode: a run of ~87 calls that dies
+  # on the last one has already paid for 86, and re-running re-sends those 86 identical
+  # requests. With this on they cost nothing and only the call that failed is paid for.
+  # Editing a prompt changes every request and invalidates the lot - correct, not
+  # unfortunate, since a new prompt should produce a new answer.
+  response_cache: true
 
 log:
   # level is debug | info | warn | error.

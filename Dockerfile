@@ -49,6 +49,14 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build -trimpath -ldflags="-s -w" -o /out/codexlb2otel ./cmd/codexlb2otel
 
+# clbsum ships alongside the daemon because it is only useful WHERE THE ARCHIVES ARE.
+# It reads the conversation archive directly rather than querying any sink, so running
+# it from a laptop means first copying gigabytes of capture off the host. It is not the
+# entrypoint - reach it with `docker run --entrypoint /clbsum`.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath -ldflags="-s -w" -o /out/clbsum ./cmd/clbsum
+
 # -----------------------------------------------------------------------------
 # distroless/static: no shell, no package manager, no libc even (the binary above
 # is fully static) - and the `nonroot` variant already runs as uid/gid 65532 by
@@ -57,6 +65,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:f5b485ea962d9bd1186b2f6b3a061191539b905b82ec395de78cbfae51f20e35
 
 COPY --from=builder /out/codexlb2otel /codexlb2otel
+COPY --from=builder /out/clbsum /clbsum
 
 # Restated explicitly rather than left implicit in the base image's default: a
 # future base-image swap that changes the default user then fails this build

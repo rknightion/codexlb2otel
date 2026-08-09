@@ -46,6 +46,7 @@ func run() int {
 		dry     = flag.Bool("dry-run", false, "report digest sizes and the calls that would be made, then exit")
 		out     = flag.String("out", "-", "write the report to a file; - is stdout")
 		model   = flag.String("model", "", "override summarize.model")
+		effort  = flag.String("effort", "", "override summarize.reasoning_effort")
 		slop    = flag.Duration("slop", defaultSlop, "how far outside the window to read, so a session straddling the edge is not cut short")
 	)
 	flag.Usage = usage
@@ -72,6 +73,9 @@ func run() int {
 	}
 	if *model != "" {
 		cfg.Summarize.Model = *model
+	}
+	if *effort != "" {
+		cfg.Summarize.ReasoningEffort = *effort
 	}
 	corpus := *dir
 	if corpus == "" {
@@ -148,13 +152,15 @@ func run() int {
 		return 2
 	}
 	client, err := summary.NewOpenRouter(summary.OpenRouterOptions{
-		APIKey:         key,
-		Model:          cfg.Summarize.Model,
-		BaseURL:        cfg.Summarize.BaseURL,
-		Timeout:        cfg.Summarize.Timeout,
-		MaxRetries:     cfg.Summarize.MaxRetries,
-		ZDR:            cfg.Summarize.ZDR,
-		DataCollection: cfg.Summarize.DataCollection,
+		APIKey:          key,
+		Model:           cfg.Summarize.Model,
+		BaseURL:         cfg.Summarize.BaseURL,
+		Timeout:         cfg.Summarize.Timeout,
+		MaxRetries:      cfg.Summarize.MaxRetries,
+		ReasoningEffort: cfg.Summarize.ReasoningEffort,
+		ResponseCache:   cfg.Summarize.ResponseCache,
+		ZDR:             cfg.Summarize.ZDR,
+		DataCollection:  cfg.Summarize.DataCollection,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "clbsum: %v\n", err)
