@@ -71,7 +71,7 @@ Every tool prints its own `-h`. Common tasks have Make targets:
 
 | | |
 |---|---|
-| `make build` | build all five tools into `bin/` |
+| `make build` | build every tool into `bin/` |
 | `make sync` | pull new archives off the codex-lb host |
 | `make probe` | fast drift check against the baseline (exit 1 on anything new) |
 | `make probe-full` | exhaustive drift check |
@@ -87,6 +87,7 @@ Every tool prints its own `-h`. Common tasks have Make targets:
 |---|---|
 | `corpus/sync` | pull new archives off the codex-lb host (wraps `cmd/clbsync`) |
 | `clbfind` | look up one response by id: why it ran as it did, and what was said |
+| `clbsum` | what work did the agents actually get done? Summarises sessions over a time window |
 | `clbprobe` | has the format changed? Samples the `.gz` files in place and diffs against `corpus.sig.json`. |
 | `clbprofile` | full induced schema of a capture — every field, type and value range |
 | `clbstat` | survey a directory and flag event types the reducer does not handle |
@@ -127,6 +128,61 @@ querying: they are different keys.
 **One response is rarely the whole answer.** A mid-turn continuation carries only the tool result
 that provoked it; the human's actual request is several responses back. `-thread` replays the whole
 conversation through one reducer in archive order.
+
+### clbsum
+
+Everything else here answers what the sessions *cost*. This answers what they *did*.
+
+```sh
+clbsum -since 4h                        # pick interactively from the last four hours
+clbsum -since 24h -all -out day.md      # everything today, written to a file
+clbsum -from 2026-08-08T09:00 -to 2026-08-08T18:00
+clbsum -since 4h -list                  # just list the sessions
+clbsum -since 4h -all -dry-run          # what would be sent, without sending it
+clbsum -since 4h -pick 1,3,7            # skip the picker
+```
+
+It reads the archives for the window, rebuilds the thread forest with the same code the
+[live view](#live-view) uses, and offers the root sessions in a picker — space selects, `a`
+toggles all, enter summarises. Each session is then described by a language model: what was
+built, changed, fixed, deployed or investigated. A final pass writes a themed roll-up
+across the whole window, and both land as markdown.
+
+Subagents are summarised first and folded into their parent's account, so a fan-out reads
+as one session's work rather than as fourteen. A session too large for one call is split at
+**turn** boundaries — never mid-turn, which would separate a tool call from its result —
+and the report says it was summarised in several passes so a thinner narrative is explained
+rather than mysterious.
+
+**It sends conversation content to OpenRouter.** This is the only part of the project that
+sends anything to a third party — Loki and the OTLP gateway are endpoints you chose, this
+is not — so it does nothing until `summarize.enabled` is true, and requests carry
+`zdr: true` and `data_collection: deny` by default. `-list` and `-dry-run` need no API key
+and show exactly what would be sent.
+
+```yaml
+summarize:
+  enabled: true
+  api_key: "${OPENROUTER_API_KEY}"
+  model: "deepseek/deepseek-v4-flash"
+```
+
+The default model has a 1M-token context, which is what lets a whole session go in one
+call. Any OpenRouter slug works; a smaller context just means more chunking.
+
+**No telemetry is sent to the model** — no tokens, durations, costs, tiers or rate limits.
+Those are already exported and dashboarded, and a language model restating them would be
+slower, dearer and wrong. What it gets is conversation: prompts, assistant messages,
+inter-agent messages, tool calls with their arguments, and tool results trimmed to a head
+and a tail. Tool *arguments* get a generous budget because the paths and commands are what
+say something changed; tool *output* gets a tight one because it is mostly console noise —
+kept at both ends, since a command's verdict is usually its last line.
+
+A session is **selected** by overlapping the window and then summarised from everything
+loaded, which is the window widened by `-slop` (1h by default) — so a session straddling
+the boundary is not cut off mid-job. That widened range is the honest limit: a session that
+began four hours before the window is read from the slop boundary, not from its true
+beginning. Widen `-slop` when that matters.
 
 ### clbprobe
 

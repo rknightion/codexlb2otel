@@ -1,4 +1,4 @@
-package main
+package scan
 
 import (
 	"bytes"
@@ -64,14 +64,14 @@ func fixture(t *testing.T, n int) (path string, requestID string) {
 // therefore preserve exact file order - which is why shards write into their own
 // slice and are concatenated by index, rather than being ordered by timestamp.
 func TestCollect_PreservesFileOrderAcrossShards(t *testing.T) {
-	old := minShard
-	minShard = 4 << 10 // force many shards on a small fixture
-	t.Cleanup(func() { minShard = old })
+	old := MinShard
+	MinShard = 4 << 10 // force many shards on a small fixture
+	t.Cleanup(func() { MinShard = old })
 
 	const n = 4000
 	path, requestID := fixture(t, n)
 
-	recs, err := collect(path, func(rec *frame.Record) bool { return rec.RequestID == requestID })
+	recs, err := Collect(path, func(rec *frame.Record) bool { return rec.RequestID == requestID })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,14 +106,14 @@ func TestCollect_PreservesFileOrderAcrossShards(t *testing.T) {
 // A sharded scan must see every line exactly once. A resync that overshot would
 // drop the records between two shards; one that undershot would double them.
 func TestScanFile_ShardsCoverEveryLineExactlyOnce(t *testing.T) {
-	old := minShard
-	minShard = 4 << 10
-	t.Cleanup(func() { minShard = old })
+	old := MinShard
+	MinShard = 4 << 10
+	t.Cleanup(func() { MinShard = old })
 
 	const n = 4000
 	path, _ := fixture(t, n)
 
-	// scanFile calls fn from several goroutines - guarding this is the caller's job,
+	// File calls fn from several goroutines - guarding this is the caller's job,
 	// and forgetting it here crashed the test with "concurrent map writes".
 	var mu sync.Mutex
 	seen := map[int]int{}
@@ -126,7 +126,7 @@ func TestScanFile_ShardsCoverEveryLineExactlyOnce(t *testing.T) {
 	}
 
 	var total int
-	err := scanFile(path, func(_ int, line []byte) error {
+	err := File(path, func(_ int, line []byte) error {
 		var rec struct {
 			Seq int `json:"seq"`
 		}
@@ -153,12 +153,12 @@ func TestScanFile_ShardsCoverEveryLineExactlyOnce(t *testing.T) {
 }
 
 func TestShards(t *testing.T) {
-	old := minShard
-	minShard = 1000
-	t.Cleanup(func() { minShard = old })
+	old := MinShard
+	MinShard = 1000
+	t.Cleanup(func() { MinShard = old })
 
 	// Ranges must tile the file: contiguous, no gaps, ending at the size.
-	got := shards(10_000, 4)
+	got := Shards(10_000, 4)
 	if len(got) != 4 {
 		t.Fatalf("got %d shards, want 4: %v", len(got), got)
 	}
@@ -176,7 +176,7 @@ func TestShards(t *testing.T) {
 
 	// A file too small to be worth splitting stays whole - the resync costs more
 	// than the concurrency returns.
-	if s := shards(500, 8); len(s) != 1 || s[0] != [2]int64{0, 500} {
+	if s := Shards(500, 8); len(s) != 1 || s[0] != [2]int64{0, 500} {
 		t.Errorf("small file sharded into %v, want one whole range", s)
 	}
 }

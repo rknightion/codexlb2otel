@@ -85,6 +85,7 @@ type Config struct {
 	AgentO11y AgentO11y `yaml:"agento11y" json:"agento11y"`
 	Health    Health    `yaml:"health" json:"health"`
 	Live      Live      `yaml:"live" json:"live"`
+	Summarize Summarize `yaml:"summarize" json:"summarize"`
 	Log       Log       `yaml:"log" json:"log"`
 }
 
@@ -259,6 +260,52 @@ type Live struct {
 	AllowInsecure bool `yaml:"allow_insecure" json:"allow_insecure"`
 }
 
+// Summarize configures clbsum, which sends conversation content to an LLM to be told
+// what work a session accomplished.
+//
+// It is the only part of this project that sends captured content to a THIRD PARTY.
+// Loki and the OTLP gateway are endpoints the operator chose and controls; OpenRouter
+// routes to whichever provider serves the model. That is why it is off by default and
+// why the two routing preferences below are set the way they are rather than left to
+// OpenRouter's own defaults.
+type Summarize struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// APIKey is the OpenRouter credential. Secret, so a config dump never echoes it.
+	APIKey Secret `yaml:"api_key" json:"api_key"`
+	// Model is an OpenRouter model slug. The default has a 1M-token context, which is
+	// what keeps a whole session in one call instead of chunking it.
+	Model string `yaml:"model" json:"model"`
+	// BaseURL overrides the OpenRouter endpoint, for a proxy. Empty uses the SDK default.
+	BaseURL string `yaml:"base_url" json:"base_url"`
+
+	// MaxCharsPerSession bounds one thread's digest. Over it, the digest is chunked at
+	// turn boundaries and summarised in several passes.
+	MaxCharsPerSession int `yaml:"max_chars_per_session" json:"max_chars_per_session"`
+	// MaxCharsPerToolInput bounds one tool call's arguments. Generous: a call's
+	// arguments are the file paths, commands and patch bodies that say what actually
+	// changed, which is the whole question being asked.
+	MaxCharsPerToolInput int `yaml:"max_chars_per_tool_input" json:"max_chars_per_tool_input"`
+	// MaxCharsPerToolOutput bounds one tool result, kept as a head AND a tail. Tight:
+	// tool output is mostly console noise. Head-only would be worse than tight - a
+	// command's verdict is usually its last line, so head-only truncation reliably cuts
+	// exactly the part that mattered.
+	MaxCharsPerToolOutput int `yaml:"max_chars_per_tool_output" json:"max_chars_per_tool_output"`
+
+	// Concurrency bounds in-flight LLM calls.
+	Concurrency int `yaml:"concurrency" json:"concurrency"`
+	// MaxRetries bounds the backoff on 429 and 5xx.
+	MaxRetries int `yaml:"max_retries" json:"max_retries"`
+	// Timeout bounds one LLM call.
+	Timeout time.Duration `yaml:"timeout" json:"timeout"`
+
+	// ZDR restricts routing to zero-data-retention endpoints. DataCollection is
+	// "allow" or "deny"; deny uses only providers that do not store user data. Both
+	// default to the restrictive setting - this ships real prompts and real command
+	// output, and OpenRouter's own default for data_collection is "allow".
+	ZDR            bool   `yaml:"zdr" json:"zdr"`
+	DataCollection string `yaml:"data_collection" json:"data_collection"`
+}
+
 // Log configures the service's own logging.
 type Log struct {
 	// Level is debug | info | warn | error.
@@ -327,6 +374,20 @@ func Default() Config {
 			RetainWindow: 30 * time.Minute,
 			StallAfter:   5 * time.Minute,
 			Content:      true,
+		},
+		Summarize: Summarize{
+			Enabled: false,
+			// 1,048,576-token context. The budget below is ~375k tokens, so a whole
+			// session normally fits in one call and chunking stays the rare path.
+			Model:                 "deepseek/deepseek-v4-flash",
+			MaxCharsPerSession:    1_500_000,
+			MaxCharsPerToolInput:  20_000,
+			MaxCharsPerToolOutput: 2_000,
+			Concurrency:           4,
+			MaxRetries:            5,
+			Timeout:               5 * time.Minute,
+			ZDR:                   true,
+			DataCollection:        "deny",
 		},
 		Log: Log{Level: "info", Format: "text"},
 	}
@@ -452,6 +513,14 @@ func (c Config) Validate() error {
 		if c.Live.Listen != "" && !loopbackListen(c.Live.Listen) && token == "" && !c.Live.AllowInsecure {
 			add("live.listen %q is not loopback and live.token is empty; this endpoint serves conversation content, "+
 				"so set live.token or set live.allow_insecure: true to say you meant it", c.Live.Listen)
+		}
+	}
+
+	// Only validated when enabled. The block is present in every default config, so
+	// validating it unconditionally would fail every deployment that never asked for it.
+	if c.Summarize.Enabled {
+		for _, e := range c.Summarize.problems() {
+			add("%s", e)
 		}
 	}
 
