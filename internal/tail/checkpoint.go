@@ -107,13 +107,45 @@ func LoadCheckpoint(path string) (Checkpoint, error) {
 // would be parsed as a cold start on the next boot, re-shipping everything. Write to
 // a temp file in the same directory, fsync, then rename.
 func (c *Checkpoint) Save(path string) error {
-	c.Version = checkpointVersion
 	c.Updated = time.Now().UTC()
+	b, err := c.render()
+	if err != nil {
+		return err
+	}
+	return c.write(path, b)
+}
 
+// render marshals the checkpoint as it currently stands, Updated included.
+func (c *Checkpoint) render() ([]byte, error) {
+	c.Version = checkpointVersion
 	b, err := json.Marshal(c)
 	if err != nil {
-		return fmt.Errorf("checkpoint: marshal: %w", err)
+		return nil, fmt.Errorf("checkpoint: marshal: %w", err)
 	}
+	return b, nil
+}
+
+// contentSum fingerprints everything the checkpoint MEANS, deliberately excluding Updated.
+//
+// Updated moves on every Save, so a fingerprint that included it would differ from the
+// previous one every single time and the unchanged-content skip in Watcher.save would
+// never fire - the file would go back to being rewritten and fsynced on a timer forever,
+// which is precisely the behaviour this exists to stop. That is not hypothetical: the
+// first version of this compared whole renders and did exactly that.
+func (c *Checkpoint) contentSum() ([32]byte, error) {
+	d := *c // shallow copy; the maps are only read from here
+	d.Version = checkpointVersion
+	d.Updated = time.Time{}
+
+	b, err := json.Marshal(&d)
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("checkpoint: marshal: %w", err)
+	}
+	return sha256.Sum256(b), nil
+}
+
+// write puts already-rendered bytes on disk atomically.
+func (c *Checkpoint) write(path string, b []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("checkpoint: mkdir %s: %w", dir, err)

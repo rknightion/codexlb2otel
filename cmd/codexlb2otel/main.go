@@ -129,13 +129,14 @@ func newLogger(cfg config.Log) *slog.Logger {
 func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink, metricsSink *otlpmetric.Sink, liveStore *live.Store) error {
 	reducer := turn.New()
 	w, err := tail.New(tail.Config{
-		Dir:            cfg.Archive.Dir,
-		CheckpointPath: cfg.Archive.Checkpoint,
-		ChunkSize:      cfg.Archive.ChunkBytes,
-		PollInterval:   cfg.Archive.PollInterval,
-		DeleteAfter:    cfg.Archive.DeleteAfter,
-		RetainDays:     cfg.Archive.RetainDays,
-		Logger:         log,
+		Dir:                cfg.Archive.Dir,
+		CheckpointPath:     cfg.Archive.Checkpoint,
+		ChunkSize:          cfg.Archive.ChunkBytes,
+		PollInterval:       cfg.Archive.PollInterval,
+		CheckpointInterval: cfg.Archive.CheckpointInterval,
+		DeleteAfter:        cfg.Archive.DeleteAfter,
+		RetainDays:         cfg.Archive.RetainDays,
+		Logger:             log,
 	}, reducer)
 	if err != nil {
 		return fmt.Errorf("open archive: %w", err)

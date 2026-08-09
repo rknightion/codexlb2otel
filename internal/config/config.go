@@ -105,6 +105,16 @@ type Archive struct {
 	Checkpoint string `yaml:"checkpoint" json:"checkpoint"`
 	// PollInterval is how often the directory is rechecked.
 	PollInterval time.Duration `yaml:"poll_interval" json:"poll_interval"`
+	// CheckpointInterval is the MINIMUM gap between checkpoint writes, and a clean
+	// shutdown saves regardless of it.
+	//
+	// It exists because saving on every poll was measured on camden writing and
+	// fsyncing a ~600 KB file 17,280 times a day - ~10 GB/day - to persist state that
+	// mostly had not changed, and the file grows with every thread ever seen. What it
+	// trades is crash granularity: a process KILLED between saves re-reads up to one
+	// interval of frames, duplicating them in Loki and adding them again to OTLP
+	// counters. Tolerable only because the ordinary exit is a clean SIGTERM.
+	CheckpointInterval time.Duration `yaml:"checkpoint_interval" json:"checkpoint_interval"`
 	// ChunkBytes bounds how much compressed data is read per pass.
 	ChunkBytes int `yaml:"chunk_bytes" json:"chunk_bytes"`
 	// DeleteAfter reclaims archives older than this. ZERO MEANS NEVER, and that is the
@@ -348,8 +358,11 @@ func Default() Config {
 			Dir:          "/opt/codex-lb/data/codex-lb/conversation-archive",
 			Checkpoint:   "/var/lib/codexlb2otel/checkpoint.json",
 			PollInterval: 5 * time.Second,
-			ChunkBytes:   16 << 20,
-			DeleteAfter:  0, // never; see the field comment
+			// 15m against a 5s poll turns ~17,280 writes/day into ~96, and an idle
+			// host writes none at all - an unchanged render is not written.
+			CheckpointInterval: 15 * time.Minute,
+			ChunkBytes:         16 << 20,
+			DeleteAfter:        0, // never; see the field comment
 		},
 		Loki: Loki{
 			URL:    "https://logs-prod-035.grafana.net/loki/api/v1/push",
@@ -436,6 +449,9 @@ func (c Config) Validate() error {
 	}
 	if c.Archive.Checkpoint == "" {
 		add("archive.checkpoint is empty; a restart would re-ship the whole archive")
+	}
+	if c.Archive.CheckpointInterval <= 0 {
+		add("archive.checkpoint_interval must be positive, got %s", c.Archive.CheckpointInterval)
 	}
 	if c.Archive.PollInterval <= 0 {
 		add("archive.poll_interval must be positive, got %s", c.Archive.PollInterval)
