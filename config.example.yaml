@@ -212,6 +212,59 @@ live:
   # transcript feed is not something to discover from a log line later.
   allow_insecure: false
 
+# summarize configures clbsum, which asks a language model what work a session
+# accomplished. Nothing in the daemon reads this - it is the oneshot tool's config.
+#
+# THIS IS THE ONLY PART OF THIS PROJECT THAT SENDS CAPTURED CONTENT TO A THIRD PARTY.
+# Loki and the OTLP gateway are endpoints you chose and control. OpenRouter routes to
+# whichever provider serves the model, so real prompts, real assistant messages and real
+# command output leave your infrastructure - including, per the README's content warning,
+# whatever secret an agent happened to cat. That is why enabled defaults to false and why
+# the two routing preferences below are set restrictively rather than left to
+# OpenRouter's own defaults.
+#
+# `clbsum -list` and `clbsum -dry-run` work with this disabled and no key at all, and
+# show exactly which sessions and how much text would be sent.
+summarize:
+  enabled: false
+  # api_key is the OpenRouter credential. Supports ${ENV} and file: like every other
+  # secret here, and is masked everywhere a config is printed.
+  api_key: "${OPENROUTER_API_KEY}"
+  # model is an OpenRouter model slug. The default has a 1,048,576-token context, which
+  # is what keeps a whole session in ONE call rather than chunking it into several -
+  # chunking costs more, takes longer and produces a vaguer narrative.
+  model: "deepseek/deepseek-v4-flash"
+  # base_url overrides the OpenRouter endpoint, for a proxy. Empty uses the default.
+  base_url: ""
+  # max_chars_per_session bounds one thread's digest. Over it, the digest is split at
+  # TURN boundaries and summarised in several passes, then those summaries are
+  # summarised. ~375k tokens, comfortably inside the default model's context.
+  max_chars_per_session: 1500000
+  # max_chars_per_tool_input bounds ONE tool call's arguments. Generous on purpose: the
+  # file paths, shell commands and patch bodies are what say something actually changed,
+  # which is the entire question being asked.
+  max_chars_per_tool_input: 20000
+  # max_chars_per_tool_output bounds one tool RESULT, kept as a head AND a tail. Tight,
+  # because tool output is mostly console noise - but head-only would be worse than
+  # tight: a command's verdict is usually its last line, so head-only truncation
+  # reliably cuts exactly the part that mattered.
+  max_chars_per_tool_output: 2000
+  # concurrency bounds in-flight model calls.
+  concurrency: 4
+  # max_retries bounds the exponential backoff on 429 and 5xx. Other failures are not
+  # retried - a rejected key will still be rejected the fifth time.
+  max_retries: 5
+  # timeout bounds one model call. A whole session in one 375k-character call is a slow
+  # request, so this is minutes rather than seconds.
+  timeout: 5m
+  # zdr restricts routing to zero-data-retention endpoints, and data_collection is
+  # allow | deny - deny uses only providers that do not store user data. Both are sent
+  # on EVERY request, so the guarantee travels with the request instead of depending on
+  # an account setting invisible from here. OpenRouter's own default for data_collection
+  # is "allow"; this is deliberately not that.
+  zdr: true
+  data_collection: deny
+
 log:
   # level is debug | info | warn | error.
   level: info

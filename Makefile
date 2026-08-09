@@ -4,7 +4,7 @@
 #
 # bin/ is gitignored.
 
-TOOLS := codexlb2otel clbsync clbfind clbprobe clbprofile clbstat
+TOOLS := codexlb2otel clbsync clbfind clbsum clbprobe clbprofile clbstat
 BINS  := $(addprefix bin/,$(TOOLS))
 
 CORPUS ?= corpus/processed

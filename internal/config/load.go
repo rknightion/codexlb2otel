@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -18,6 +19,34 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("config: read %s: %w", path, err)
 	}
 	return parse(b)
+}
+
+// LoadOverlay reads a YAML file over Default() WITHOUT running Validate, and treats a
+// missing file as "no overlay" rather than an error.
+//
+// It exists for the oneshot tools. Validate enforces what the SERVICE needs - at least one
+// sink enabled, fully credentialed - because a daemon that tails the archive and ships it
+// nowhere is a silent no-op. clbsum runs no pipeline and pushes to no sink, so applying
+// that rule to it would mean `clbsum -list` on a laptop demanded Loki credentials it never
+// uses. Each tool validates the part of the config it actually reads: see
+// Summarize.Validate.
+func LoadOverlay(path string) (Config, error) {
+	if path == "" {
+		return Default(), nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Default(), nil
+	}
+	if err != nil {
+		return Config{}, fmt.Errorf("config: read %s: %w", path, err)
+	}
+
+	cfg := Default()
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		return Config{}, fmt.Errorf("config: parse yaml: %w", err)
+	}
+	return cfg, nil
 }
 
 // parse is Load's body, split out so a test can exercise it without a file on disk.
