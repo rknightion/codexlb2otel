@@ -29,6 +29,22 @@ archive:
   checkpoint: /var/lib/codexlb2otel/checkpoint.json
   # poll_interval is how often the directory is rescanned for new data.
   poll_interval: 5s
+  # checkpoint_interval is the MINIMUM gap between checkpoint writes. A clean shutdown
+  # (SIGTERM, i.e. `docker stop`) saves regardless of it, and a save whose contents
+  # would be identical to what is already on disk is skipped entirely - so an idle host
+  # writes nothing at all.
+  #
+  # It exists because saving on every poll was measured on camden writing and fsyncing a
+  # ~600KB file 17,280 times a day - about 10GB/day - to persist state that mostly had
+  # not changed, and that file grows with every thread ever seen.
+  #
+  # WHAT IT TRADES is crash granularity, and only crash granularity. The checkpoint is
+  # what stops already-shipped frames being shipped again, so a process KILLED between
+  # saves re-reads up to one interval of frames on restart: duplicated in Loki, and
+  # added a second time to OTLP counters, which do not deduplicate at all. That is
+  # acceptable only because the ordinary way this exits is a clean SIGTERM. Lower it if
+  # the host is one that dies hard.
+  checkpoint_interval: 15m
   # chunk_bytes bounds how much compressed data is read into memory per pass. Archive
   # files reach several hundred MB, so this must stay well below available memory.
   chunk_bytes: 16777216 # 16MiB

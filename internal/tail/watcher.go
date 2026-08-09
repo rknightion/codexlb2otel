@@ -24,6 +24,9 @@ type Config struct {
 	Dir string
 	// CheckpointPath must live on a volume that survives container restarts.
 	CheckpointPath string
+	// CheckpointInterval is the MINIMUM gap between checkpoint writes. See
+	// Watcher.saveDue for what it trades. A clean shutdown saves regardless.
+	CheckpointInterval time.Duration
 	// ChunkSize bounds how much of a file is read into memory per pass. Archive
 	// files reach several hundred MB, so reading one whole is not acceptable in a
 	// long-running process.
@@ -64,6 +67,9 @@ func (c *Config) setDefaults() {
 	if c.EvictAfter <= 0 {
 		c.EvictAfter = 30 * time.Minute
 	}
+	if c.CheckpointInterval <= 0 {
+		c.CheckpointInterval = 15 * time.Minute
+	}
 	if c.Logger == nil {
 		c.Logger = slog.Default()
 	}
@@ -87,6 +93,13 @@ type Watcher struct {
 	// order, same file reclaim() already treats as "never delete this one". Empty
 	// before the first scan or once the directory is empty.
 	currentFile string
+
+	// lastSaved fingerprints the checkpoint bytes last written, so a render that would
+	// produce the same file again is not written at all. Cheap insurance for an idle
+	// host: no new frames means no new bytes means no fsync.
+	lastSaved [32]byte
+	// lastSaveAt is when the checkpoint was last written, driving the interval below.
+	lastSaveAt time.Time
 
 	// reducerStateEntries is [len(Prev), len(Seq)] as of the last checkpoint save -
 	// see turn.State's own doc comment for what those two maps hold. Recomputed in
@@ -154,6 +167,10 @@ type Stats struct {
 	ParseErrors   int64
 	EvictedOpen   int64
 	CheckpointErr int64
+	// CheckpointSaves counts checkpoints actually WRITTEN, not save attempts. The gap
+	// between this and the poll count is the point of the interval and the
+	// unchanged-content skip, so it has to be visible to know either is working.
+	CheckpointSaves int64
 	// PartialMemberReads counts a decode pass that found a gzip member cut off
 	// mid-write at the tail of the buffer - the NORMAL steady state of tailing a file
 	// codex-lb is still appending to (see internal/archive's own package doc), not an
@@ -339,11 +356,34 @@ func (w *Watcher) Poll(ctx context.Context, emit Emit) error {
 		}
 	}
 
-	if err := w.save(); err != nil {
-		return err
+	// Periodic, not every poll. See saveDue.
+	if w.saveDue() {
+		if err := w.save(); err != nil {
+			return err
+		}
 	}
 	w.reclaim(files)
 	return nil
+}
+
+// saveDue reports whether enough time has passed to justify writing the checkpoint.
+//
+// Saving on EVERY poll is what this replaces, and the cost was not theoretical: at a 5s
+// poll and a ~600 KB checkpoint, camden was writing and fsyncing ~10 GB/day to persist a
+// file whose contents mostly had not changed, growing with every thread ever seen.
+//
+// What the interval trades away is crash granularity. The checkpoint gates re-reading, so
+// a process KILLED between saves resumes from the last one and re-ships up to an interval
+// of frames - duplicated in Loki and, worse, added again to OTLP counters. That is
+// acceptable only because the ordinary way this process ends is a clean SIGTERM from
+// docker stop, and shutdown() force-saves on that path regardless of this interval. A host
+// that dies hard instead pays the duplicate, which is why the interval is configurable
+// rather than a constant.
+func (w *Watcher) saveDue() bool {
+	if w.lastSaveAt.IsZero() {
+		return true
+	}
+	return w.cfg.now().Sub(w.lastSaveAt) >= w.cfg.CheckpointInterval
 }
 
 // scan lists archive files in chronological order. The naming scheme sorts
@@ -522,16 +562,37 @@ func (w *Watcher) reduce(data []byte) ([]*turn.Turn, int64) {
 	return out, parseErrs
 }
 
+// save writes the checkpoint unless doing so would reproduce the file already on disk.
+//
+// Callers decide WHEN (Poll on an interval, shutdown and reclaim unconditionally); this
+// decides whether there is anything to write. The two are separate because an idle host
+// and a busy one need different answers and only one of them can be expressed by a timer.
 func (w *Watcher) save() error {
 	st := w.reducer.Snapshot()
 	w.cp.Reducer = st
 	// See Progress/Watcher.reducerStateEntries: the size of the two maps turn.State
 	// persists, refreshed here since Snapshot() is already being called.
 	w.reducerStateEntries = [2]int{len(st.Prev), len(st.Seq)}
+
+	sum, err := w.cp.contentSum()
+	if err != nil {
+		w.Stats.CheckpointErr++
+		return err
+	}
+	if sum == w.lastSaved {
+		// Identical to what is already there. Count it as a save for interval purposes -
+		// nothing has changed, so re-checking every poll would just re-marshal forever.
+		w.lastSaveAt = w.cfg.now()
+		return nil
+	}
+
 	if err := w.cp.Save(w.cfg.CheckpointPath); err != nil {
 		w.Stats.CheckpointErr++
 		return err
 	}
+	w.lastSaved = sum
+	w.lastSaveAt = w.cfg.now()
+	w.Stats.CheckpointSaves++
 	return nil
 }
 
