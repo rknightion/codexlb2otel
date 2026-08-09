@@ -14,10 +14,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,6 +37,15 @@ import (
 // daemon's own command line already names. Defaulting to the cwd-relative one alone meant
 // the obvious invocation inside the image found nothing.
 var defaultConfigPaths = []string{"config.yaml", "/etc/codexlb2otel/config.yaml"}
+
+const (
+	// defaultConcurrency mirrors summary.Options. Duplicated only so the count can be
+	// REPORTED before Run resolves it; Run remains the authority on what is applied.
+	defaultConcurrency = 4
+	// progressEvery is how often a bare call count is printed. Frequent enough that a long
+	// sub-agent fan-out visibly moves, rare enough not to bury the session lines.
+	progressEvery = 10
+)
 
 // loadConfig resolves the config, explicitly or by search.
 //
@@ -158,15 +169,25 @@ func run() int {
 		return 0
 	}
 
+	conc := cfg.Summarize.Concurrency
+	if conc <= 0 {
+		conc = defaultConcurrency
+	}
 	opts := summary.Options{
 		MaxCharsPerSession:    cfg.Summarize.MaxCharsPerSession,
 		MaxCharsPerToolInput:  cfg.Summarize.MaxCharsPerToolInput,
 		MaxCharsPerToolOutput: cfg.Summarize.MaxCharsPerToolOutput,
-		Concurrency:           cfg.Summarize.Concurrency,
+		Concurrency:           conc,
 	}
 
+	sessions := make([]summary.Session, len(chosen))
+	for i, th := range chosen {
+		sessions[i] = summary.Session{Thread: th}
+	}
+	plan := summary.Estimate(store, sessions, opts)
+
 	if *dry {
-		printDryRun(os.Stdout, store, chosen, opts, cfg.Summarize.Model)
+		printDryRun(os.Stdout, plan, cfg.Summarize.Model, conc)
 		return 0
 	}
 
@@ -205,13 +226,15 @@ func run() int {
 		return 2
 	}
 
-	sessions := make([]summary.Session, len(chosen))
-	for i, th := range chosen {
-		sessions[i] = summary.Session{Thread: th}
-	}
-	fmt.Fprintf(os.Stderr, "summarising %s with %s...\n",
-		plural(len(sessions), "session", "sessions"), cfg.Summarize.Model)
+	// The cost is stated BEFORE the first call, not left to be discovered by waiting. A
+	// window with a hundred sub-agents in it is a couple of hundred model calls and tens of
+	// minutes, and a run that says only "summarising 3 sessions" looks identical to a hung
+	// one - which is how a working run gets interrupted.
+	fmt.Fprintf(os.Stderr, "summarising %s with %s: about %d model calls over %s of digest, %d at a time.\n",
+		plural(len(sessions), "session", "sessions"), cfg.Summarize.Model,
+		plan.Calls, bytesish(plan.Chars), conc)
 
+	opts.Progress = progress(os.Stderr, plan.Calls)
 	rep := summary.Run(ctx, client, store, sessions, opts)
 	rep.From, rep.To = from, to
 
@@ -322,65 +345,65 @@ func printList(w *os.File, rows []*live.Thread) {
 	}
 }
 
-// printDryRun reports what would be sent without sending it.
+// progress prints work as it lands.
 //
-// The call count is the number that decides whether to press on, so it counts what will
-// actually be spent: one call per chunk of every digest, root and sub-agent alike, plus a
-// combining call wherever a digest chunked, plus the session pass wherever sub-agents
-// contributed, plus the window roll-up.
-func printDryRun(w *os.File, store *live.Store, chosen []*live.Thread, opts summary.Options, model string) {
-	total, calls := 0, 0
+// Line-based rather than a redrawn counter, so it stays readable when stderr is a file. The
+// session lines are the ones that mean anything - a call count says the run is alive, a
+// session name says what the wait has actually bought - and the periodic call line exists so
+// that one enormous session with a hundred sub-agents still shows movement while its
+// sub-agents are being summarised.
+func progress(w io.Writer, total int) func(summary.Event) {
+	var mu sync.Mutex
+	return func(ev summary.Event) {
+		mu.Lock()
+		defer mu.Unlock()
 
-	// callsFor is a digest's own cost: one per chunk, plus a combine when it chunked.
-	callsFor := func(d summary.Digest) int {
-		if d.Passes() > 1 {
-			return d.Passes() + 1
-		}
-		return d.Passes()
-	}
-
-	for i, th := range chosen {
-		d := summary.Build(store.Turns(th.ThreadID), opts)
-		kids := flatten(th)
-		total += d.Chars
-		calls += callsFor(d)
-		if len(kids) > 0 {
-			calls++ // the pass that folds the sub-agent summaries into the session
-		}
-
-		note := ""
-		if d.Passes() > 1 {
-			note = fmt.Sprintf("  CHUNKED into %d", d.Passes())
-		}
-		fmt.Fprintf(w, "%3d  %-52s  %9s  %s%s\n",
-			i+1, truncate(th.Name, 52), bytesish(d.Chars), plural(len(kids), "sub-agent", "sub-agents"), note)
-
-		for _, k := range kids {
-			kd := summary.Build(store.Turns(k.ThreadID), opts)
-			total += kd.Chars
-			calls += callsFor(kd)
-
-			kn := ""
-			if kd.Passes() > 1 {
-				kn = fmt.Sprintf("  CHUNKED into %d", kd.Passes())
+		if ev.Session != "" {
+			status := "summarised"
+			switch {
+			// Matches how the report itself words it. Calling an interruption a failure
+			// here and an interruption there is how an operator concludes the tool broke.
+			case errors.Is(ev.Err, context.Canceled):
+				status = "interrupted"
+			case ev.Err != nil:
+				status = fmt.Sprintf("failed: %v", ev.Err)
 			}
-			fmt.Fprintf(w, "       └ %-48s  %9s%s\n", truncate(k.Name, 48), bytesish(kd.Chars), kn)
+			fmt.Fprintf(w, "  [%d/%d] %s — %s\n", ev.Calls, total, truncate(ev.Session, 48), status)
+			return
+		}
+		if ev.Calls%progressEvery == 0 {
+			fmt.Fprintf(w, "  [%d/%d] calls\n", ev.Calls, total)
 		}
 	}
-	calls++ // the window roll-up
-
-	fmt.Fprintf(w, "\n%s of digest across %s, about %d model calls to %s\n",
-		bytesish(total), plural(len(chosen), "session", "sessions"), calls, model)
-	fmt.Fprintln(w, "\nNothing was sent. Drop -dry-run to summarise.")
 }
 
-func flatten(th *live.Thread) []*live.Thread {
-	var out []*live.Thread
-	for _, c := range th.Children {
-		out = append(out, c)
-		out = append(out, flatten(c)...)
+// printDryRun reports what would be sent without sending it.
+//
+// Purely a renderer: the accounting is summary.Estimate, shared with the line an interactive
+// run prints before it starts, so the two can never quote different numbers for the same work.
+func printDryRun(w io.Writer, plan summary.Plan, model string, concurrency int) {
+	for i, s := range plan.Sessions {
+		note := ""
+		if s.Passes > 1 {
+			note = fmt.Sprintf("  CHUNKED into %d", s.Passes)
+		}
+		fmt.Fprintf(w, "%3d  %-52s  %9s  %s%s\n",
+			i+1, truncate(s.Name, 52), bytesish(s.Chars),
+			plural(len(s.Subagents), "sub-agent", "sub-agents"), note)
+
+		for _, k := range s.Subagents {
+			kn := ""
+			if k.Passes > 1 {
+				kn = fmt.Sprintf("  CHUNKED into %d", k.Passes)
+			}
+			fmt.Fprintf(w, "       └ %-48s  %9s%s\n", truncate(k.Name, 48), bytesish(k.Chars), kn)
+		}
 	}
-	return out
+
+	fmt.Fprintf(w, "\n%s of digest across %s, about %d model calls to %s, %d at a time\n",
+		bytesish(plan.Chars), plural(len(plan.Sessions), "session", "sessions"),
+		plan.Calls, model, concurrency)
+	fmt.Fprintln(w, "\nNothing was sent. Drop -dry-run to summarise.")
 }
 
 func bytesish(n int) string {
