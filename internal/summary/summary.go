@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rknightion/codexlb2otel/internal/live"
@@ -63,6 +64,25 @@ type Options struct {
 	MaxCharsPerPrompt  int
 	MaxCharsPerMessage int
 	Concurrency        int
+	// Progress is called as work completes. Nil is fine.
+	//
+	// It exists because a run of a hundred calls otherwise emits nothing at all between
+	// starting and finishing, which is indistinguishable from a hang - and interrupting it
+	// is what turns a working run into a report of nothing but cancellations.
+	//
+	// Called from every summarising goroutine, so an implementation must be safe for
+	// concurrent use.
+	Progress func(Event)
+}
+
+// Event is one completed piece of work.
+type Event struct {
+	// Calls is how many model calls have finished across the whole run.
+	Calls int
+	// Session names a session that has just finished. Empty on a bare call.
+	Session string
+	// Err is that session's outcome, and is only meaningful alongside Session.
+	Err error
 }
 
 func (o *Options) setDefaults() {
@@ -122,6 +142,12 @@ type Report struct {
 	// Window is the themed roll-up across every session that succeeded.
 	Window    string
 	WindowErr error
+	// Canceled marks a run stopped from outside - an interrupt, or the terminal going away.
+	//
+	// Recorded rather than inferred from the sessions, because every session that had not
+	// started reports a bare context cancellation and a report full of those reads as a
+	// broken tool rather than an interrupted one.
+	Canceled bool
 }
 
 // Failed reports whether nothing at all was produced, which is the only case that should
@@ -151,6 +177,10 @@ func Run(ctx context.Context, c Client, src Source, sessions []Session, o Option
 
 	rep := Report{Sessions: make([]Result, len(sessions))}
 
+	// Counting wraps the caller's client rather than threading a counter through every
+	// summarising function, so no call site can forget to report one.
+	counted := &tallyClient{inner: c, on: o.Progress}
+
 	// ONE semaphore for the whole run, shared with every subagent pass. Giving each
 	// session its own would multiply: a per-session limit of 4 across 4 concurrent
 	// sessions is 16 in-flight calls, and a fan-out of 127 subagents would push that hard
@@ -162,10 +192,20 @@ func Run(ctx context.Context, c Client, src Source, sessions []Session, o Option
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			rep.Sessions[i] = summariseSession(ctx, c, src, s, o, sem)
+			res := summariseSession(ctx, counted, src, s, o, sem)
+			rep.Sessions[i] = res
+			counted.finished(res.Name, res.Err)
 		}()
 	}
 	wg.Wait()
+
+	// An interrupted run stops here. The roll-up would fail on the dead context anyway, and
+	// summarising a window from the fraction of sessions that happened to finish would
+	// describe the period as quieter than it was.
+	if ctx.Err() != nil {
+		rep.Canceled = true
+		return rep
+	}
 
 	var done []Result
 	for _, s := range rep.Sessions {
@@ -176,8 +216,44 @@ func Run(ctx context.Context, c Client, src Source, sessions []Session, o Option
 	if len(done) == 0 {
 		return rep
 	}
-	rep.Window, rep.WindowErr = c.Complete(ctx, windowPrompt, windowInput(done))
+	rep.Window, rep.WindowErr = counted.Complete(ctx, windowPrompt, windowInput(done))
 	return rep
+}
+
+// tallyClient reports every completed call to the progress callback.
+type tallyClient struct {
+	inner Client
+	on    func(Event)
+	n     atomic.Int64
+}
+
+func (c *tallyClient) Complete(ctx context.Context, system, user string) (string, error) {
+	out, err := c.inner.Complete(ctx, system, user)
+	n := c.n.Add(1)
+	c.emit(Event{Calls: int(n)})
+	return out, err
+}
+
+// finished reports a whole session landing, which is the progress that means something to
+// a reader: a call count says the run is alive, a session name says what it has bought.
+func (c *tallyClient) finished(name string, err error) {
+	c.emit(Event{Calls: int(c.n.Load()), Session: name, Err: err})
+}
+
+func (c *tallyClient) emit(ev Event) {
+	if c.on != nil {
+		c.on(ev)
+	}
+}
+
+// label is how a subagent thread is named to the reader and to the model. The task path is
+// preferred where one was recovered: "maintenance_wiring" identifies the work, while the
+// thread name is often the first line of its prompt.
+func label(t *live.Thread) string {
+	if t.TaskPath != "" {
+		return t.TaskPath
+	}
+	return t.Name
 }
 
 // summariseSession runs the two-stage map-reduce over one root and its subtree.
@@ -207,18 +283,15 @@ func summariseSession(ctx context.Context, c Client, src Source, s Session, o Op
 
 			d := Build(src.Turns(k.ThreadID), o)
 			text, err := summariseDigest(ctx, c, subagentPrompt, d)
-			label := k.Name
-			if k.TaskPath != "" {
-				label = k.TaskPath
-			}
+			name := label(k)
 			switch {
 			case err != nil:
 				// A subagent that could not be summarised is reported to the parent pass
 				// as unknown rather than dropped. Silently omitting it would make the
 				// session summary claim work happened with fewer agents than it did.
-				subs[i] = fmt.Sprintf("### subagent %s\n(could not be summarised: %v)\n", label, err)
+				subs[i] = fmt.Sprintf("### subagent %s\n(could not be summarised: %v)\n", name, err)
 			case text != "":
-				subs[i] = fmt.Sprintf("### subagent %s\n%s\n", label, text)
+				subs[i] = fmt.Sprintf("### subagent %s\n%s\n", name, text)
 			}
 		}()
 	}

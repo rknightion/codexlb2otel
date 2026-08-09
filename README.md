@@ -154,6 +154,22 @@ as one session's work rather than as fourteen. A session too large for one call 
 and the report says it was summarised in several passes so a thinner narrative is explained
 rather than mysterious.
 
+**Expect it to take a while, and let it.** A window containing a session with a hundred
+subagents is a couple of hundred model calls; a 12-hour window over a busy day measured 14.6
+MB of digest and ~122 calls, which is tens of minutes at the default concurrency of 4. So the
+run states its cost before the first call and prints progress as sessions land:
+
+```
+summarising 4 sessions with ~deepseek/deepseek-v4-flash-latest: about 122 model calls over 14.6 MB of digest, 4 at a time.
+  [10/122] calls
+  [37/122] session — summarised
+```
+
+Interrupting it (Ctrl-C, or closing the terminal a `docker compose run` is attached to) is
+handled rather than fatal: whatever finished is still printed, and the report says at the top
+that it was interrupted. Raise `summarize.concurrency` to trade rate-limit headroom for
+wall-clock. `-dry-run` reports the same call count without sending anything.
+
 **It sends conversation content to OpenRouter.** This is the only part of the project that
 sends anything to a third party — Loki and the OTLP gateway are endpoints you chose, this
 is not — so it does nothing until `summarize.enabled` is true, and requests carry

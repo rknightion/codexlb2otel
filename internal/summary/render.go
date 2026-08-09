@@ -1,6 +1,8 @@
 package summary
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -30,9 +32,26 @@ func Render(w io.Writer, r Report) error {
 
 	fmt.Fprintf(w, "%s in this window", plural(len(r.Sessions), "session", "sessions"))
 	if failed > 0 {
-		fmt.Fprintf(w, ", %d of which could not be summarised", failed)
+		what := "could not be summarised"
+		if r.Canceled {
+			what = "were not summarised"
+			if failed == 1 {
+				what = "was not summarised"
+			}
+		}
+		fmt.Fprintf(w, ", %d of which %s", failed, what)
 	}
 	fmt.Fprintf(w, ".\n\n")
+
+	// Said before anything else, because the alternative reads as a tool that broke. An
+	// interrupted run has a section per unfinished session, each reporting a cancelled
+	// context, and nothing else on the page explains that the operator caused it.
+	if r.Canceled {
+		fmt.Fprintf(w, "**This run was interrupted before it finished.** Sessions marked as interrupted "+
+			"below were cancelled part-way or never started; nothing is known to have gone wrong with them. "+
+			"The window roll-up is skipped, because summarising a period from whichever sessions happened to "+
+			"finish first would describe it as quieter than it was.\n\n")
+	}
 
 	if r.Window != "" {
 		fmt.Fprintf(w, "## Across the window\n\n%s\n\n", r.Window)
@@ -66,6 +85,13 @@ func Render(w io.Writer, r Report) error {
 		}
 
 		if s.Err != nil {
+			// Distinguished from a failure on purpose. "context canceled" against every
+			// session sends the reader looking for a fault in the tool; the truth is that
+			// the run was stopped.
+			if errors.Is(s.Err, context.Canceled) {
+				fmt.Fprintf(w, "Interrupted before this session was summarised.\n")
+				continue
+			}
 			fmt.Fprintf(w, "Could not be summarised: %v\n", s.Err)
 			continue
 		}
