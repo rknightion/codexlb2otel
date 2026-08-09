@@ -178,6 +178,19 @@ The family has a 1M-token context, which is what lets a whole session go in one 
 `xhigh`/`max` (~95%). Summarising is reading a transcript and reporting what happened; the
 extra budget buys little and costs wall-clock. `-model` and `-effort` override both per run.
 
+With no `-config`, it looks for `./config.yaml` then `/etc/codexlb2otel/config.yaml` — the
+second being where the container image's config is mounted. Neither existing is fine; it
+runs on defaults. A `-config` you name explicitly and that cannot be read is a hard error.
+
+It ships in the container image, because it reads the archive directly rather than querying
+a sink and so is only useful where the archives are:
+
+```sh
+cd /opt/codexlb2otel
+docker compose run --rm -T --entrypoint /clbsum codexlb2otel -since 12h -list
+docker compose run --rm -T --entrypoint /clbsum codexlb2otel -since 12h -all > day.md
+```
+
 **Caching.** DeepSeek caches prompts implicitly, but a warm cache only helps if the next
 request lands on the provider holding it — and OpenRouter picks that provider by hashing
 your first system and first user message, which differ on every call here. So each run

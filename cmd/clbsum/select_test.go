@@ -1,9 +1,12 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/rknightion/codexlb2otel/internal/config"
 	"github.com/rknightion/codexlb2otel/internal/live"
 )
 
@@ -79,4 +82,59 @@ func ids(ts []*live.Thread) []string {
 		out[i] = t.ThreadID
 	}
 	return out
+}
+
+// An explicit -config that cannot be read must fail loudly. Asking for a specific file and
+// silently getting defaults instead is the silent-failure shape this repo designs against.
+func TestLoadConfig_ExplicitMissingPathIsFatal(t *testing.T) {
+	if _, err := loadConfig(filepath.Join(t.TempDir(), "nope.yaml")); err == nil {
+		t.Error("an explicit -config pointing at nothing was accepted")
+	}
+}
+
+// A candidate from the SEARCH list is skipped on any error - the user never asked for it.
+// The first version of this treated a bare "permission denied" on such a path as fatal,
+// which is how clbsum failed to start inside its own container image.
+func TestLoadConfig_SearchFallsBackToDefaults(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir) // no config.yaml here, and /etc/codexlb2otel is absent on a test box
+
+	cfg, err := loadConfig("")
+	if err != nil {
+		t.Fatalf("no config anywhere should be fine, got %v", err)
+	}
+	if cfg.Summarize.Model != config.Default().Summarize.Model {
+		t.Errorf("did not fall back to defaults: model = %q", cfg.Summarize.Model)
+	}
+}
+
+func TestLoadConfig_SearchFindsCwdConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("summarize:\n  model: from-the-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	cfg, err := loadConfig("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Summarize.Model != "from-the-file" {
+		t.Errorf("model = %q, want the value from ./config.yaml", cfg.Summarize.Model)
+	}
+}
+
+// A config that EXISTS and is malformed is worth failing on - it is almost certainly the
+// file the user meant, so skipping it would apply defaults they did not ask for.
+func TestLoadConfig_MalformedFoundConfigIsFatal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("summarize: [not a map\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	if _, err := loadConfig(""); err == nil {
+		t.Error("a malformed config that was found was silently ignored")
+	}
 }

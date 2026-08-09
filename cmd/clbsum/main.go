@@ -27,16 +27,54 @@ import (
 	"github.com/rknightion/codexlb2otel/internal/summary"
 )
 
-// defaultConfigPath is looked for in the working directory and is allowed to be absent -
-// clbsum is useful against a corpus with no config at all.
-const defaultConfigPath = "config.yaml"
+// defaultConfigPaths are tried in order when -config is not given, and all of them are
+// allowed to be absent: clbsum is useful against a corpus with no config at all.
+//
+// Both entries are real deployments. The first is a checkout or a host directory; the
+// second is where the container image's config is bind-mounted, and is the same path the
+// daemon's own command line already names. Defaulting to the cwd-relative one alone meant
+// the obvious invocation inside the image found nothing.
+var defaultConfigPaths = []string{"config.yaml", "/etc/codexlb2otel/config.yaml"}
+
+// loadConfig resolves the config, explicitly or by search.
+//
+// The two cases are deliberately NOT the same code path. An explicit -config that cannot be
+// read is a hard error naming the path: asking for a specific file and silently getting
+// defaults instead is the silent-failure shape this repo keeps having to design against. A
+// candidate from the search list is skipped on ANY error, not just os.ErrNotExist - the
+// first attempt at this treated a bare "permission denied" on a path the user never asked
+// for as fatal.
+func loadConfig(explicit string) (config.Config, error) {
+	if explicit != "" {
+		// Stat first. LoadOverlay treats a missing file as "no overlay, use defaults",
+		// which is right for a path nobody asked for and wrong for one that was named on
+		// the command line: a typo in -config would otherwise run happily on defaults.
+		if _, err := os.Stat(explicit); err != nil {
+			return config.Config{}, fmt.Errorf("config %s: %w", explicit, err)
+		}
+		return config.LoadOverlay(explicit)
+	}
+	for _, p := range defaultConfigPaths {
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		cfg, err := config.LoadOverlay(p)
+		if err != nil {
+			// It exists and is malformed. That is worth failing on - it is almost
+			// certainly the file the user meant.
+			return config.Config{}, err
+		}
+		return cfg, nil
+	}
+	return config.Default(), nil
+}
 
 func main() { os.Exit(run()) }
 
 func run() int {
 	var (
 		dir     = flag.String("corpus", "", "corpus directory to read (default: archive.dir from the config)")
-		cfgPath = flag.String("config", defaultConfigPath, "config file; a missing one just means defaults")
+		cfgPath = flag.String("config", "", "config file; default searches ./config.yaml then /etc/codexlb2otel/config.yaml")
 		since   = flag.Duration("since", 0, "summarise sessions active in the last duration, e.g. 4h")
 		fromS   = flag.String("from", "", "window start, RFC3339 or 2006-01-02T15:04 (local)")
 		toS     = flag.String("to", "", "window end, RFC3339 or 2006-01-02T15:04 (local); defaults to now")
@@ -63,10 +101,10 @@ func run() int {
 		return 2
 	}
 
-	// LoadOverlay, not Load: Load enforces what the SERVICE needs - an enabled,
-	// credentialed sink - and clbsum pushes to no sink. Requiring that would make
+	// LoadOverlay under the hood, not Load: Load enforces what the SERVICE needs - an
+	// enabled, credentialed sink - and clbsum pushes to no sink. Requiring that would make
 	// `clbsum -list` on a laptop demand Loki credentials it never uses.
-	cfg, err := config.LoadOverlay(*cfgPath)
+	cfg, err := loadConfig(*cfgPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "clbsum: %v\n", err)
 		return 2
