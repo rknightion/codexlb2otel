@@ -63,5 +63,14 @@ func (s Summarize) problems() []string {
 	default:
 		add("summarize.data_collection must be allow or deny, got %q", s.DataCollection)
 	}
+	// Empty is valid and means "send nothing, take the model's default". The rest are the
+	// gateway's effort values; a model that does not support the one given gets it remapped
+	// to its nearest, so this only has to reject values the gateway itself would.
+	switch s.ReasoningEffort {
+	case "", "none", "minimal", "low", "medium", "high", "xhigh", "max":
+	default:
+		add("summarize.reasoning_effort must be one of none, minimal, low, medium, high, xhigh, max "+
+			"(or empty for the model's own default), got %q", s.ReasoningEffort)
+	}
 	return errs
 }

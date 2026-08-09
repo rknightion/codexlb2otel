@@ -272,9 +272,24 @@ type Summarize struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
 	// APIKey is the OpenRouter credential. Secret, so a config dump never echoes it.
 	APIKey Secret `yaml:"api_key" json:"api_key"`
-	// Model is an OpenRouter model slug. The default has a 1M-token context, which is
-	// what keeps a whole session in one call instead of chunking it.
+	// Model is an OpenRouter model slug.
+	//
+	// The default is the FLOATING alias - the "~" prefix makes OpenRouter resolve to the
+	// newest model in that family, and the response reports which concrete model served
+	// it. The undated "deepseek/deepseek-v4-flash" looks like an alias and is not: it is
+	// the Apr 2026 0423 release, and pinning it silently freezes the tool on an old model.
+	//
+	// A "~latest" slug also carries a compatibility contract that a concrete slug does
+	// not: if the alias retargets to a model that rejects a reasoning parameter sent here,
+	// OpenRouter remaps it to the nearest supported value rather than returning 400.
 	Model string `yaml:"model" json:"model"`
+	// ReasoningEffort is how much of the token budget goes to reasoning.
+	//
+	// "high" allocates roughly 80% against "max"/"xhigh"'s ~95%. Summarising is reading a
+	// transcript and reporting what happened, which does not repay the extra budget - and
+	// the first live run against an 8h session timed out on its final combining pass, so
+	// the cost is not hypothetical. Empty sends nothing and takes the model's own default.
+	ReasoningEffort string `yaml:"reasoning_effort" json:"reasoning_effort"`
 	// BaseURL overrides the OpenRouter endpoint, for a proxy. Empty uses the SDK default.
 	BaseURL string `yaml:"base_url" json:"base_url"`
 
@@ -304,6 +319,15 @@ type Summarize struct {
 	// output, and OpenRouter's own default for data_collection is "allow".
 	ZDR            bool   `yaml:"zdr" json:"zdr"`
 	DataCollection string `yaml:"data_collection" json:"data_collection"`
+
+	// ResponseCache asks OpenRouter to serve a byte-identical request from its own
+	// response cache, which is free and never reaches a provider.
+	//
+	// It earns its default from this tool's worst failure mode: a run of ~87 calls that
+	// dies on the last one has already paid for 86. Re-running re-sends those 86
+	// identical requests, and with this on they cost nothing. Editing a prompt changes
+	// every request and invalidates the lot, which is correct rather than unfortunate.
+	ResponseCache bool `yaml:"response_cache" json:"response_cache"`
 }
 
 // Log configures the service's own logging.
@@ -377,17 +401,21 @@ func Default() Config {
 		},
 		Summarize: Summarize{
 			Enabled: false,
-			// 1,048,576-token context. The budget below is ~375k tokens, so a whole
-			// session normally fits in one call and chunking stays the rare path.
-			Model:                 "deepseek/deepseek-v4-flash",
+			// 1,048,576-token context on this family. The budget below is ~375k tokens,
+			// so a whole session normally fits in one call and chunking stays rare.
+			Model:                 "~deepseek/deepseek-v4-flash-latest",
+			ReasoningEffort:       "high",
 			MaxCharsPerSession:    1_500_000,
 			MaxCharsPerToolInput:  20_000,
 			MaxCharsPerToolOutput: 2_000,
 			Concurrency:           4,
 			MaxRetries:            5,
-			Timeout:               5 * time.Minute,
-			ZDR:                   true,
-			DataCollection:        "deny",
+			// 5m was not enough: the final combining pass of an 8h session, folding 81
+			// sub-agent summaries together, exceeded it while reading the response body.
+			Timeout:        20 * time.Minute,
+			ZDR:            true,
+			DataCollection: "deny",
+			ResponseCache:  true,
 		},
 		Log: Log{Level: "info", Format: "text"},
 	}

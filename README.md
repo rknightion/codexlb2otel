@@ -164,11 +164,29 @@ and show exactly what would be sent.
 summarize:
   enabled: true
   api_key: "${OPENROUTER_API_KEY}"
-  model: "deepseek/deepseek-v4-flash"
+  model: "~deepseek/deepseek-v4-flash-latest"
+  reasoning_effort: high
 ```
 
-The default model has a 1M-token context, which is what lets a whole session go in one
-call. Any OpenRouter slug works; a smaller context just means more chunking.
+The default model is a **floating alias** — the `~` prefix resolves to the newest model in
+that family, and the response reports which concrete one served it. Beware the lookalike:
+`deepseek/deepseek-v4-flash`, without the tilde and the `-latest`, is not an alias at all
+but the April 2026 `0423` release, so setting it quietly freezes the tool on an old model.
+The family has a 1M-token context, which is what lets a whole session go in one call.
+
+`reasoning_effort` defaults to `high` (~80% of the budget on thinking) rather than
+`xhigh`/`max` (~95%). Summarising is reading a transcript and reporting what happened; the
+extra budget buys little and costs wall-clock. `-model` and `-effort` override both per run.
+
+**Caching.** DeepSeek caches prompts implicitly, but a warm cache only helps if the next
+request lands on the provider holding it — and OpenRouter picks that provider by hashing
+your first system and first user message, which differ on every call here. So each run
+sends a `session_id`, pinning all its calls to one endpoint. Separately, `response_cache`
+(on by default) opts into OpenRouter's response cache, where a byte-identical request is
+served free without reaching a provider. That matters most after a failure: a run of ~87
+calls that dies on the last one has already paid for 86, and re-running makes those 86
+free. Editing a prompt invalidates all of it, which is the point — a new prompt should
+produce a new answer.
 
 **No telemetry is sent to the model** — no tokens, durations, costs, tiers or rate limits.
 Those are already exported and dashboarded, and a language model restating them would be
