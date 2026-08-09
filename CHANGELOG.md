@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.2.0](https://github.com/rknightion/codexlb2otel/compare/v0.1.0...v0.2.0) (2026-08-09)
+
+
+### Features
+
+* **archive:** delete yesterday and older, from inside the container ([f937dee](https://github.com/rknightion/codexlb2otel/commit/f937deebea4581cb5e0940845318ba019695d1a6)), closes [#28](https://github.com/rknightion/codexlb2otel/issues/28)
+* **clbsum:** float to the latest DeepSeek, set reasoning effort, and stop paying twice ([419499b](https://github.com/rknightion/codexlb2otel/commit/419499b23b21bdc81e48d0977eccd55cc069f9aa)), closes [#38](https://github.com/rknightion/codexlb2otel/issues/38)
+* **clbsum:** summarise what work agent sessions actually accomplished ([84a6ca4](https://github.com/rknightion/codexlb2otel/commit/84a6ca4b29db751f666ea96513068872bfa0d0bb)), closes [#37](https://github.com/rknightion/codexlb2otel/issues/37)
+* **dashboards:** one v2 dashboard covering every signal, generated and coverage-checked ([1a4ded3](https://github.com/rknightion/codexlb2otel/commit/1a4ded33133b95b1a1abb42cde42207332340dc5))
+* **deploy:** enable the sigil sink and make the compose fragment actually runnable ([c06983e](https://github.com/rknightion/codexlb2otel/commit/c06983ed84fda580a518b4a640afd675bdc58792))
+* **live:** adaptive retention, stalled agents, collapse and deep links ([e1228f5](https://github.com/rknightion/codexlb2otel/commit/e1228f500461e75f5ced55500bd18125faffb2e3))
+* **live:** name the agents, and stop flattening the tree ([1964fff](https://github.com/rknightion/codexlb2otel/commit/1964fffffa268f739c7dcfba22610c184f526d63)), closes [#36](https://github.com/rknightion/codexlb2otel/issues/36)
+* **live:** watch the conversation tree, running turns and all ([ff5d86d](https://github.com/rknightion/codexlb2otel/commit/ff5d86d27356c6e60d6b9c1280fbb33900680204)), closes [#35](https://github.com/rknightion/codexlb2otel/issues/35)
+* mint release-please token from the OpenBao broker ([1499854](https://github.com/rknightion/codexlb2otel/commit/14998544f475c3028b7813a2837007841cbcc767))
+* **tier:** carry the tier the client ASKED for, not just the one served ([fa0c997](https://github.com/rknightion/codexlb2otel/commit/fa0c99771f3d02b5752c8b4d853bb7b8592ccb0c)), closes [#33](https://github.com/rknightion/codexlb2otel/issues/33) [#34](https://github.com/rknightion/codexlb2otel/issues/34)
+
+
+### Bug Fixes
+
+* **agento11y:** name the agent, and speak the vocabulary sigil actually reads ([ab78f29](https://github.com/rknightion/codexlb2otel/commit/ab78f293d7ce70a0a7d8dd25bf99ad34d4577c79)), closes [#32](https://github.com/rknightion/codexlb2otel/issues/32)
+* **ci:** the go-version job could not check out a private repo ([d331267](https://github.com/rknightion/codexlb2otel/commit/d331267266b3798295c3a065455f17c50b332d58))
+* **ci:** the image publish job could not read its own repository ([edb39fd](https://github.com/rknightion/codexlb2otel/commit/edb39fdb155fcbaa6613f11f03f1246d9d4fa86f))
+* **ci:** the published image carried no version tag ([0a103d4](https://github.com/rknightion/codexlb2otel/commit/0a103d44e21af829569dba9d1ad8a58e45c9667f))
+* **clbsum:** find the config in its own container image ([ba62773](https://github.com/rknightion/codexlb2otel/commit/ba6277391be572230c6e08c814d791c54dd31d10)), closes [#40](https://github.com/rknightion/codexlb2otel/issues/40)
+* **clbsum:** show what a run will cost, and say when it was interrupted ([6193bbf](https://github.com/rknightion/codexlb2otel/commit/6193bbf45170443088fde5d801ce401dfa0e71e8)), closes [#42](https://github.com/rknightion/codexlb2otel/issues/42)
+* **tail:** publish progress per chunk, not per pass ([cdcf80d](https://github.com/rknightion/codexlb2otel/commit/cdcf80d6a97f73c2d9e2470d70cd15a023e5dfa9))
+* **tail:** stop self-observability deadlocking the poll it observes ([ec6ecbc](https://github.com/rknightion/codexlb2otel/commit/ec6ecbc6fa57816f90b3bf6938dfeca8bcb131db))
+
+
+### Performance
+
+* **tail:** checkpoint on an interval, not on every poll ([22c8303](https://github.com/rknightion/codexlb2otel/commit/22c8303ec068e75e93f20edb54988734fefa57a7))
+
+
+### Refactoring
+
+* **compose:** give this exporter its own project, not codex-lb's ([eeceb5a](https://github.com/rknightion/codexlb2otel/commit/eeceb5a71edd25a067930f00cfbaf5a1ace45685))
+
 ## 0.1.0 (2026-08-07)
 
 
