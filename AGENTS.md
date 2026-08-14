@@ -31,7 +31,7 @@ Four rules, each for a specific silent failure:
 
 - **Never `--notes` or `--plan` bare.** They *replace* the whole section, destroying another
   session's writes with no warning and exit 0. Use `--append-notes` / `--append-plan`. This is an
-  open upstream bug, not a misunderstanding, and `.claude/hooks/backlog-guard.py` denies the bare
+  open upstream bug, not a misunderstanding, and a global `PreToolUse` hook in the agent config denies the bare
   forms rather than trusting anyone to remember.
 - **Never hand-edit task, draft, doc, decision or milestone markdown.** Section boundaries are
   HTML-comment markers; break one and the section is silently dropped at exit 0 - still in the file,
