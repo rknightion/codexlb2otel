@@ -24,7 +24,7 @@ concurrency:
 jobs:
   test:
     name: build, vet, test, probe
-    runs-on: ubuntu-latest
+    runs-on: arc-arm64
     # Non-corpus tests are fast (seconds to low minutes); this ceiling is a
     # safety net against a hang, not a measurement of expected runtime. The
     # full corpus suite (8-10 min locally, per the issue this workflow was
