@@ -105,6 +105,14 @@ panels' own descriptions rather than silently worked around:
   PromQL against `codexlb_tokens_total` at all. Solved the same way as the family gap: LogQL `unwrap`
   aggregation against the turn record's own JSON body, which does carry both alongside the token
   counts.
+
+  **Read that as "no *token* instrument", not "effort is unavailable to PromQL".** `codexlb.responses`
+  and `codexlb.turns` both carry `gen_ai.request.reasoning.level` alongside `gen_ai.request.model` -
+  confirmed live against Mimir on 2026-08-17 (`/api/v1/series`, 3-day window: 731 and 616 series
+  respectively, both label sets including `gen_ai_request_reasoning_level`). So a *request-count* panel
+  by model and effort is plain PromQL and needs no Loki at all; that is what the **Model Usage** tab in
+  `v2/generate.py` is built on. Only token and cost by effort have to go to LogQL. Routing a count
+  panel through Loki because of the sentence above is the mistake this note exists to prevent.
 - **`codexlb.baseline_reset` and `codexlb.critical_path.coverage` only apply to specific instruments** -
   see `03-turn-latency-critical-path.json`'s own top panel for the exact list. Applying either filter
   to an instrument that doesn't carry it wouldn't error; it would silently return zero data, which is
