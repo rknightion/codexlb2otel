@@ -1,9 +1,9 @@
 ---
 id: doc-0003
-title: Closed GitHub Issues (#1-#42)
+title: Closed GitHub issues (pre-Backlog history index)
 type: other
 created_date: '2026-08-14 17:02'
-updated_date: '2026-08-14 17:02'
+updated_date: '2026-08-17 09:02'
 ---
 This repo tracked its work in GitHub Issues from 2026-08-07 until 2026-08-14, when it moved to
 Backlog.md. **31 issues were closed by then; this is the index of them.** The 8 that were still open
