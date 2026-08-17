@@ -58,7 +58,7 @@ jobs:
   # setup-go's go-version-file.
   go-version:
     name: resolve go version
-    runs-on: ubuntu-latest
+    runs-on: arc-arm64
     # Required because `permissions: {}` above grants NOTHING by default, and a job
     # with no block of its own inherits that. This repo is private, so a job
     # without contents: read cannot even check itself out - actions/checkout fails

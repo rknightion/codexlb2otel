@@ -36,7 +36,7 @@ concurrency:
 jobs:
   release-please:
     name: maintain release PR / cut release
-    runs-on: ubuntu-latest
+    runs-on: arc-arm64
     timeout-minutes: 10
     permissions:
       contents: write # create the GitHub Release + tag, and update the release PR
@@ -56,13 +56,20 @@ jobs:
       #
       # Releases now depend on camden being up, unsealed and on the tailnet; a
       # failure here is infrastructure, not the commit.
+      #
+      # This runs on an EKS ARC pod, which cannot join the tailnet: tailscaled
+      # needs privileges a runner pod lacks, and the pod has no 100.64/10 route
+      # and cluster-only DNS. The Tailscale operator's egress ProxyGroup is the
+      # only path in -- see m7kni/rkps-awsinfra#292. join-tailnet/resolve-via
+      # arrived in broker-token at b57e328f, AFTER the SHA this pinned before,
+      # so the pin moves with them.
       - name: Mint a scoped release token
         id: bao
-        uses: rknightion/.github/.github/actions/broker-token@b9ab5f80961f2c29c47a8d7d5dff112b6551169c
+        uses: rknightion/.github/.github/actions/broker-token@fda5f3b9a3f88f187a827e85b33181ea5668478e
         with:
           permission-set: release-please-codexlb2otel
-          tailscale-client-id: ${{ secrets.TS_WIF_CLIENT_ID }}
-          tailscale-audience: ${{ secrets.TS_WIF_AUDIENCE }}
+          join-tailnet: "false"
+          resolve-via: openbao.tailscale.svc.cluster.local
 
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
