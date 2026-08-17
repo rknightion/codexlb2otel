@@ -317,4 +317,4 @@ Two things worth setting deliberately:
 
 ## Status
 
-Early. See [#1](https://github.com/rknightion/codexlb2otel/issues/1) for the build plan.
+Early. See [#1](https://github.com/m7kni/codexlb2otel/issues/1) for the build plan.
