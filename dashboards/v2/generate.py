@@ -223,10 +223,28 @@ def _renumber(queries):
     return queries
 
 
+def _as_table(queries):
+    """A Prometheus query feeding a table panel MUST ask for format: table.
+
+    Without it the instant result arrives as a wide time-series frame - the whole
+    label set collapsed into one column header, with a series picker at the bottom of
+    the panel - instead of one column per label. It renders, it has a number in it, and
+    it is not the table anyone asked for, which is why it survived six panels. Applied
+    centrally so a new table panel cannot reintroduce it. Loki and Tempo carry their
+    own shape and are left alone.
+    """
+    for pq in queries:
+        if pq["spec"]["query"]["group"] == "prometheus":
+            pq["spec"]["query"]["spec"]["format"] = "table"
+    return queries
+
+
 def panel(title, queries, viz="timeseries", desc="", unit=None, opts=None,
           fieldcfg=None, transforms=None, thresholds=None, maxv=None, minv=None,
           decimals=None, overrides=None):
     queries = _renumber(queries)
+    if viz == "table":
+        queries = _as_table(queries)
     _panel_id[0] += 1
     defaults = {}
     if unit:
@@ -278,6 +296,8 @@ LEG_R = {"legend": {"displayMode": "list", "placement": "right", "showLegend": T
          "tooltip": {"mode": "multi", "sort": "desc"}}
 STACK = {"custom": {"stacking": {"mode": "normal", "group": "A"}, "fillOpacity": 40,
                     "lineWidth": 1}}
+PCT = {"custom": {"stacking": {"mode": "percent", "group": "A"}, "fillOpacity": 70,
+                  "lineWidth": 1}}
 BARS = {"custom": {"drawStyle": "bars", "fillOpacity": 70, "lineWidth": 0}}
 
 
@@ -292,6 +312,19 @@ def stat_opts(graph="area", calc="lastNotNull", text_size=None):
 
 TABLE_OPTS = {"showHeader": True, "cellHeight": "sm",
               "footer": {"show": False, "reducer": ["sum"], "countRows": False}}
+
+
+def organize(exclude, rename):
+    """A schema-v2 organize transformation.
+
+    The wrapper is `kind: "Transformation"` with the transformation id in `group` and
+    the payload under `spec.options`. Writing the id as `kind` - which mirrors the
+    classic schema and looks right - validates, pushes, and is then discarded, so the
+    table renders with raw label names and every excluded column still present.
+    """
+    return {"kind": "Transformation", "group": "organize",
+            "spec": {"options": {"excludeByName": exclude, "renameByName": rename,
+                                 "indexByName": {}}}}
 LOGS_OPTS = {"showTime": True, "showLabels": False, "showCommonLabels": False,
              "wrapLogMessage": True, "prettifyLogMessage": False, "enableLogDetails": True,
              "dedupStrategy": "none", "sortOrder": "Descending"}
@@ -462,7 +495,128 @@ of one another. Filtering to `turn` hides real spend.
 
 
 # ---------------------------------------------------------------------------
-# Tab 2 - Turns and responses
+# Tab 2 - Model usage
+# ---------------------------------------------------------------------------
+def tab_models():
+    p = []
+    p.append(text_panel("Which instrument can answer which question", """
+Model usage over time, **grouped and ungrouped by reasoning effort**. Effort is not on every
+instrument, and filtering by a label a series does not carry empties the panel silently rather than
+erroring, so this tab is arranged around one fact:
+
+**`codexlb.responses` and `codexlb.turns` carry BOTH `gen_ai.request.model` and
+`gen_ai.request.reasoning.level`. No token, duration or tool-call instrument carries effort.**
+
+So every effort-split panel here counts **requests**, never tokens. Token shape by effort is a
+LogQL question and lives on the **Tokens & Cost** tab. The one token panel here is by model only,
+and says so.
+
+`responses` counts every model response, prewarm included; `turns` excludes prewarm and compaction.
+Where the two disagree the gap is client-tagged prewarm - real billed traffic, not noise.
+"""))
+    p.append(panel(
+        "Response rate by model", [
+            q(f'sum by (gen_ai_request_model) (rate({prom("codexlb.responses")}'
+              f'{sel(HAS_MODEL)}[$__rate_interval]))', "{{gen_ai_request_model}}"),
+        ], unit="reqps", opts=LEG, fieldcfg=STACK,
+        desc="Model usage over time, NOT split by effort. Stacked, so the top of the "
+             "stack is total response rate."))
+    p.append(panel(
+        "Turn rate by model", [
+            q(f'sum by (gen_ai_request_model) (rate({prom("codexlb.turns")}'
+              f'{sel(HAS_MODEL)}[$__rate_interval]))', "{{gen_ai_request_model}}"),
+        ], unit="reqps", opts=LEG, fieldcfg=STACK,
+        desc="The same shape with prewarm and compaction excluded - real work only. A "
+             "model whose turn rate sits far below its response rate is being prewarmed "
+             "more than it is being used."))
+    p.append(panel(
+        "Response rate by model and reasoning effort", [
+            q(f'sum by (gen_ai_request_model, gen_ai_request_reasoning_level) '
+              f'(rate({prom("codexlb.responses")}{sel(HAS_MODEL)}[$__rate_interval]))',
+              "{{gen_ai_request_model}} / {{gen_ai_request_reasoning_level}}"),
+        ], unit="reqps", opts=LEG, fieldcfg=STACK,
+        desc="The grouped view, and the reason this tab exists. It shows an effort shift "
+             "WITHIN a single model, which the by-model panel above averages away - and "
+             "effort moves reasoning-token spend far harder than request count does."))
+    p.append(panel(
+        "Model mix over time (% of responses)", [
+            q(f'sum by (gen_ai_request_model) (rate({prom("codexlb.responses")}'
+              f'{sel(HAS_MODEL)}[$__rate_interval]))', "{{gen_ai_request_model}}"),
+        ], unit="percentunit", opts=LEG_R, fieldcfg=PCT,
+        desc="The same series normalised to 100%, so a change in the mix stays readable "
+             "while total volume moves. Normalisation is the panel's percent stacking, "
+             "not the query - the underlying values are still rates."))
+    p.append(panel(
+        "Reasoning effort mix over time (%)", [
+            q(f'sum by (gen_ai_request_reasoning_level) (rate({prom("codexlb.responses")}'
+              f'{sel()}[$__rate_interval]))', "{{gen_ai_request_reasoning_level}}"),
+        ], unit="percentunit", opts=LEG_R, fieldcfg=PCT,
+        desc="Effort mix with the model collapsed. Read it against the panel to its left: "
+             "the model split can hold steady while the effort mix drifts upward."))
+    p.append(panel(
+        "Responses by model", [
+            q(f'sum by (gen_ai_request_model) (increase({prom("codexlb.responses")}'
+              f'{sel(HAS_MODEL)}[$__range]))', "{{gen_ai_request_model}}", instant=True),
+        ], "piechart", opts={"legend": {"displayMode": "table", "placement": "right",
+                                        "showLegend": True, "values": ["value", "percent"]},
+                             "pieType": "donut", "reduceOptions": {
+                                 "calcs": ["lastNotNull"], "fields": "", "values": False}},
+        desc="Whole-window totals per model, ungrouped."))
+    p.append(panel(
+        "Responses by reasoning effort", [
+            q(f'sum by (gen_ai_request_reasoning_level) '
+              f'(increase({prom("codexlb.responses")}{sel()}[$__range]))',
+              "{{gen_ai_request_reasoning_level}}", instant=True),
+        ], "piechart", opts={"legend": {"displayMode": "table", "placement": "right",
+                                        "showLegend": True, "values": ["value", "percent"]},
+                             "pieType": "pie", "reduceOptions": {
+                                 "calcs": ["lastNotNull"], "fields": "", "values": False}},
+        desc="Whole-window totals per reasoning level, across every model."))
+    p.append(panel(
+        "Responses by model and effort", [
+            q(f'sum by (gen_ai_request_model, gen_ai_request_reasoning_level) '
+              f'(increase({prom("codexlb.responses")}{sel(HAS_MODEL)}[$__range]))',
+              "{{gen_ai_request_model}} / {{gen_ai_request_reasoning_level}}", instant=True),
+        ], "bargauge", opts={"displayMode": "gradient", "orientation": "horizontal",
+                             "reduceOptions": {"calcs": ["lastNotNull"], "fields": "",
+                                               "values": False}, "showUnfilled": True},
+        desc="The two dimensions crossed and ranked - the flat ordering behind the "
+             "stacked time series above."))
+    p.append(panel(
+        "Model x effort totals", [
+            q(f'sum by (gen_ai_request_model, gen_ai_request_reasoning_level, '
+              f'codexlb_request_kind) (increase({prom("codexlb.responses")}'
+              f'{sel(HAS_MODEL)}[$__range]))', "", instant=True),
+        ], "table", opts=TABLE_OPTS,
+        transforms=[organize({"Time": True, "job": True, "service_name": True,
+                              "deployment_environment": True, "instance": True},
+                             {"Value": "responses", "gen_ai_request_model": "model",
+                              "gen_ai_request_reasoning_level": "effort",
+                              "codexlb_request_kind": "kind"})],
+        desc="The numbers behind the tab, with request kind as a third column so prewarm "
+             "is visible rather than folded into the model total. Sort any column."))
+    p.append(panel(
+        "Response rate by reasoning effort", [
+            q(f'sum by (gen_ai_request_reasoning_level) (rate({prom("codexlb.responses")}'
+              f'{sel()}[$__rate_interval]))', "{{gen_ai_request_reasoning_level}}"),
+        ], unit="reqps", opts=LEG, fieldcfg=BARS,
+        desc="Absolute effort volume over time, drawn as bars so each bucket reads as a "
+             "discrete count rather than a smoothed area."))
+    p.append(panel(
+        "Token rate by model", [
+            q(f'sum by (gen_ai_request_model) (rate({prom("codexlb.tokens")}'
+              f'{sel(ADDITIVE_TOKENS, F_MODEL)}[$__rate_interval]))',
+              "{{gen_ai_request_model}}"),
+        ], unit="short", opts=LEG, fieldcfg=STACK,
+        desc="What the model mix costs in tokens. BY MODEL ONLY - codexlb.tokens does not "
+             "carry reasoning effort, so there is no effort split to be had here at any "
+             "price. Input + output only; cache_read and reasoning are sub-buckets nested "
+             "inside those two and stacking them on their own parents double-counts."))
+    return p
+
+
+# ---------------------------------------------------------------------------
+# Tab 3 - Turns and responses
 # ---------------------------------------------------------------------------
 def tab_turns():
     p = []
@@ -494,11 +648,11 @@ def tab_turns():
             q(f'sum by (gen_ai_request_model, codexlb_status, codexlb_request_kind) '
               f'(increase({prom("codexlb.responses")}{sel()}[$__range]))', "", instant=True),
         ], "table", opts=TABLE_OPTS,
-        transforms=[{"kind": "organize", "spec": {"excludeByName": {"Time": True, "job": True,
-                     "service_name": True, "deployment_environment": True, "instance": True},
-                     "renameByName": {"Value": "count", "gen_ai_request_model": "model",
-                                      "codexlb_status": "status", "codexlb_request_kind": "kind"},
-                     "indexByName": {}}}],
+        transforms=[organize({"Time": True, "job": True, "service_name": True,
+                              "deployment_environment": True, "instance": True},
+                             {"Value": "count", "gen_ai_request_model": "model",
+                              "codexlb_status": "status",
+                              "codexlb_request_kind": "kind"})],
         desc="The three labels that matter, crossed. Read it as: which model, doing what, "
              "ended how."))
     p.append(panel(
@@ -1269,6 +1423,9 @@ def build():
         ("Overview", tab_overview(),
          [24, 4, 4, 4, 4, 4, 4, 12, 12, 12, 12, 12, 12],
          [5, 5, 5, 5, 5, 5, 5, 8, 8, 8, 8, 8, 9]),
+        ("Model Usage", tab_models(),
+         [24, 12, 12, 24, 12, 12, 8, 8, 8, 24, 12, 12],
+         [7, 9, 9, 10, 9, 9, 9, 9, 9, 10, 9, 9]),
         ("Turns & Responses", tab_turns(),
          [12, 12, 12, 12, 12, 12, 12, 12, 24],
          [8, 8, 8, 9, 8, 9, 7, 7, 11]),
@@ -1309,9 +1466,9 @@ def build():
         "title": "codexlb2otel - Full Telemetry",
         "description": (
             "Every signal codexlb2otel emits: all 57 metrics, all 9 Loki record types, and "
-            "the trace tree. Ten tabs, from agent behaviour through to the exporter's own "
-            "health. Generated by dashboards/v2/generate.py, which fails the build if any "
-            "declared metric or record type loses its last panel."),
+            "the trace tree. Eleven tabs, from agent behaviour through to the exporter's "
+            "own health. Generated by dashboards/v2/generate.py, which fails the build if "
+            "any declared metric or record type loses its last panel."),
         "tags": ["codexlb2otel", "codex-lb", "genai", "generated"],
         "editable": True,
         "preload": False,
@@ -1423,7 +1580,11 @@ if __name__ == "__main__":
     manifest = {
         "apiVersion": "dashboard.grafana.app/v2",
         "kind": "Dashboard",
-        "metadata": {"name": "codexlb2otel-full"},
+        # The folder annotation must be in the manifest. Without it a push is free to
+        # land the dashboard in General, silently detaching it from the codexlb2otel
+        # folder it has always lived in.
+        "metadata": {"name": "codexlb2otel-full",
+                     "annotations": {"grafana.app/folder": "codexlb2otel"}},
         "spec": dashboard,
     }
     json.dump(manifest, sys.stdout, indent=2)
