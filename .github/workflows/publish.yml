@@ -87,6 +87,19 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "building with Go $v"
 
+  # BLOCKED since the move to brewmdm (2026-08-17). This calls rknightion's
+  # container-publish, whose build job is `runs-on: ${{ matrix.runner }}` over a
+  # hosted-runner matrix and which exposes NO runner input -- so the callee
+  # cannot be steered onto ARC from here. brewmdm has no hosted minutes, so both
+  # build legs fail with an empty runner_name, which reads like a payment outage
+  # rather than a wrong label.
+  #
+  # brewmdm/.github has its own container-publish taking `runner` (default
+  # arc-arm64), already used by brewmdm/control-plane. Moving to it is a
+  # contract rewrite, not a repin: it has no release-tag, sbom, sign, trivy or
+  # helm inputs. That trade is a deliberate decision, not migration cleanup.
+  #
+  # `go-version` above is unaffected and green on arc-arm64.
   image:
     name: build and publish
     needs: go-version
