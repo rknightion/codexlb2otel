@@ -84,6 +84,41 @@ jobs:
             echo "reviewing ${base}..$(git rev-parse HEAD)"
           fi
 
+      # DELIBERATELY BEFORE the OpenBao step: this downloads third-party code,
+      # so it must not run in a job step that already holds a minted credential.
+      # CodeRabbit's own review of this workflow flagged the original ordering
+      # (install-after-secret, via `curl | sh`) as critical, correctly.
+      - name: install the CodeRabbit CLI
+        if: steps.range.outputs.skip != 'true'
+        env:
+          # Bare version, no leading "v": the install script's usage comment
+          # shows "v1.2.3" but the release paths carry no prefix and a
+          # "v"-prefixed value 404s.
+          CR_VERSION: "0.7.3"
+          # CodeRabbit publishes NO checksum or signature for its releases —
+          # probed for .sha256, checksums.txt, SHA256SUMS and .sig, all 404 —
+          # and its install.sh verifies nothing either. So this digest is ours,
+          # recorded from the artefact at the pinned version. It is trust on
+          # first use, not upstream provenance: it cannot prove the original
+          # download was genuine, but it does pin the bytes, so any later change
+          # to that URL fails the job instead of silently executing.
+          # Recompute deliberately when bumping CR_VERSION:
+          #   curl -fsSL https://cli.coderabbit.ai/releases/<v>/coderabbit-linux-arm64.zip | sha256sum
+          CR_SHA256: "7962ca2009cc96c9d24f412545ead9e95b9942bb669c31d1077fdbb2c52e5b24"
+        run: |
+          set -euo pipefail
+          # The release archive directly, not install.sh — piping an unverified
+          # script into a shell is the thing being avoided, and the script only
+          # unzips this same artefact and edits a shell profile.
+          url="https://cli.coderabbit.ai/releases/${CR_VERSION}/coderabbit-linux-arm64.zip"
+          curl -fsSL --retry 3 --retry-delay 2 -o /tmp/coderabbit.zip "$url"
+          echo "${CR_SHA256}  /tmp/coderabbit.zip" | sha256sum --check --strict -
+          mkdir -p "$HOME/.local/bin"
+          unzip -q -o /tmp/coderabbit.zip -d "$HOME/.local/bin"
+          chmod +x "$HOME/.local/bin/coderabbit"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/coderabbit" --version
+
       - name: read the CodeRabbit key from OpenBao
         if: steps.range.outputs.skip != 'true'
         uses: rknightion/.github/.github/actions/bao-secret@0104f5892b5ad5414c98bfdc213430dce083ad80
@@ -95,19 +130,6 @@ jobs:
           # operator's egress ProxyGroup is the path in.
           join-tailnet: "false"
           resolve-via: openbao.tailscale.svc.cluster.local
-
-      - name: install the CodeRabbit CLI
-        if: steps.range.outputs.skip != 'true'
-        env:
-          # Pinned, not latest: an unpinned curl-to-shell changes the review
-          # engine under us with no diff and no way to reproduce a past run.
-          # Bump deliberately. NOTE the bare version — the install script's own
-          # usage comment shows "v1.2.3" but the release paths carry no leading
-          # "v", and a "v"-prefixed value 404s at download time.
-          CODERABBIT_VERSION: "0.7.3"
-        run: |
-          curl -fsSL https://cli.coderabbit.ai/install.sh | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: authenticate
         if: steps.range.outputs.skip != 'true'
@@ -188,6 +210,11 @@ jobs:
                   out.append(f"<details><summary><code>{sev}</code> — {name}</summary>")
                   out.append("")
                   instr = (f.get("codegenInstructions") or "").strip()
+                  # Not every finding carries codegenInstructions; fall back to
+                  # the human-readable comment so a finding is never rendered as
+                  # a bare filename with no explanation.
+                  if not instr:
+                      instr = (f.get("comment") or f.get("description") or "").strip()
                   if instr:
                       out.append("```")
                       out.append(instr)
