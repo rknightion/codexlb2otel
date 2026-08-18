@@ -1,0 +1,217 @@
+# CodeRabbit review on every push to main.
+#
+# WHY THIS EXISTS. This org commits straight to main with no pull requests, so
+# the CodeRabbit GitHub app never sees a PR to review and every PR-time feature
+# in the org config (pre_merge_checks, finishing_touches, the high-level summary)
+# is inert. The only review that happens is a CLI review an agent remembers to
+# run by hand. This job makes it unconditional.
+#
+# WHAT ACTUALLY APPLIES. A CLI review resolves .coderabbit.yaml — the repo file
+# if present, otherwise the central config in m7kni/coderabbit — and honours
+# reviews.path_instructions, path_filters, tools, profile and tone_instructions.
+# It ignores pre_merge_checks entirely. That is why the wire-compatibility,
+# secrets/PII and privilege-boundary rules live in path_instructions.
+#
+# AUTHENTICATION. No stored credential: the CodeRabbit key is read per-run from
+# OpenBao on camden against this job's GitHub OIDC token, scoped to this repo and
+# expiring in minutes. Role `coderabbit-codexlb2otel`, KV path
+# `secret/brewmdm/coderabbit`, policy `gha-brewmdm-coderabbit`. The KV path and
+# policy are SHARED across the org (one CodeRabbit key serves every repo) with a
+# role per repo, so `role:` must be passed explicitly — bao-secret otherwise
+# defaults the role to the permission-set name and auth/gha/login answers 400.
+# See camden/openbao/runbooks/CI-SECRETS.md.
+name: CodeRabbit review
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # exchanged for an OpenBao token; required by bao-secret
+
+concurrency:
+  group: coderabbit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: review pushed commits
+    runs-on: arc-arm64
+    # Reviews are metered per reviewed file and rate-limited per developer per
+    # hour. This ceiling is a safety net against a hung review holding a runner,
+    # not an expected runtime — a small push completes in well under a minute.
+    timeout-minutes: 20
+    steps:
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the review range starts at github.event.before, which
+          # a shallow clone will not contain when a push carries more than one
+          # commit. Depth 2 would silently review only the last commit.
+          fetch-depth: 0
+
+      - name: resolve the review range
+        id: range
+        # github.event.before is all-zeros for a branch creation and is not an
+        # ancestor after a force-push, so it is verified rather than trusted.
+        # Falling back to HEAD~1 reviews the tip commit, which is a smaller
+        # review than intended but never a wrong or failing one. A repo whose
+        # first ever commit is also its tip has no base at all: skip.
+        env:
+          # Routed through env rather than interpolated into the script body.
+          # This is a git SHA and not free text, so it is not an injection
+          # vector today, but a ${{ }} expansion inside a run: block is the
+          # shape that becomes one the moment the field changes.
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          before="$BEFORE_SHA"
+          base=""
+          if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ] \
+             && git cat-file -e "${before}^{commit}" 2>/dev/null \
+             && git merge-base --is-ancestor "$before" HEAD 2>/dev/null; then
+            base="$before"
+          elif git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+            echo "::notice::github.event.before unusable (branch creation or force-push); reviewing the tip commit only"
+            base="$(git rev-parse HEAD~1)"
+          fi
+          if [ -z "$base" ]; then
+            echo "::notice::no base commit available, nothing to review"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=$base" >> "$GITHUB_OUTPUT"
+            echo "reviewing ${base}..$(git rev-parse HEAD)"
+          fi
+
+      - name: read the CodeRabbit key from OpenBao
+        if: steps.range.outputs.skip != 'true'
+        uses: rknightion/.github/.github/actions/bao-secret@0104f5892b5ad5414c98bfdc213430dce083ad80
+        with:
+          role: coderabbit-codexlb2otel
+          path: brewmdm/coderabbit
+          # EKS runner pods sit on the tailnet's far side and cannot join it:
+          # tailscaled needs privileges a runner pod lacks. The Tailscale
+          # operator's egress ProxyGroup is the path in.
+          join-tailnet: "false"
+          resolve-via: openbao.tailscale.svc.cluster.local
+
+      - name: install the CodeRabbit CLI
+        if: steps.range.outputs.skip != 'true'
+        env:
+          # Pinned, not latest: an unpinned curl-to-shell changes the review
+          # engine under us with no diff and no way to reproduce a past run.
+          # Bump deliberately. NOTE the bare version — the install script's own
+          # usage comment shows "v1.2.3" but the release paths carry no leading
+          # "v", and a "v"-prefixed value 404s at download time.
+          CODERABBIT_VERSION: "0.7.3"
+        run: |
+          curl -fsSL https://cli.coderabbit.ai/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: authenticate
+        if: steps.range.outputs.skip != 'true'
+        # The CLI does not read the key from any environment variable — the flag
+        # is the only route in. CODERABBIT_API_KEY here comes from bao-secret,
+        # which exports each KV key uppercased and registers it as a mask, so it
+        # cannot be echoed into the log by this step or any later one.
+        run: coderabbit auth login --api-key "$CODERABBIT_API_KEY"
+
+      - name: review
+        if: steps.range.outputs.skip != 'true'
+        id: review
+        # --agent emits NDJSON, one object per line, typed by a "type" field.
+        # The review exits 0 whether or not it found anything, so the pass/fail
+        # decision belongs to the summary step below, not to this exit code. A
+        # non-zero exit here is a real failure (auth, network, rate limit) and
+        # must not be swallowed.
+        env:
+          BASE_COMMIT: ${{ steps.range.outputs.base }}
+        run: |
+          set -o pipefail
+          coderabbit review --agent --committed \
+            --base-commit "$BASE_COMMIT" \
+            | tee findings.ndjson
+
+      - name: summarise findings
+        if: steps.range.outputs.skip != 'true' && !cancelled()
+        # Fails the job on a critical finding only. A red build after the commit
+        # has already landed is a signal to act, not a merge gate — main is
+        # already moving — so anything below critical is reported and left.
+        #
+        # Severity vocabulary is the CLI's own enum, lowercase:
+        # critical > major > minor > trivial > info.
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+
+          findings, completed, reviewed = [], False, []
+          with open("findings.ndjson", encoding="utf-8") as fh:
+              for line in fh:
+                  line = line.strip()
+                  if not line.startswith("{"):
+                      continue
+                  try:
+                      obj = json.loads(line)
+                  except json.JSONDecodeError:
+                      continue
+                  if obj.get("type") == "finding":
+                      findings.append(obj)
+                  elif obj.get("type") == "complete":
+                      completed = True
+                      reviewed = obj.get("reviewedFiles", [])
+
+          # A run that produced no "complete" record did not finish, and zero
+          # findings from an unfinished review is not a clean review.
+          if not completed:
+              print("::error::the review did not report completion; treating as failed")
+              sys.exit(1)
+
+          order = ["critical", "major", "minor", "trivial", "info"]
+          rank = {s: i for i, s in enumerate(order)}
+          findings.sort(key=lambda f: rank.get(str(f.get("severity", "")).lower(), 99))
+
+          out = ["# CodeRabbit review", ""]
+          out.append(f"{len(reviewed)} file(s) reviewed, {len(findings)} finding(s).")
+          out.append("")
+
+          if findings:
+              counts = {}
+              for f in findings:
+                  sev = str(f.get("severity", "unknown")).lower()
+                  counts[sev] = counts.get(sev, 0) + 1
+              out.append(" · ".join(f"**{s}** {counts[s]}" for s in order if s in counts))
+              out.append("")
+              for f in findings:
+                  sev = str(f.get("severity", "unknown")).lower()
+                  name = f.get("fileName", "(unknown file)")
+                  out.append(f"<details><summary><code>{sev}</code> — {name}</summary>")
+                  out.append("")
+                  instr = (f.get("codegenInstructions") or "").strip()
+                  if instr:
+                      out.append("```")
+                      out.append(instr)
+                      out.append("```")
+                  for s in f.get("suggestions") or []:
+                      out.append("")
+                      out.append("```suggestion")
+                      out.append(str(s).rstrip())
+                      out.append("```")
+                  out.append("")
+                  out.append("</details>")
+                  out.append("")
+          else:
+              out.append("No findings.")
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write("\n".join(out) + "\n")
+
+          critical = [f for f in findings
+                      if str(f.get("severity", "")).lower() == "critical"]
+          for f in critical:
+              print(f"::error file={f.get('fileName','')}::critical finding — see the job summary")
+          if critical:
+              sys.exit(1)
+          PY
