@@ -362,6 +362,19 @@ def hist_avg(metric, by, legend, filt=F_FULL):
               legend)]
 
 
+def mean_over_range(metric, by, extra, filt=F_FULL):
+    """Histogram mean over the selected range, preserving only comparison cohorts."""
+    s, c = prom(metric, "_sum"), prom(metric, "_count")
+    return (f'sum by ({by}) (increase({s}{sel(extra, filt)}[$__range])) / '
+            f'clamp_min(sum by ({by}) (increase({c}{sel(extra, filt)}[$__range])), 1)')
+
+
+def count_over_range(metric, by, extra, filt=F_FULL):
+    """Histogram observations over the selected range, grouped for cohort masking."""
+    c = prom(metric, "_count")
+    return f'sum by ({by}) (increase({c}{sel(extra, filt)}[$__range]))'
+
+
 def logq(expr, legend="", ref="A", fmt="range"):
     return q(expr, legend, ref, ds=LOKI, group="loki", fmt=fmt)
 
@@ -807,7 +820,151 @@ it on the same axis would double-count against `input` for anyone who did not kn
 
 
 # ---------------------------------------------------------------------------
-# Tab 4 - Latency and the critical path
+# Tab 4 - Fast mode
+# ---------------------------------------------------------------------------
+def tab_fast_mode():
+    p = []
+    p.append(text_panel("What fast mode can and cannot prove", """
+**Fast mode is `codexlb_service_tier_requested="priority"`.** Normal traffic is the series where
+that requested-tier label is absent; it is not a request for `default`. The separately captured
+`codexlb_service_tier` is what the response reports, and responses can report `default` or `auto`
+even when the request asked for `priority`.
+
+The **reported priority rate** therefore answers whether response metadata acknowledges the request.
+It does not prove how the request was queued. Latency comparisons answer whether fast traffic was
+observably faster, but they are observational rather than an A/B experiment. Use the per-model and
+request-kind effect panels with their sample counts: an overall mean would mostly measure a changing
+mix of models and work, not the effect of fast mode.
+
+Positive improvement means fast was faster; negative means it was slower. A blank comparison means
+the selected window does not contain both fast and normal samples for the same cohort.
+"""))
+    p.append(panel(
+        "Fast requests", [q(
+            f'round(sum(increase({prom("codexlb.responses")}'
+            f'{sel("codexlb_service_tier_requested=\"priority\"")}[$__range])))',
+            "fast responses", instant=True)],
+        "stat", unit="short", opts=stat_opts("none", "lastNotNull", 42),
+        desc="Responses whose request explicitly asked for priority processing in the selected range."))
+    p.append(panel(
+        "Fast share", [q(
+            f'100 * (sum(increase({prom("codexlb.responses")}'
+            f'{sel("codexlb_service_tier_requested=\"priority\"")}[$__range])) or vector(0)) / '
+            f'clamp_min(sum(increase({prom("codexlb.responses")}{sel()}[$__range])), 1)',
+            "fast share", instant=True)],
+        "stat", unit="percent", minv=0, maxv=100, decimals=1,
+        opts=stat_opts("none", "lastNotNull", 42),
+        desc="Share of selected responses that explicitly asked for priority. Normal is an absent "
+             "requested-tier label, not a requested value called default."))
+    p.append(panel(
+        "Reported priority rate", [q(
+            f'100 * (sum(increase({prom("codexlb.responses")}'
+            f'{sel("codexlb_service_tier_requested=\"priority\", codexlb_service_tier=\"priority\"")}[$__range])) '
+            f'or vector(0)) / '
+            f'clamp_min(sum(increase({prom("codexlb.responses")}'
+            f'{sel("codexlb_service_tier_requested=\"priority\"")}[$__range])), 1)',
+            "reported priority", instant=True)],
+        "stat", unit="percent", minv=0, maxv=100, decimals=1,
+        opts=stat_opts("none", "lastNotNull", 42),
+        desc="Of requests that asked for priority, the percentage whose response also reported "
+             "priority. This is metadata agreement, not proof of queue treatment; default or auto "
+             "may mean the request was declined or that the response does not echo the applied tier."))
+    p.append(panel(
+        "Requested fast traffic by reported tier", [q(
+            f'sum by (codexlb_service_tier) (rate({prom("codexlb.responses")}'
+            f'{sel("codexlb_service_tier_requested=\"priority\"")}[$__rate_interval]))',
+            "reported={{codexlb_service_tier}}")],
+        unit="reqps", opts=LEG, fieldcfg=STACK,
+        desc="Only requests that asked for priority, split by the tier reported in each response. "
+             "An empty reported value is preserved rather than rewritten."))
+    p.append(panel(
+        "TTFT sample sizes by cohort", [q(
+            f'round(sum by (gen_ai_request_model, codexlb_request_kind, '
+            f'codexlb_service_tier_requested) (increase('
+            f'{prom("gen_ai.client.time_to_first_token", "_count")}'
+            f'{sel()}[$__range])))', "", instant=True)],
+        "table", opts=TABLE_OPTS,
+        transforms=[organize({"Time": True, "job": True, "service_name": True,
+                              "deployment_environment": True, "instance": True},
+                             {"Value": "TTFT samples", "gen_ai_request_model": "model",
+                              "codexlb_request_kind": "kind",
+                              "codexlb_service_tier_requested": "requested tier"})],
+        desc="The exact denominator for the TTFT comparison. A blank requested tier is normal "
+             "traffic. Do not interpret a large percentage based on a tiny cohort."))
+    p.append(panel(
+        "Time to first token by requested mode",
+        hist_quantiles("gen_ai.client.time_to_first_token", "codexlb_service_tier_requested",
+                       "asked={{codexlb_service_tier_requested}}"),
+        unit="s", opts=LEG,
+        desc="Perceived responsiveness grouped by what Codex asked for. Blank is normal; priority "
+             "is fast. This aggregate distribution shows shape; the cohort-normalized effect below "
+             "is the fairer comparison."))
+
+    fast_ttft = mean_over_range(
+        "gen_ai.client.time_to_first_token", "gen_ai_request_model, codexlb_request_kind",
+        'codexlb_service_tier_requested="priority"')
+    normal_ttft = mean_over_range(
+        "gen_ai.client.time_to_first_token", "gen_ai_request_model, codexlb_request_kind",
+        'codexlb_service_tier_requested!~"priority"')
+    fast_ttft_n = count_over_range(
+        "gen_ai.client.time_to_first_token", "gen_ai_request_model, codexlb_request_kind",
+        'codexlb_service_tier_requested="priority"')
+    normal_ttft_n = count_over_range(
+        "gen_ai.client.time_to_first_token", "gen_ai_request_model, codexlb_request_kind",
+        'codexlb_service_tier_requested!~"priority"')
+    p.append(panel(
+        "Fast TTFT improvement by model and kind", [q(
+            f'(100 * (({normal_ttft}) - ({fast_ttft})) / clamp_min(({normal_ttft}), 0.001)) '
+            f'and on (gen_ai_request_model, codexlb_request_kind) ({fast_ttft_n} > 0) '
+            f'and on (gen_ai_request_model, codexlb_request_kind) ({normal_ttft_n} > 0)',
+            "{{gen_ai_request_model}} / {{codexlb_request_kind}}", instant=True)],
+        "bargauge", unit="percent", decimals=1,
+        opts={"displayMode": "gradient", "orientation": "horizontal",
+              "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+              "showUnfilled": True},
+        thresholds=[{"color": "red", "value": None}, {"color": "green", "value": 0}],
+        desc="Mean TTFT improvement within the same model and request kind: "
+             "100 × (normal - fast) / normal. Positive is faster. Cohorts without both modes "
+             "are absent, avoiding a misleading cross-model aggregate."))
+
+    fast_turn = mean_over_range("codexlb.turn.duration", "gen_ai_request_model",
+                                'codexlb_service_tier_requested="priority"', F_MODEL)
+    normal_turn = mean_over_range("codexlb.turn.duration", "gen_ai_request_model",
+                                  'codexlb_service_tier_requested!~"priority"', F_MODEL)
+    fast_turn_n = count_over_range("codexlb.turn.duration", "gen_ai_request_model",
+                                   'codexlb_service_tier_requested="priority"', F_MODEL)
+    normal_turn_n = count_over_range("codexlb.turn.duration", "gen_ai_request_model",
+                                     'codexlb_service_tier_requested!~"priority"', F_MODEL)
+    p.append(panel(
+        "Turn-duration sample sizes by model", [q(
+            f'round(sum by (gen_ai_request_model, codexlb_service_tier_requested) '
+            f'(increase({prom("codexlb.turn.duration", "_count")}{sel(None, F_MODEL)}[$__range])))',
+            "", instant=True)],
+        "table", opts=TABLE_OPTS,
+        transforms=[organize({"Time": True, "job": True, "service_name": True,
+                              "deployment_environment": True, "instance": True},
+                             {"Value": "turn samples", "gen_ai_request_model": "model",
+                              "codexlb_service_tier_requested": "requested tier"})],
+        desc="The exact denominator for the end-to-end comparison below. Blank is normal and "
+             "priority is fast; only real user-visible turns enter this histogram."))
+    p.append(panel(
+        "Fast end-to-end turn improvement by model", [q(
+            f'(100 * (({normal_turn}) - ({fast_turn})) / clamp_min(({normal_turn}), 0.001)) '
+            f'and on (gen_ai_request_model) ({fast_turn_n} > 0) '
+            f'and on (gen_ai_request_model) ({normal_turn_n} > 0)',
+            "{{gen_ai_request_model}}", instant=True)],
+        "bargauge", unit="percent", decimals=1,
+        opts={"displayMode": "gradient", "orientation": "horizontal",
+              "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+              "showUnfilled": True},
+        thresholds=[{"color": "red", "value": None}, {"color": "green", "value": 0}],
+        desc="Mean user-visible turn-duration improvement within each model. Positive is faster. "
+             "Turn duration only records real turns, so request kind is not a dimension here."))
+    return p
+
+
+# ---------------------------------------------------------------------------
+# Tab 5 - Latency and the critical path
 # ---------------------------------------------------------------------------
 def tab_latency():
     p = []
@@ -1432,6 +1589,9 @@ def build():
         ("Tokens & Cost", tab_tokens(),
          [24, 16, 8, 12, 12, 12, 24, 8, 8, 8, 24],
          [6, 9, 9, 9, 8, 8, 10, 7, 7, 7, 6]),
+        ("Fast Mode", tab_fast_mode(),
+         [24, 8, 8, 8, 12, 12, 12, 12, 12, 12],
+         [7, 7, 7, 7, 9, 10, 10, 10, 9, 10]),
         ("Latency & Critical Path", tab_latency(),
          [24, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12],
          [7, 9, 9, 8, 8, 8, 9, 8, 9, 8, 9, 8]),
@@ -1466,7 +1626,7 @@ def build():
         "title": "codexlb2otel - Full Telemetry",
         "description": (
             "Every signal codexlb2otel emits: all 57 metrics, all 9 Loki record types, and "
-            "the trace tree. Eleven tabs, from agent behaviour through to the exporter's "
+            "the trace tree. Twelve tabs, from agent behaviour through to the exporter's "
             "own health. Generated by dashboards/v2/generate.py, which fails the build if "
             "any declared metric or record type loses its last panel."),
         "tags": ["codexlb2otel", "codex-lb", "genai", "generated"],
