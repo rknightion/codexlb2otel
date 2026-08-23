@@ -4,12 +4,11 @@ title: checkpoint.json grows without bound and is fully rewritten + fsynced ever
 status: To Do
 assignee: []
 created_date: '2026-08-14 17:00'
+updated_date: '2026-08-23 12:10'
 labels:
   - enhancement
   - from-gh-issue
 dependencies: []
-references:
-  - [purged issue archive]
 priority: high
 type: bug
 ordinal: 8000
@@ -18,8 +17,7 @@ ordinal: 8000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Migrated from GitHub issue #41 (full body and 1 comment in `[purged issue archive]`).
-Asked in passing ("will it grow indefinitely?"), measured rather than assumed. The answer is yes,
+Migrated from the former GitHub issue tracker.\nAsked in passing ("will it grow indefinitely?"), measured rather than assumed. The answer is yes,
 and there is a second-order effect that is the bigger cost today.
 
 ## Measured, 2026-08-09

@@ -4,13 +4,11 @@ title: 'agento11y needs the sigil:write scope; the token has only logs/metrics/t
 status: Parked
 assignee: []
 created_date: '2026-08-14 16:59'
-updated_date: '2026-08-14 17:00'
+updated_date: '2026-08-23 12:05'
 labels:
   - from-gh-issue
   - blocked-on-human
 dependencies: []
-references:
-  - [purged issue archive]
 priority: medium
 type: bug
 ordinal: 6000
@@ -19,7 +17,7 @@ ordinal: 6000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Migrated from GitHub issue #30 (full body in `[purged issue archive]`). Imported `Parked`, not
+Migrated from the former GitHub issue tracker. Imported `Parked`, not
 `To Do`: it cannot proceed inside this repo at all - see the resume boundary in the notes.
 
 First production run, 2026-08-07:

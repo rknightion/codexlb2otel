@@ -6,11 +6,10 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-08-14 16:59'
+updated_date: '2026-08-23 12:05'
 labels:
   - from-gh-issue
 dependencies: []
-references:
-  - [purged issue archive]
 type: bug
 ordinal: 5000
 ---
@@ -18,7 +17,7 @@ ordinal: 5000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Migrated from GitHub issue #29 (full body and 1 comment in `[purged issue archive]`). The issue was
+Migrated from the former GitHub issue tracker. The issue was
 filed **after** the fix landed, so the diagnosis would not live only in a commit message - so this
 task is imported already `Done`. It is a record, not open work.
 

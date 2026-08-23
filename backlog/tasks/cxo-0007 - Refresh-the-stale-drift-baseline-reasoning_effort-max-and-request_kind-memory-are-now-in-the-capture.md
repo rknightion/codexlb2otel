@@ -6,12 +6,11 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-14 17:00'
+updated_date: '2026-08-23 12:10'
 labels:
   - enhancement
   - from-gh-issue
 dependencies: []
-references:
-  - [purged issue archive]
 priority: medium
 type: chore
 ordinal: 7000
@@ -20,8 +19,7 @@ ordinal: 7000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Migrated from GitHub issue #39 (full body in `[purged issue archive]`).
-
+Migrated from the former GitHub issue tracker.\n
 Found incidentally while syncing the corpus for the summariser work, not by looking for it.
 `corpus/sync` ran the drift probe over 10 new archives (2026-08-09T00 through T09, 740 MB):
 

@@ -209,7 +209,7 @@ type AgentO11y struct {
 	// (.../api/v1/generations:export), not just a host.
 	URL string `yaml:"url" json:"url"`
 	// User is the Grafana Cloud instance id, sent as the basic-auth username - same
-	// credentials already used for Loki and OTLP, per instance 654321.
+	// credentials already used for Loki and OTLP on the same stack.
 	User string `yaml:"user" json:"user"`
 	// Token is the access-policy token.
 	Token Secret `yaml:"token" json:"token"`

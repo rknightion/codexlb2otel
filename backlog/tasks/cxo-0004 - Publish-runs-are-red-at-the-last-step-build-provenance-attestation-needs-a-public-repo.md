@@ -6,13 +6,11 @@ title: >-
 status: Parked
 assignee: []
 created_date: '2026-08-14 16:59'
-updated_date: '2026-08-14 17:00'
+updated_date: '2026-08-23 12:10'
 labels:
   - from-gh-issue
   - blocked-on-human
 dependencies: []
-references:
-  - [purged issue archive]
 priority: medium
 type: bug
 ordinal: 4000
@@ -21,8 +19,7 @@ ordinal: 4000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Migrated from GitHub issue #27 (full body in `[purged issue archive]`).
-
+Migrated from the former GitHub issue tracker.\n
 `publish.yml` delegates to the fleet's shared `rknightion/.github` `container-publish.yml`.
 Everything works except the final step:
 

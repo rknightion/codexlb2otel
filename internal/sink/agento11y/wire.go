@@ -4,7 +4,7 @@
 // doc comment for why sigil needs its own emitter at all.
 //
 // The wire types below are hand-written against
-// /Users/<user>/repos/sigil-sdk/proto/agento11y/v1/generation_ingest.proto rather than
+// sigil-sdk/proto/agento11y/v1/generation_ingest.proto rather than
 // generated from it or built via the protobuf-go library: this service has no other
 // protobuf dependency anywhere in its production path (internal/sink/otlptrace talks
 // OTLP, which is itself protojson/protobuf under the otel SDK, but nothing here hand-

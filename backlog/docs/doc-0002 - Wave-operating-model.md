@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 17:01'
-updated_date: '2026-08-14 17:01'
+updated_date: '2026-08-23 12:05'
 ---
 This document carries **only what is specific to codexlb2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -100,11 +100,9 @@ repo names before that was closed.
 The same bar applies to `backlog/`: write the shape, not the instance. Sweep before committing:
 
 ```bash
-grep -rniE "@gmail|@rob-knight|/Users/rob|[0-9]{1,3}(\.[0-9]{1,3}){3}" backlog/ && echo "REVIEW THESE"
+grep -rniE "@gmail|@rob-knight|/Users/[[:alnum:]_.-]+|[0-9]{1,3}(\.[0-9]{1,3}){3}" backlog/ && echo "REVIEW THESE"
 ```
 
-`[purged issue archive]` is the deliberate exception and is redacted - see `[purged issue archive]` for
-the placeholder mapping and the non-redactions.
 
 ## Ownership and the escape hatch
 

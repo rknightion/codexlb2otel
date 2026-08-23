@@ -49,12 +49,9 @@ for this project's own rules - its recurring defects, exclusive resources and ru
 
 ## History before 2026-08-14
 
-This repo tracked its work in GitHub Issues until 2026-08-14. The issues were archived and then
-deleted, so `gh issue view <N>` no longer resolves: bodies and comments are in
-`[purged issue archive]` (redacted - see `[purged issue archive]`), and the closed set is indexed in the
-**"Closed GitHub Issues (#1-#42)"** document. `#NNN` references in commit messages and code comments
-still point there and remain the only ID space for that history - task IDs deliberately do not
-mirror it.
+This repo tracked its work in GitHub Issues until 2026-08-14. The issues and their local export were
+deleted before the repository became public. Existing `#NNN` references in commit messages and code
+comments refer to that retired tracker; task IDs deliberately do not mirror it.
 
 <!-- BACKLOG.MD GUIDELINES START -->
 <!-- backlog.md-instructions-version: 1.50.1 -->

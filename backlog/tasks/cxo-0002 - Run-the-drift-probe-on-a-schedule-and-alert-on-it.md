@@ -4,13 +4,11 @@ title: Run the drift probe on a schedule and alert on it
 status: To Do
 assignee: []
 created_date: '2026-08-14 16:58'
-updated_date: '2026-08-14 17:00'
+updated_date: '2026-08-23 12:10'
 labels:
   - enhancement
   - from-gh-issue
 dependencies: []
-references:
-  - [purged issue archive]
 priority: medium
 type: enhancement
 ordinal: 2000
@@ -19,8 +17,7 @@ ordinal: 2000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Migrated from GitHub issue #13 (full body and 1 comment in `[purged issue archive]`).
-Follows on from `e3cb67d`.
+Migrated from the former GitHub issue tracker.\nFollows on from `e3cb67d`.
 
 `clbprobe` detects an archive format change in ~6s across 1.4GB. Run by hand it catches drift
 whenever someone remembers to run it. The failure it guards against is silent: a field that gains a

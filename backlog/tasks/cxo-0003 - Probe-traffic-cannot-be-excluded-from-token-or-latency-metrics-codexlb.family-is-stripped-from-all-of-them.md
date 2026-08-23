@@ -6,11 +6,10 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-14 16:59'
+updated_date: '2026-08-23 12:05'
 labels:
   - from-gh-issue
 dependencies: []
-references:
-  - [purged issue archive]
 priority: high
 type: bug
 ordinal: 3000
@@ -19,7 +18,7 @@ ordinal: 3000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Migrated from GitHub issue #24 (full body in `[purged issue archive]`). Refs the old #14, #3, #23,
+Migrated from the former GitHub issue tracker. Refs the old #14, #3, #23,
 #7 - all closed, indexed in the closed-issues document.
 
 Found while building the dashboards, and it blocks one of that work's acceptance criteria.

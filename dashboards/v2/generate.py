@@ -63,7 +63,7 @@ ALL_METRICS = [
 ]
 
 # Prometheus name for each OTel metric, as the Grafana Cloud OTLP gateway writes it.
-# Confirmed against the live series list on stack 654321, 2026-08-07 - not derived
+# Confirmed against the live series list on the deployment stack, 2026-08-07 - not derived
 # from the spec and hoped for. The four marked ZERO-TRAFFIC are declared in the code
 # and have simply never fired on this capture (no image generation, no web search, no
 # client-tool pause recorded, no sink rejection since the last restart); they still get

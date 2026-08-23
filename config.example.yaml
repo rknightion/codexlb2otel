@@ -80,7 +80,7 @@ loki:
   # url is the full push endpoint, including /loki/api/v1/push.
   url: https://logs-prod-035.grafana.net/loki/api/v1/push
   # user is the Grafana Cloud Loki user id, sent as the basic-auth username.
-  user: "123456"
+  user: "123456" # synthetic example tenant id
   # token is the access-policy token with logs:write, resolved from the environment
   # so it never appears in this file or in version control.
   token: "${CODEXLB2OTEL_LOKI_TOKEN}"
@@ -109,7 +109,7 @@ otlp:
   # endpoint is the OTLP gateway base URL. Serves both metrics and traces.
   endpoint: https://otlp-gateway-prod-gb-south-1.grafana.net/otlp
   # instance_id is the Grafana Cloud instance id, sent as the basic-auth username.
-  instance_id: "654321"
+  instance_id: "654321" # synthetic example stack id
   # token is the access-policy token, resolved from the environment.
   token: "${CODEXLB2OTEL_OTLP_TOKEN}"
   metrics:
@@ -147,11 +147,11 @@ agento11y:
   # grafana-agento11y-app plugin Connection tab. Then flip this to true.
   enabled: false
   # url is the full ExportGenerations endpoint, not just a host. Region must match
-  # the stack's - gb-south-1 for instance 654321, same as the OTLP gateway above.
+  # the stack's - gb-south-1 in this example, same as the OTLP gateway above.
   url: https://agento11y-prod-gb-south-1.grafana.net/api/v1/generations:export
   # user is the Grafana Cloud instance id, sent as the basic-auth username - the same
   # instance that serves OTLP above.
-  user: "654321"
+  user: "654321" # synthetic example stack id
   # token is the access-policy token, resolved from the environment.
   token: "${CODEXLB2OTEL_AGENTO11Y_TOKEN}"
   # batch_size is deliberately far below loki.batch_size: a generation carries full
