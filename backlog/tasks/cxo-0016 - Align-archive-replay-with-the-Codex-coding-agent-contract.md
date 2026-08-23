@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-23 16:37'
-updated_date: '2026-08-23 16:49'
+updated_date: '2026-08-23 16:58'
 labels: []
 dependencies: []
 references:
@@ -55,10 +55,18 @@ Fail-first evidence: TestAgentNameMatchesCodexCodingAgentIdentity failed for all
 CodeRabbit used the rknightion organisation plan. Its Major finding was valid: executed-tool fallback definitions must retain a non-empty source ToolCall.Kind (including custom) and use function only when absent. Fixed with a regression expectation. Its tracker-only Minor request to replace the two absolute cross-repository agento11y references was dismissed: these are deliberately external to this repository and the user supplied the exact absolute checkout path as the authoritative source.
 
 Final verification: the focused agento11y, OTLP trace, and OTLP metric packages pass; the second CodeRabbit review reported zero findings; make check passed with gofmt -l . empty, go vet ./... clean, and go test ./... green including internal/attr in 211.772s and internal/sink/loki in 215.805s; the chained go build ./... succeeded. Live post-deploy behavior remains unproven until this exact head is deployed and fresh data ages through both Generation and Tempo ingestion.
+
+Post-deploy validation: publish workflow 32652897866 succeeded at exact head ceb2d05399f9c902a8cdff8e72fe567bf96a15da. Watchtower replaced Camden's stale f18d7f78 image with that revision at 2026-08-23T16:55:05Z; the replacement container was healthy and all four sinks initialized without startup errors.
+
+Fresh m7kni read-back after the restart showed ordinary generations under codex and source-proven child traffic under codex/subagent. Three active conversations held 12, 5, and 14 post-deploy ordinary generations on the same effective version sha256:1bb61e77...; a separate sha256:66a820f9... version carried a genuinely different three-tool catalog rather than sparse-body churn. The selected versions exposed executed exec with its custom type, and the latter also retained collaboration/functions namespace definitions. Three checked direct Generation span IDs resolved to the exact SPAN_KIND_CLIENT streamText spans with OK status in Tempo.
+
+Deployed-person UI validation used the signed-in Grafana Agent Observability app: Analytics displayed codex and codex/subagent as fresh rows while legacy codexlb-* rows remained historical; conversation 01a02f78-c7e0-7193-8b49-2b9ef8e344ca grouped the post-restart tail under agent codex with succeeded streamText and nested execute_tool exec nodes; the codex agent Tools tab displayed collaboration, exec, and functions for the selected version. A fresh blank-model failure did not occur during the window, so codex/unknown is regression-tested and deployed but remains unexercised live.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Aligned archive replay with the coding-agent-specific Codex plugin contract: unified ordinary traffic under codex, marked only proven child threads as codex/subagent, stabilized catalog versions from repeated instruction/tool fingerprints, included actually executed tools, retained identified unknown-model failures, and reported successful completion without fabricating failure stop reasons. Preserved originator metadata, source-derived stream mode, deterministic span correlation, and richer timing. Verified by fail-first regressions, focused sink/trace/metric packages, a zero-finding second CodeRabbit review, make check, and go build ./....
+
+Deployed exact head ceb2d05399f9c902a8cdff8e72fe567bf96a15da. Fresh m7kni API, Tempo, and signed-in UI evidence confirms codex/codex-subagent identity, stable per-conversation versions, visible executed tools, and exact Generation-to-span joins. Blank-model codex/unknown remains source-tested and deployed but was not exercised live because no fresh qualifying failure occurred.
 <!-- SECTION:FINAL_SUMMARY:END -->
