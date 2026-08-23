@@ -38,6 +38,31 @@ func sampleTurn() *turn.Turn {
 	}
 }
 
+func TestAgentNameAvoidsAgentO11ySubagentMarker(t *testing.T) {
+	tests := []struct {
+		name       string
+		originator string
+		want       string
+	}{
+		{name: "tui", originator: "codex-tui", want: "codexlb-codex-tui"},
+		{name: "exec", originator: "codex_exec", want: "codexlb-codex_exec"},
+		{name: "probe", originator: "codex_cli_rs", want: "codexlb-codex_cli_rs"},
+		{name: "missing originator", want: "codexlb"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := AgentName(&turn.Turn{Originator: tt.originator})
+			if got != tt.want {
+				t.Errorf("AgentName() = %q, want %q", got, tt.want)
+			}
+			if strings.Contains(got, "/") {
+				t.Errorf("AgentName() = %q contains Agent Observability's subagent marker", got)
+			}
+		})
+	}
+}
+
 // safety_identifier maps 1:1 to a human. #3 puts it in structured metadata and nowhere
 // else, and this is the assertion that keeps it there - including out of span
 // attributes, because Tempo indexes those for search in a way metadata is not.

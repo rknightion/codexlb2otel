@@ -181,7 +181,7 @@ func TestAgentO11yContract_OnTheResponseSpanOnly(t *testing.T) {
 	want := map[string]string{
 		attr.AgentO11ySDKName:      attr.AgentO11ySDKNameValue,
 		attr.AgentO11yGenerationID: "resp_1", // MUST equal the agento11y sink's Generation.id
-		attr.GenAIAgentName:        "codexlb/codex-tui",
+		attr.GenAIAgentName:        "codexlb-codex-tui",
 		attr.GenAIAgentVersion:     "3dcc72f5c56809d0",
 		attr.GenAIOperation:        attr.GenAIOperationGenerateText,
 	}

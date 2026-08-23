@@ -883,8 +883,8 @@ func TestAgentO11yLabelsOnTheThreeInstrumentsItReads(t *testing.T) {
 			t.Fatalf("%s not recorded; the test turn should have produced one", name)
 		}
 		for _, set := range attrSets(t, m) {
-			if got, _ := attrString(t, set, attr.GenAIAgentName); got != "codexlb/codex_exec" {
-				t.Errorf("%s: gen_ai.agent.name = %q, want codexlb/codex_exec", name, got)
+			if got, _ := attrString(t, set, attr.GenAIAgentName); got != "codexlb-codex_exec" {
+				t.Errorf("%s: gen_ai.agent.name = %q, want codexlb-codex_exec", name, got)
 			}
 			if got, _ := attrString(t, set, attr.GenAIAgentVersion); got != "3dcc72f5c56809d0" {
 				t.Errorf("%s: gen_ai.agent.version = %q, want the instructions hash", name, got)

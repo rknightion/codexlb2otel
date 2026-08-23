@@ -117,8 +117,8 @@ const (
 	ToolCallArguments = "gen_ai.tool.call.arguments"
 	ToolCallResult    = "gen_ai.tool.call.result"
 	// GenAIAgentName is WHICH AGENT this service is reporting on, as
-	// "codexlb/<originator>" - codexlb/codex-tui, codexlb/codex_exec,
-	// codexlb/codex_cli_rs. Bounded and Turn-derived, and 1:1 correlated with
+	// "codexlb-<originator>" - codexlb-codex-tui, codexlb-codex_exec,
+	// codexlb-codex_cli_rs. Bounded and Turn-derived, and 1:1 correlated with
 	// Originator below, so it costs no cardinality that codexlb.originator was not
 	// already costing.
 	//
@@ -383,11 +383,11 @@ const (
 // consumers only test it for non-emptiness; nothing downstream parses the value.
 const AgentO11ySDKNameValue = "codexlb2otel"
 
-// AgentNamePrefix and AgentNameFallback build GenAIAgentName. The split by originator
-// mirrors how the claude-code plugin splits its subagents (claude-code/general-purpose
-// and friends) in the same tenant, so the two read the same way side by side.
+// AgentNamePrefix and AgentNameFallback build GenAIAgentName. Agent Observability
+// treats a slash in an agent name as a subagent marker, so the prefix uses a hyphen:
+// these turns belong to distinct client agents, not a codexlb parent/subagent tree.
 const (
-	AgentNamePrefix   = "codexlb/"
+	AgentNamePrefix   = "codexlb-"
 	AgentNameFallback = "codexlb"
 )
 
