@@ -9,7 +9,7 @@ updated_date: '2026-08-23 11:35'
 labels: []
 dependencies: []
 references:
-  - /Users/<user>/repos/agento11y
+  - /Users/rob/repos/agento11y
   - github.com/grafana/agento11y/go@v0.16.0
 priority: high
 type: spike

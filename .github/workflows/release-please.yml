@@ -1,0 +1,55 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: maintain release PR / cut release
+    runs-on: arc-arm64
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the GitHub Release + tag, and update the release PR
+      pull-requests: write # open/maintain the release PR
+      id-token: write # exchanged for a tailnet identity and an OpenBao token
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Mint a scoped release token
+        id: bao
+        uses: rknightion/.github/.github/actions/broker-token@fda5f3b9a3f88f187a827e85b33181ea5668478e
+        with:
+          permission-set: release-please-codexlb2otel
+          join-tailnet: "false"
+          resolve-via: openbao.tailscale.svc.cluster.local
+
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.bao.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish-image:
+    name: publish image to GHCR
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: write # attach SBOMs to the GitHub Release
+      packages: write # push to this repo's GHCR package
+      id-token: write # cosign keyless signing
+      attestations: write # build provenance
+      security-events: write # Trivy SARIF into the Security tab
+    with:
+      release-tag: ${{ needs.release-please.outputs.tag_name }}
