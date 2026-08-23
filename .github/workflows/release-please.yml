@@ -14,7 +14,7 @@ concurrency:
 jobs:
   release-please:
     name: maintain release PR / cut release
-    runs-on: arc-arm64
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write # create the GitHub Release + tag, and update the release PR
