@@ -93,6 +93,16 @@ var negativeCapableTBTBoundaries = []float64{
 	0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 1, 5, 10,
 }
 
+var agentO11yDurationBoundaries = []float64{
+	0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28,
+	2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
+}
+
+var agentO11yTokenBoundaries = []float64{
+	1, 4, 16, 64, 256, 1024, 4096, 16384,
+	65536, 262144, 1048576, 4194304, 16777216, 67108864,
+}
+
 // newInstruments creates every instrument up front, at Sink construction, rather than
 // lazily on first use. An instrument name typo would otherwise surface as a silent
 // no-op the first time a rare code path (say, safety buffering, 4 in 4000) finally
@@ -139,14 +149,15 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 			"values, same gen_ai.token.type breakdown, recorded a second time under the "+
 			"standard histogram name so anything querying the convention's own instrument "+
 			"sees this service at all."),
-		otelmetric.WithUnit("{token}"))
+		otelmetric.WithUnit("{token}"),
+		otelmetric.WithExplicitBucketBoundaries(agentO11yTokenBoundaries...))
 	must(attr.MetricTokenUsage, err)
 
 	i.toolCallsPerOperation, err = meter.Int64Histogram(attr.MetricToolCallsPerOperation,
 		otelmetric.WithDescription("Tool calls per response - len(Turn.ToolCalls), "+
 			"recorded once per response including zero, so the distribution reflects every "+
 			"operation and not only the ones that used a tool."),
-		otelmetric.WithUnit("{tool_call}"))
+		otelmetric.WithUnit("count"))
 	must(attr.MetricToolCallsPerOperation, err)
 
 	i.webSearch, err = meter.Int64Counter(attr.MetricWebSearch,
@@ -214,7 +225,8 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 	i.operationDuration, err = meter.Float64Histogram(attr.MetricOperationDuration,
 		otelmetric.WithDescription("Server-side response duration: response.created to "+
 			"response.completed. Convention-compliant name and unit."),
-		otelmetric.WithUnit("s"))
+		otelmetric.WithUnit("s"),
+		otelmetric.WithExplicitBucketBoundaries(agentO11yDurationBoundaries...))
 	must(attr.MetricOperationDuration, err)
 
 	i.turnDuration, err = meter.Float64Histogram(attr.MetricTurnDuration,
@@ -229,7 +241,8 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 			"gen_ai.client.time_to_first_token, which is agent-observability's name rather "+
 			"than the GenAI registry's - see the MetricTTFT doc comment for why that trade "+
 			"was made and re-made."),
-		otelmetric.WithUnit("s"))
+		otelmetric.WithUnit("s"),
+		otelmetric.WithExplicitBucketBoundaries(agentO11yDurationBoundaries...))
 	must(attr.MetricTTFT, err)
 
 	i.engineWall, err = meter.Float64Histogram(attr.MetricEngineWall,

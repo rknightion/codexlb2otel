@@ -2,11 +2,11 @@ package otlptrace
 
 import (
 	"context"
-	"crypto/sha256"
-	"strings"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/rknightion/codexlb2otel/internal/correlation"
 )
 
 // This file is the answer to the one hard problem the OTLP trace sink has to solve:
@@ -30,13 +30,7 @@ import (
 // but the guard costs one branch and the alternative is a span silently dropped by
 // every OTel exporter, so it stays.
 func hashTraceID(parts ...string) trace.TraceID {
-	sum := sha256.Sum256([]byte(joinParts(parts)))
-	var id trace.TraceID
-	copy(id[:], sum[:16])
-	if !id.IsValid() {
-		id[len(id)-1] ^= 0x01
-	}
-	return id
+	return correlation.HashTraceID(parts...)
 }
 
 // hashSpanID derives an 8-byte span id. It reads a DIFFERENT slice of the digest
@@ -45,24 +39,7 @@ func hashTraceID(parts ...string) trace.TraceID {
 // first turn, whose trace id and turn-span id are both seeded from ThreadID - never
 // makes the span id a prefix-duplicate of the trace id.
 func hashSpanID(parts ...string) trace.SpanID {
-	sum := sha256.Sum256([]byte(joinParts(parts)))
-	var id trace.SpanID
-	copy(id[:], sum[16:24])
-	if !id.IsValid() {
-		id[len(id)-1] ^= 0x01
-	}
-	return id
-}
-
-func joinParts(parts []string) string {
-	var b strings.Builder
-	for i, p := range parts {
-		if i > 0 {
-			b.WriteByte(0)
-		}
-		b.WriteString(p)
-	}
-	return b.String()
+	return correlation.HashSpanID(parts...)
 }
 
 // parseCapturedTraceID and parseCapturedSpanID validate a hex id recovered from the

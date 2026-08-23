@@ -53,6 +53,8 @@ const (
 	GenAITokenSemantics = "gen_ai.token.semantics"
 	// GenAIErrorType is the convention's low-cardinality error discriminator.
 	ErrorType = "error.type"
+	// ErrorCategory is Agent Observability's coarse SDK error classification.
+	ErrorCategory = "error.category"
 
 	// ToolName is the tool invoked. Bounded in practice but open by construction, so
 	// it is capped like every other bounded-open field. RENAMED from codexlb.tool_name
@@ -476,16 +478,10 @@ const (
 	// renamed.
 	MetricWebSearch = "codexlb.web_search_requests" // counter, {request}
 
-	// MetricToolCallsPerOperation (issue #18) answers "how many tool calls did one
-	// operation make" - len(Turn.ToolCalls) per response. The issue asked for
-	// gen_ai.client.tool_calls_per_operation; that name does not exist in the current
-	// spec either (checked 2026-08-07). The closest defined metric,
-	// gen_ai.invoke_agent.tool_calls, is explicitly scoped to a single agent
-	// invocation ("distribution is scoped to a single agent invocation"), which does
-	// not generalize to every chat operation this service reduces - most turns are not
-	// agent invocations. Kept under codexlb.* rather than misapplying a
-	// narrower-scoped standard name to a broader-scoped measurement.
-	MetricToolCallsPerOperation = "codexlb.tool_calls_per_operation" // histogram, {tool_call}
+	// MetricToolCallsPerOperation is the released Agent Observability SDK's app-facing
+	// distribution. It is not a current OTel semantic-convention name, but the app
+	// queries this SDK contract literally.
+	MetricToolCallsPerOperation = "gen_ai.client.tool_calls_per_operation" // histogram, count
 
 	// Durations are seconds, as the convention requires for gen_ai.client.operation.duration.
 	MetricOperationDuration = "gen_ai.client.operation.duration" // histogram, s - convention-compliant

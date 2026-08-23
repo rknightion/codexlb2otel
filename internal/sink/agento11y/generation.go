@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rknightion/codexlb2otel/internal/attr"
+	"github.com/rknightion/codexlb2otel/internal/correlation"
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
@@ -91,8 +92,8 @@ func buildGeneration(t *turn.Turn, guard *attr.Guard) wireGeneration {
 		// "chat" here was not a harmless approximation.
 		OperationName: attr.OperationName(t),
 		Mode:          mode(t),
-		TraceID:       t.TraceID,
-		SpanID:        t.SpanID,
+		TraceID:       correlation.TraceID(t).String(),
+		SpanID:        correlation.ResponseSpanID(t).String(),
 		Model:         &wireModelRef{Provider: attr.GenAIProviderValue, Name: t.Model},
 		ResponseID:    t.ResponseID,
 		ResponseModel: responseModel(t),
@@ -199,7 +200,7 @@ func rfc3339(ts time.Time) string {
 	if ts.IsZero() {
 		return ""
 	}
-	return ts.UTC().Format(time.RFC3339)
+	return ts.UTC().Format(time.RFC3339Nano)
 }
 
 // callError folds Turn's three error fields into proto's single call_error string.
@@ -238,14 +239,21 @@ func usageOf(t *turn.Turn) *wireTokenUsage {
 		return nil
 	}
 	return &wireTokenUsage{
-		InputTokens:           strconv.Itoa(t.InputTokens),
-		OutputTokens:          strconv.Itoa(t.OutputTokens),
-		TotalTokens:           strconv.Itoa(t.TotalTokens),
-		CacheReadInputTokens:  strconv.Itoa(t.CachedTokens),
-		CacheWriteInputTokens: strconv.Itoa(t.CacheWriteTokens),
-		ReasoningTokens:       strconv.Itoa(t.ReasoningTokens),
+		InputTokens:           positiveItoa(t.InputTokens),
+		OutputTokens:          positiveItoa(t.OutputTokens),
+		TotalTokens:           positiveItoa(t.TotalTokens),
+		CacheReadInputTokens:  positiveItoa(t.CachedTokens),
+		CacheWriteInputTokens: positiveItoa(t.CacheWriteTokens),
+		ReasoningTokens:       positiveItoa(t.ReasoningTokens),
 		InputSemantics:        tokenInputSemanticsInclusive,
 	}
+}
+
+func positiveItoa(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
 }
 
 // tagsOf sources tags from attr.Guard.SpanAttrs - the same bounded+identity attribute
@@ -310,6 +318,10 @@ func inputMessages(t *turn.Turn) ([]wireMessage, string) {
 			}
 			continue
 		}
+		role := mapRole(p.Role)
+		if role == "" {
+			continue
+		}
 		parts := make([]wirePart, 0, 1+p.Images)
 		if p.Text != "" {
 			parts = append(parts, wirePart{Text: p.Text})
@@ -325,7 +337,7 @@ func inputMessages(t *turn.Turn) ([]wireMessage, string) {
 		if len(parts) == 0 {
 			continue
 		}
-		out = append(out, wireMessage{Role: mapRole(p.Role), Parts: parts})
+		out = append(out, wireMessage{Role: role, Parts: parts})
 	}
 
 	for _, to := range t.ToolOutputs {

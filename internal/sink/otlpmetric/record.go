@@ -213,15 +213,19 @@ func (s *Sink) recordToolCalls(ctx context.Context, t *turn.Turn, base []attr.KV
 }
 
 // recordToolCallsPerOperation records len(Turn.ToolCalls) once per response,
-// UNCONDITIONALLY - including the zero case, unlike recordToolCalls' own early
-// return. The two answer different questions: recordToolCalls counts invocations, by
+// for every model-backed response, including the zero case, unlike recordToolCalls'
+// own early return. Model-less transport records cannot be SDK Generations and are
+// excluded. The two answer different questions: recordToolCalls counts invocations, by
 // tool name, and a response with none has nothing to fan out; this one measures the
 // SHAPE of tool use across every response, and excluding the (common) zero-tool-call
 // case would bias that distribution upward and hide how much of the traffic never
 // touches a tool at all.
 func (s *Sink) recordToolCallsPerOperation(ctx context.Context, t *turn.Turn, base []attr.KV) {
-	attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind)
+	if strings.TrimSpace(t.Model) == "" {
+		return
+	}
+	attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIRequestModel,
+		attr.GenAIAgentName, attr.GenAIAgentVersion, attr.AccountID, attr.RequestKind)
 	s.inst.toolCallsPerOperation.Record(ctx, int64(len(t.ToolCalls)), otelmetric.WithAttributes(toOtel(attrs)...))
 }
 
@@ -257,7 +261,7 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 			// per deployment at a time, so it costs ~nothing beyond the changeover.
 			attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
 				attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Status,
-				attr.ErrorType, attr.GenAIAgentName, attr.GenAIAgentVersion,
+				attr.ErrorType, attr.ErrorCategory, attr.GenAIAgentName, attr.GenAIAgentVersion,
 				attr.ServiceTierRequested)
 			s.inst.operationDuration.Record(ctx, d, otelmetric.WithAttributes(toOtel(attrs)...))
 		}

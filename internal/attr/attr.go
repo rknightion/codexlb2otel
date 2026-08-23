@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/rknightion/codexlb2otel/internal/correlation"
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
@@ -202,6 +203,14 @@ var registry = []Field{
 		Of: func(t *turn.Turn) string { return t.InstructionsHash }},
 	{Key: ErrorType, Class: Bounded, Cap: 32,
 		Of: func(t *turn.Turn) string { return t.ErrorType }},
+	{Key: ErrorCategory, Class: Bounded, Cap: 8,
+		Observed: []string{"sdk_error"},
+		Of: func(t *turn.Turn) string {
+			if t.Status == turn.StatusError || t.ErrorType != "" || t.ErrorCode != "" {
+				return "sdk_error"
+			}
+			return ""
+		}},
 	{Key: ErrorCode, Class: Bounded, Cap: 64,
 		Observed: []string{"websocket_connection_limit_reached"},
 		Of:       func(t *turn.Turn) string { return t.ErrorCode }},
@@ -346,13 +355,11 @@ func AgentName(t *turn.Turn) string {
 // ResponseID (resp_*) is the natural choice: the id of the exact model response this
 // Generation represents, one-to-one with the Turn, and stable across a retry or a
 // checkpoint replay so a repeated push dedups rather than duplicating. It is empty on
-// a response that never completed (a bare transport or error record), so RequestID -
-// always populated - is the fallback.
+// a response that never completed, so RequestID is the first fallback. The shared
+// correlation key then uses LogicalTurnID and the server TurnID defensively; a record
+// with none of those identities is not a valid Generation and the sink skips it.
 func GenerationID(t *turn.Turn) string {
-	if t.ResponseID != "" {
-		return t.ResponseID
-	}
-	return t.RequestID
+	return correlation.ResponseKey(t)
 }
 
 // OperationName is gen_ai.operation.name for one response: streamText when the

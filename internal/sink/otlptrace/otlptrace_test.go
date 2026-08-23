@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -524,6 +525,56 @@ func TestTemperatureTopPOnResponseSpanOnly(t *testing.T) {
 				t.Errorf("span %q carries %s, want it scoped to the response span only", sp.Name, a.Key)
 			}
 		}
+	}
+}
+
+func TestResponseSpanKindAndStatusMatchAgentO11ySDK(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		errorType  string
+		errorMsg   string
+		wantStatus codes.Code
+		wantEvent  bool
+	}{
+		{name: "success", wantStatus: codes.Ok},
+		{name: "error", errorType: "rate_limit", errorMsg: "too many requests", wantStatus: codes.Error, wantEvent: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, exp := newTestSink(t)
+			now := time.Now()
+			tt := &turn.Turn{
+				RequestID: "req-1", ResponseID: "resp-1", ThreadID: "thread-1",
+				Model: "gpt-5.6-sol", Status: "completed",
+				FirstTS: now.Add(-time.Second), LastTS: now,
+				ServerCreatedAt: now.Add(-time.Second), ServerCompletedAt: now,
+				ErrorType: tc.errorType, ErrorMessage: tc.errorMsg,
+			}
+			if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+				t.Fatal(err)
+			}
+			var got tracetest.SpanStub
+			for _, sp := range exp.GetSpans() {
+				if sp.Name == "generateText gpt-5.6-sol" {
+					got = sp
+				}
+			}
+			if got.Name == "" {
+				t.Fatal("response span not exported")
+			}
+			if got.SpanKind != trace.SpanKindClient {
+				t.Errorf("SpanKind = %v, want CLIENT", got.SpanKind)
+			}
+			if got.Status.Code != tc.wantStatus {
+				t.Errorf("status = %v, want %v", got.Status.Code, tc.wantStatus)
+			}
+			var hasException bool
+			for _, event := range got.Events {
+				hasException = hasException || event.Name == "exception"
+			}
+			if hasException != tc.wantEvent {
+				t.Errorf("exception event = %v, want %v", hasException, tc.wantEvent)
+			}
+		})
 	}
 }
 

@@ -472,6 +472,9 @@ func TestTokenUsageHistogramParallelsCounter(t *testing.T) {
 // "recorded a zero" from "never called" (Count would be 1, not 2, if the zero-tool-call
 // response had been skipped the way recordToolCalls skips it).
 func TestToolCallsPerOperationCountsZero(t *testing.T) {
+	if attr.MetricToolCallsPerOperation != "gen_ai.client.tool_calls_per_operation" {
+		t.Fatalf("tool-call metric name = %q, want Agent Observability SDK name", attr.MetricToolCallsPerOperation)
+	}
 	s, reader, _ := newTestSink(t)
 	t.Cleanup(func() { _ = s.Close(context.Background()) })
 
@@ -482,6 +485,8 @@ func TestToolCallsPerOperationCountsZero(t *testing.T) {
 			tt.ToolCalls = []turn.ToolCall{{Name: "exec"}, {Name: "wait"}}
 			return tt
 		}(),
+		{RequestID: "transport-only", Status: turn.StatusTransport},
+		{RequestID: "blank-model", Model: " \t"},
 	}
 	if err := s.Emit(context.Background(), turns); err != nil {
 		t.Fatalf("Emit: %v", err)
@@ -492,12 +497,15 @@ func TestToolCallsPerOperationCountsZero(t *testing.T) {
 	if !ok {
 		t.Fatalf("%s not recorded", attr.MetricToolCallsPerOperation)
 	}
+	if m.Unit != "count" {
+		t.Errorf("%s unit = %q, want count", attr.MetricToolCallsPerOperation, m.Unit)
+	}
 	h, ok := m.Data.(metricdata.Histogram[int64])
 	if !ok {
 		t.Fatalf("%s: not an int64 histogram (got %T)", attr.MetricToolCallsPerOperation, m.Data)
 	}
 	if len(h.DataPoints) != 1 {
-		t.Fatalf("%s: got %d data points, want 1 (both turns share one attribute set)",
+		t.Fatalf("%s: got %d data points, want 1 (the two model-backed turns share one attribute set)",
 			attr.MetricToolCallsPerOperation, len(h.DataPoints))
 	}
 	if got := h.DataPoints[0].Count; got != 2 {
@@ -506,6 +514,54 @@ func TestToolCallsPerOperationCountsZero(t *testing.T) {
 	}
 	if got := histogramSumInt64(t, m); got != 2 {
 		t.Errorf("%s sum = %d, want 2 (0 + 2 tool calls)", attr.MetricToolCallsPerOperation, got)
+	}
+}
+
+func TestAgentO11yHistogramBoundariesMatchSDK(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	tt := baseTurn("1")
+	tt.InputTokens = 12
+	tt.TTFTMs = 250
+	tt.ServerCreatedAt = time.Now().Add(-time.Second)
+	tt.ServerCompletedAt = time.Now()
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatal(err)
+	}
+	rm := collect(t, reader)
+	wantDuration := []float64{0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92}
+	wantTokens := []float64{1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864}
+	for _, tc := range []struct {
+		name string
+		want []float64
+	}{
+		{attr.MetricOperationDuration, wantDuration},
+		{attr.MetricTTFT, wantDuration},
+		{attr.MetricTokenUsage, wantTokens},
+	} {
+		m, ok := findMetric(rm, tc.name)
+		if !ok {
+			t.Fatalf("%s not recorded", tc.name)
+		}
+		var got []float64
+		switch h := m.Data.(type) {
+		case metricdata.Histogram[int64]:
+			got = h.DataPoints[0].Bounds
+		case metricdata.Histogram[float64]:
+			got = h.DataPoints[0].Bounds
+		default:
+			t.Fatalf("%s is %T, want histogram", tc.name, m.Data)
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("%s bounds = %v, want %v", tc.name, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s bounds = %v, want %v", tc.name, got, tc.want)
+				break
+			}
+		}
 	}
 }
 
@@ -840,7 +896,7 @@ func reduceFixture(t *testing.T, r *turn.Reducer, path string) []*turn.Turn {
 	return out
 }
 
-// TestAgentO11yLabelsOnTheThreeInstrumentsItReads is issue #32's metric side, and the
+// TestAgentO11yLabelsOnTheFourInstrumentsItReads is issue #32's metric side, and the
 // direct fix for the bug that opened it: Grafana agent observability's Agents table
 // groups gen_ai_client_* by gen_ai_agent_name and buckets everything without that
 // label as "anonymous", which is where every series this service emitted was sitting.
@@ -858,7 +914,7 @@ func reduceFixture(t *testing.T, r *turn.Reducer, path string) []*turn.Turn {
 // instrument - adding gen_ai.agent.version everywhere would multiply series on ~40
 // instruments to satisfy three - so a well-meaning "make it consistent" change should
 // fail here rather than land as a cardinality incident.
-func TestAgentO11yLabelsOnTheThreeInstrumentsItReads(t *testing.T) {
+func TestAgentO11yLabelsOnTheFourInstrumentsItReads(t *testing.T) {
 	s, reader, _ := newTestSink(t)
 
 	tt := baseTurn("1")
@@ -875,9 +931,9 @@ func TestAgentO11yLabelsOnTheThreeInstrumentsItReads(t *testing.T) {
 	}
 	rm := collect(t, reader)
 
-	// Every data point of these three must carry the agent identity, or the UI's
+	// Every data point of these four must carry the agent identity, or the UI's
 	// per-agent aggregate silently under-reports by however many points lack it.
-	for _, name := range []string{attr.MetricTokenUsage, attr.MetricOperationDuration, attr.MetricTTFT} {
+	for _, name := range []string{attr.MetricTokenUsage, attr.MetricOperationDuration, attr.MetricTTFT, attr.MetricToolCallsPerOperation} {
 		m, ok := findMetric(rm, name)
 		if !ok {
 			t.Fatalf("%s not recorded; the test turn should have produced one", name)
@@ -916,11 +972,14 @@ func TestAgentO11yLabelsOnTheThreeInstrumentsItReads(t *testing.T) {
 			t.Errorf("%s: error.type = %q, want upstream_error - the error-rate, error-count "+
 				"and error-by-type panels all select on error_type!=\"\"", attr.MetricOperationDuration, got)
 		}
+		if got, _ := attrString(t, set, attr.ErrorCategory); got != "sdk_error" {
+			t.Errorf("%s: error.category = %q, want sdk_error", attr.MetricOperationDuration, got)
+		}
 	}
 
-	// Scope. Five instruments may carry gen_ai.agent.version and no others.
+	// Scope. Six instruments may carry gen_ai.agent.version and no others.
 	//
-	// The three above are there because agent observability reads them. The two
+	// The four above are there because agent observability reads them. The two
 	// counters are there because they take attr.MetricAttrs UNNARROWED - carrying the
 	// complete bounded set is their documented job (see recordCounts), and the
 	// registry's own contract is that a bounded Turn-derived field lands on every
@@ -936,11 +995,12 @@ func TestAgentO11yLabelsOnTheThreeInstrumentsItReads(t *testing.T) {
 	// already present - so its spread is not worth a guard. The version is the one that
 	// grows with every system prompt codex ships.
 	mayCarryVersion := map[string]bool{
-		attr.MetricTokenUsage:        true,
-		attr.MetricOperationDuration: true,
-		attr.MetricTTFT:              true,
-		attr.MetricResponses:         true,
-		attr.MetricTurns:             true,
+		attr.MetricTokenUsage:            true,
+		attr.MetricOperationDuration:     true,
+		attr.MetricTTFT:                  true,
+		attr.MetricToolCallsPerOperation: true,
+		attr.MetricResponses:             true,
+		attr.MetricTurns:                 true,
 	}
 	for _, sm := range rm.ScopeMetrics {
 		for _, m := range sm.Metrics {
@@ -949,7 +1009,7 @@ func TestAgentO11yLabelsOnTheThreeInstrumentsItReads(t *testing.T) {
 			}
 			for _, set := range attrSets(t, m) {
 				if _, ok := attrString(t, set, attr.GenAIAgentVersion); ok {
-					t.Errorf("%s carries gen_ai.agent.version; only the three instruments "+
+					t.Errorf("%s carries gen_ai.agent.version; only the four instruments "+
 						"agent observability reads and the two unnarrowed counters may - "+
 						"see this test's doc comment", m.Name)
 				}

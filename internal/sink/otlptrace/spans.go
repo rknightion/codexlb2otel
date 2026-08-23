@@ -2,6 +2,7 @@ package otlptrace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -9,9 +10,11 @@ import (
 	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rknightion/codexlb2otel/internal/attr"
+	"github.com/rknightion/codexlb2otel/internal/correlation"
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
@@ -62,21 +65,7 @@ import (
 // span (see turnLinks) instead of the trace root, which is what actually satisfies
 // "join up with whatever else observed the same request" without either downside.
 func traceID(t *turn.Turn) trace.TraceID {
-	key := t.ThreadID
-	if key == "" {
-		key = t.RequestID
-	}
-	if key == "" {
-		key = t.ResponseID
-	}
-	if key == "" {
-		// A genuinely anonymous record - addUncorrelated turns can reach this with no
-		// session, thread or request id at all. FirstTS is the archive's own captured
-		// timestamp, so this stays a pure function of the record, not of wall-clock
-		// processing time.
-		key = "ts:" + strconv.FormatInt(t.FirstTS.UnixNano(), 10)
-	}
-	return hashTraceID("thread", key)
+	return correlation.TraceID(t)
 }
 
 // turnKey identifies the logical turn within its thread's trace. LogicalTurnID is
@@ -110,7 +99,7 @@ func responseKey(t *turn.Turn) string {
 }
 
 func responseSpanID(t *turn.Turn) trace.SpanID {
-	return hashSpanID("response", responseKey(t))
+	return correlation.ResponseSpanID(t)
 }
 
 // parentTurnSpanID computes the span id a spawning thread's turn span WOULD have
@@ -141,6 +130,22 @@ func clampEnd(start, end time.Time) time.Time {
 		return start
 	}
 	return end
+}
+
+func callErrorMessage(t *turn.Turn) string {
+	if t.ErrorType != "" && t.ErrorCode != "" {
+		return fmt.Sprintf("%s (%s)", t.ErrorType, t.ErrorCode)
+	}
+	if t.ErrorType != "" {
+		return t.ErrorType
+	}
+	if t.ErrorCode != "" {
+		return t.ErrorCode
+	}
+	if t.Status == turn.StatusError {
+		return "generation failed"
+	}
+	return ""
 }
 
 // toAttrs converts the shared attribute contract's output into the OTel SDK's
@@ -312,7 +317,7 @@ func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 	if t.TopP != 0 {
 		respAttrs = append(respAttrs, attribute.Float64(attr.GenAIRequestTopP, t.TopP))
 	}
-	respCtx, respSpan := s.startChild(turnCtx, turnSpan.SpanContext(), respName, rsid, respStart, respAttrs)
+	respCtx, respSpan := s.startChild(turnCtx, turnSpan.SpanContext(), respName, rsid, respStart, respAttrs, trace.SpanKindClient)
 
 	rkey := responseKey(t)
 	reconciled, hasCriticalPath := s.emitCriticalPathPhases(respCtx, respSpan.SpanContext(), raw, rkey, t.CriticalPath, respStart)
@@ -320,6 +325,12 @@ func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 		respSpan.SetAttributes(attribute.Bool(traceAttrReconciled, reconciled))
 	}
 	s.emitToolCalls(respCtx, respSpan.SpanContext(), raw, rkey, t.ToolCalls, t.ToolOutputs, t.ToolCallDurationsMs, respStart, respEnd)
+	if message := callErrorMessage(t); message != "" {
+		respSpan.RecordError(errors.New(message))
+		respSpan.SetStatus(codes.Error, message)
+	} else {
+		respSpan.SetStatus(codes.Ok, "")
+	}
 
 	respSpan.End(trace.WithTimestamp(respEnd))
 	// The turn span's own end tracks the LATEST response processed for this logical
@@ -360,7 +371,7 @@ func (s *Sink) emitCriticalPathPhases(ctx context.Context, parent trace.SpanCont
 		}
 		end := cursor.Add(time.Duration(p.ms * float64(time.Millisecond)))
 		sid := hashSpanID("phase", respKey, p.name)
-		_, span := s.startChild(ctx, parent, "critical_path."+p.name, sid, cursor, attrs)
+		_, span := s.startChild(ctx, parent, "critical_path."+p.name, sid, cursor, attrs, trace.SpanKindInternal)
 		span.End(trace.WithTimestamp(end))
 		cursor = end
 	}
@@ -507,7 +518,7 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 		if haveDurations && durationsMs[i] > 0 {
 			end = clampEnd(respStart, respStart.Add(time.Duration(durationsMs[i]*float64(time.Millisecond))))
 		}
-		_, span := s.startChild(ctx, parent, name, sid, respStart, otelAttrs)
+		_, span := s.startChild(ctx, parent, name, sid, respStart, otelAttrs, trace.SpanKindInternal)
 		span.End(trace.WithTimestamp(end))
 	}
 }

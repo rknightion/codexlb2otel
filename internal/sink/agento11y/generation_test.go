@@ -20,8 +20,8 @@ import (
 // mapping decisions; this is the one guarding against the four encoding traps a
 // hand-rolled struct gets wrong by default (see wire.go's package doc comment).
 func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
-	started := time.Date(2026, 8, 7, 13, 32, 33, 0, time.UTC)
-	completed := time.Date(2026, 8, 7, 13, 32, 39, 0, time.UTC)
+	started := time.Date(2026, 8, 7, 13, 32, 33, 123456789, time.UTC)
+	completed := time.Date(2026, 8, 7, 13, 32, 39, 987654321, time.UTC)
 
 	tr := &turn.Turn{
 		RequestID:         "req-1",
@@ -112,8 +112,11 @@ func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
 	if got.GetMode() != agento11yv1.GenerationMode_GENERATION_MODE_STREAM {
 		t.Errorf("mode = %v, want GENERATION_MODE_STREAM", got.GetMode())
 	}
-	if got.GetTraceId() != tr.TraceID || got.GetSpanId() != tr.SpanID {
-		t.Errorf("trace/span id = %q/%q, want %q/%q", got.GetTraceId(), got.GetSpanId(), tr.TraceID, tr.SpanID)
+	const wantTraceID = "2f9f7365dab8e61b9667f3e440ce2333"
+	const wantSpanID = "59662f32d726ae0c"
+	if got.GetTraceId() != wantTraceID || got.GetSpanId() != wantSpanID {
+		t.Errorf("trace/span id = %q/%q, want exported response span %q/%q",
+			got.GetTraceId(), got.GetSpanId(), wantTraceID, wantSpanID)
 	}
 	if got.GetModel().GetProvider() != "openai" || got.GetModel().GetName() != "gpt-5.6-sol" {
 		t.Errorf("model = %+v, want provider=openai name=gpt-5.6-sol", got.GetModel())
@@ -219,6 +222,33 @@ func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
 	}
 	if tags[attr.GenAIConversationID] != "thread-1" {
 		t.Errorf("tags[%s] = %q, want thread-1", attr.GenAIConversationID, tags[attr.GenAIConversationID])
+	}
+}
+
+func TestUsageOmitsZeroMembers(t *testing.T) {
+	g := buildGeneration(&turn.Turn{Model: "gpt-5.6-sol", InputTokens: 12}, attr.NewGuard())
+	b, err := json.Marshal(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	if !strings.Contains(got, `"input_tokens":"12"`) {
+		t.Fatalf("input_tokens missing from %s", got)
+	}
+	for _, field := range []string{"output_tokens", "total_tokens", "cache_read_input_tokens", "cache_write_input_tokens", "reasoning_tokens"} {
+		if strings.Contains(got, `"`+field+`"`) {
+			t.Errorf("zero-valued %s must be omitted: %s", field, got)
+		}
+	}
+}
+
+func TestInputMessagesSkipUnsupportedRoles(t *testing.T) {
+	input, _ := inputMessages(&turn.Turn{Prompts: []turn.Prompt{
+		{Role: "developer", Text: "internal harness note"},
+		{Role: "user", Text: "hello"},
+	}})
+	if len(input) != 1 || input[0].Role != roleUser {
+		t.Fatalf("input = %+v, want only the supported user message", input)
 	}
 }
 

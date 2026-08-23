@@ -227,12 +227,12 @@ func (s *Sink) startRoot(ctx context.Context, name string, tid trace.TraceID, si
 // startChild starts a span as a child of parent (same trace, ParentSpanID = parent's
 // span id - ordinary SDK behaviour once a valid parent SpanContext is in ctx), and
 // pins the new span's own id.
-func (s *Sink) startChild(ctx context.Context, parent trace.SpanContext, name string, sid trace.SpanID, start time.Time, attrs []attribute.KeyValue) (context.Context, trace.Span) {
+func (s *Sink) startChild(ctx context.Context, parent trace.SpanContext, name string, sid trace.SpanID, start time.Time, attrs []attribute.KeyValue, kind trace.SpanKind) (context.Context, trace.Span) {
 	childCtx := trace.ContextWithSpanContext(ctx, parent)
 	pinned := withPinnedIDs(childCtx, trace.TraceID{}, sid) // traceID is unused on this path; see NewSpanID
 	return s.tracer.Start(pinned, name,
 		trace.WithTimestamp(start),
-		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithSpanKind(kind),
 		trace.WithAttributes(attrs...),
 	)
 }
