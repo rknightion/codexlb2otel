@@ -28,6 +28,16 @@ testdata/live*/
 shapes*.json
 *.profile.json
 
+# Injected by the m7kni.io documentation hub.
+/zensical.toml
+docs/overrides/
+docs/stylesheets/brand.css
+docs/assets/project-icon.svg
+docs/assets/project-icon-solid.svg
+docs/assets/social-card.png
+docs/assets/social-card.svg
+docs/fonts/
+
 # The Backlog.md guard hook and its settings ARE tracked, deliberately: they
 # enforce the tracker rules (bare --notes/--plan replaces a section silently;
 .claude/

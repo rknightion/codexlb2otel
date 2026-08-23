@@ -1,0 +1,66 @@
+# Project-owned documentation settings. The m7kni.io hub generates the full
+# Zensical configuration and injects shared branding and assets at build time.
+
+[site]
+name = "codexlb2otel"
+description = "Turns codex-lb conversation archives into OpenTelemetry metrics and traces, structured Loki logs, and Agent Observability generations."
+author = "Rob Knight"
+keywords = [
+    "codex-lb",
+    "codex",
+    "opentelemetry",
+    "otel",
+    "otlp",
+    "grafana cloud",
+    "loki",
+    "tempo",
+    "agent observability",
+    "llm observability",
+    "conversation telemetry",
+    "go",
+]
+
+[[site.nav]]
+Home = "index.md"
+
+[[site.nav]]
+"Getting Started" = "getting-started.md"
+
+[[site.nav]]
+Configuration = "configuration.md"
+
+[[site.nav]]
+"How It Works" = [
+    { Architecture = "architecture.md" },
+    { Signals = "signals.md" },
+]
+
+[[site.nav]]
+Guides = [
+    { Dashboards = "dashboards.md" },
+    { Operations = "operations.md" },
+]
+
+[[site.nav]]
+Security = "security.md"
+
+[[site.nav]]
+Troubleshooting = "troubleshooting.md"
+
+[assets]
+social_image = "assets/social-card.png"
+social_image_alt = "codexlb2otel documentation social preview card"
+
+[[social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/rknightion/codexlb2otel"
+name = "GitHub Repository"
+
+[tags]
+OpenTelemetry = "opentelemetry"
+Grafana = "grafana"
+Loki = "loki"
+Tempo = "tempo"
+Security = "security"
+Configuration = "configuration"
+Operations = "operations"

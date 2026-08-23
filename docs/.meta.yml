@@ -1,0 +1,11 @@
+title: codexlb2otel Documentation
+description: Convert codex-lb conversation archives into OpenTelemetry metrics and traces, structured Loki logs, and agent-observability generations
+tags:
+  - codex
+  - opentelemetry
+  - observability
+  - grafana
+image: assets/social-card.png
+robots: index,follow
+language: en
+canonical_base: https://m7kni.io/codexlb2otel/
