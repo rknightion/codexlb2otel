@@ -1,10 +1,10 @@
 ---
 id: CXO-0015
 title: Publish a structured documentation site
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-23 12:28'
-updated_date: '2026-08-23 12:41'
+updated_date: '2026-08-23 12:45'
 labels: []
 dependencies: []
 type: docs
@@ -19,16 +19,16 @@ Add project-owned documentation and the fleet-standard child-site manifest and s
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The repository contains a navigable docs site covering purpose, architecture, installation, configuration, signals, dashboards, operations, security, and troubleshooting
-- [ ] #2 The child manifest follows the m7kni.io inverted site model and shared assets remain hub-owned
-- [ ] #3 Documentation changes dispatch a scoped docs-update event to the hub without a durable GitHub token
-- [ ] #4 The child documentation build and repository gate pass
+- [x] #1 The repository contains a navigable docs site covering purpose, architecture, installation, configuration, signals, dashboards, operations, security, and troubleshooting
+- [x] #2 The child manifest follows the m7kni.io inverted site model and shared assets remain hub-owned
+- [x] #3 Documentation changes dispatch a scoped docs-update event to the hub without a durable GitHub token
+- [x] #4 The child documentation build and repository gate pass
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
-- [ ] #2 go build ./... succeeds
+- [x] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
+- [x] #2 go build ./... succeeds
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -50,3 +50,9 @@ Added the project-owned Markdown site, docs.toml manifest, hub-injected asset ig
 
 Verification: docs.toml and workflow YAML parse; actionlint and git diff --check pass; production-shape child build renders 10 pages with injected assets, no external subresources, unique titles, and one h1 per page; make check and go build ./... pass. CodeRabbit skipped because the change is documentation, declarative manifest data, and CI YAML with no branching logic.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Published a structured ten-page documentation site using the central m7kni.io child-manifest model. Provisioned repository-bound WIF and OpenBao docs-sync access, proved the dispatch workflow live, passed the production-shape child build and project gate, and verified the deployed pages, raw Markdown, sitemap, llms.txt, project assets, and landing-page card.
+<!-- SECTION:FINAL_SUMMARY:END -->
