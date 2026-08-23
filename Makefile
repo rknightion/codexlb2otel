@@ -9,6 +9,12 @@ BINS  := $(addprefix bin/,$(TOOLS))
 
 CORPUS ?= corpus/processed
 
+# Go 1.27's new encoding/json implementation makes the multi-gigabyte corpus
+# scans exceed the package timeout. Keep the established v1 implementation until
+# the archive decoder is migrated and measured against json/v2 explicitly.
+GOEXPERIMENT ?= nojsonv2
+export GOEXPERIMENT
+
 # Every Go file, not just the tool's own directory. Depending on `cmd/<tool>` looks
 # right and silently never rebuilds: a directory's mtime does not change when a file
 # inside it is edited, so an edited main.go left a stale binary in place. go build

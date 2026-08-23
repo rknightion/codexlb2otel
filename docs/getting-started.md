@@ -19,7 +19,7 @@ The Go version is declared in `go.mod`:
 ```sh
 git clone https://github.com/rknightion/codexlb2otel.git
 cd codexlb2otel
-go build -o bin/codexlb2otel ./cmd/codexlb2otel
+GOEXPERIMENT=nojsonv2 go build -o bin/codexlb2otel ./cmd/codexlb2otel
 ```
 
 Copy the example configuration and change the archive paths:

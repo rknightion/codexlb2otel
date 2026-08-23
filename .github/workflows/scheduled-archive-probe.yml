@@ -45,6 +45,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Keep live archive scans on the measured encoding/json implementation.
+  GOEXPERIMENT: nojsonv2
+
 jobs:
   probe:
     name: sampled probe against live archive

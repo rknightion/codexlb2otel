@@ -1,6 +1,6 @@
 module github.com/rknightion/codexlb2otel
 
-go 1.26.5
+go 1.27.0
 
 require (
 	github.com/OpenRouterTeam/go-sdk v0.7.32

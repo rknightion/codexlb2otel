@@ -12,14 +12,14 @@
 # unassisted for local iteration - it is not consulted by CI (--build-arg always
 # wins) and is not itself the source of truth, so it is allowed to go stale between
 # go.mod bumps without breaking anything that matters.
-ARG GO_VERSION=1.26.5
+ARG GO_VERSION=1.27.0
 
 FROM golang:${GO_VERSION}-alpine AS builder
 
 # Pure Go all the way down (net/http, archive/gzip, gopkg.in/yaml.v3, the OTel SDK,
 # agento11y's client) - CGO_ENABLED=0 costs nothing here and is what makes the
 # final stage's from-scratch-style base possible at all.
-ENV CGO_ENABLED=0 GOOS=linux
+ENV CGO_ENABLED=0 GOOS=linux GOEXPERIMENT=nojsonv2
 
 WORKDIR /src
 

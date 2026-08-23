@@ -17,6 +17,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # Go 1.27's json/v2-backed implementation regresses multi-gigabyte archive
+  # scans; retain the established v1 behavior until that migration is measured.
+  GOEXPERIMENT: nojsonv2
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
