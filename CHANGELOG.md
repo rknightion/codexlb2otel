@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/m7kni/codexlb2otel/compare/v0.2.0...v0.3.0) (2026-08-23)
+
+
+### Features
+
+* **dashboards:** Model Usage tab, and fix silently-broken Prometheus tables ([c1a48cd](https://github.com/m7kni/codexlb2otel/commit/c1a48cd40c2fe9e1dd7a5f461664e341d84d9061))
+* **dashboard:** surface fast mode effectiveness ([047f915](https://github.com/m7kni/codexlb2otel/commit/047f915b10d712a393db5f1d0d3974580c04d3ad))
+
+
+### Bug Fixes
+
+* **agento11y:** avoid subagent marker in agent names ([7de13e6](https://github.com/m7kni/codexlb2otel/commit/7de13e6c69fb9ab3dff4ee8b41875596d6feacab))
+* **ci:** verify the CLI download and install it before minting the credential ([5ed6787](https://github.com/m7kni/codexlb2otel/commit/5ed67878ed488582ff8cf780c2eebaeb43635a32))
+
 ## [0.2.0](https://github.com/rknightion/codexlb2otel/compare/v0.1.0...v0.2.0) (2026-08-09)
 
 
