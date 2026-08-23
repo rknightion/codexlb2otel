@@ -10,7 +10,7 @@ import (
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
-func TestEmitSkipsTurnsWithoutAModel(t *testing.T) {
+func TestEmitKeepsIdentifiedTurnsWithoutAModel(t *testing.T) {
 	s := &Sink{
 		cfg:   config.AgentO11y{BatchSize: 100, BatchWait: time.Hour},
 		guard: attr.NewGuard(),
@@ -24,7 +24,12 @@ func TestEmitSkipsTurnsWithoutAModel(t *testing.T) {
 	if err := s.Emit(context.Background(), turns); err != nil {
 		t.Fatal(err)
 	}
-	if len(s.buf) != 1 || s.buf[0].ID != "generation" {
-		t.Fatalf("buffer = %+v, want only the model-backed generation", s.buf)
+	if len(s.buf) != 3 || s.buf[0].ID != "transport-only" || s.buf[1].ID != "blank-model" || s.buf[2].ID != "generation" {
+		t.Fatalf("buffer = %+v, want every identified generation including unknown-model records", s.buf)
+	}
+	for _, g := range s.buf[:2] {
+		if g.Model == nil || g.Model.Name != "unknown" || g.Model.Provider != "codex" {
+			t.Errorf("model-less generation = %+v, want codex/unknown", g.Model)
+		}
 	}
 }

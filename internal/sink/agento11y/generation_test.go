@@ -31,6 +31,7 @@ func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
 		Status:            "completed",
 		Originator:        "codex_exec",
 		InstructionsHash:  "3dcc72f5c56809d0",
+		ToolsHash:         "e1a2043fd5f4571c",
 		TraceID:           "0af7651916cd43dd8448eb211c80319c",
 		SpanID:            "b7ad6b7169203331",
 		TextDeltaCount:    5, // >0, so mode must come out STREAM
@@ -98,8 +99,8 @@ func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
 	// observability's "anonymous" bucket and give its agent catalog nothing to key on,
 	// which is a silent failure at the far end of the pipeline - so they are pinned
 	// here rather than left to the shape check alone.
-	if got.GetAgentName() != "codexlb-codex_exec" {
-		t.Errorf("agent_name = %q, want codexlb-codex_exec", got.GetAgentName())
+	if got.GetAgentName() != "codex" {
+		t.Errorf("agent_name = %q, want codex", got.GetAgentName())
 	}
 	if got.GetAgentVersion() != "3dcc72f5c56809d0" {
 		t.Errorf("agent_version = %q, want the instructions hash", got.GetAgentVersion())
@@ -127,14 +128,8 @@ func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
 	if got.GetSystemPrompt() != "be a helpful assistant" {
 		t.Errorf("system_prompt = %q, want the instructions text", got.GetSystemPrompt())
 	}
-	// stop_reason must stay EMPTY even though Turn.Status is populated. It asks why the
-	// model stopped generating; status answers whether this pipeline saw the response
-	// finish, which is a different question - and the same reasoning that keeps
-	// gen_ai.response.finish_reasons unset on issue #18. Pinned so the two cannot drift
-	// into disagreeing.
-	if got.GetStopReason() != "" {
-		t.Errorf("stop_reason = %q, want empty: codexlb status is a different axis from "+
-			"a model finish reason, and is already carried in tags", got.GetStopReason())
+	if got.GetStopReason() != "completed" {
+		t.Errorf("stop_reason = %q, want the Codex plugin completion outcome", got.GetStopReason())
 	}
 	if !got.GetStartedAt().AsTime().Equal(started) {
 		t.Errorf("started_at = %v, want %v", got.GetStartedAt().AsTime(), started)
@@ -143,12 +138,9 @@ func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
 		t.Errorf("completed_at = %v, want %v", got.GetCompletedAt().AsTime(), completed)
 	}
 
-	// effective_version and parent_generation_ids are deliberate omissions - see
-	// generation.go's doc comment on buildGeneration for why. Pinned here so a future
-	// change that starts emitting either does so as a conscious decision, not a
-	// silent side effect of some other edit.
-	if got.GetEffectiveVersion() != "" {
-		t.Errorf("effective_version = %q, want empty (InstructionsHash cannot satisfy the sha256: regex)", got.GetEffectiveVersion())
+	const wantEffectiveVersion = "sha256:2eccc67309a270bfe2e665a841a23a4b2ba62ef1474ec78c982aaccf0c15b03c"
+	if got.GetEffectiveVersion() != wantEffectiveVersion {
+		t.Errorf("effective_version = %q, want %q", got.GetEffectiveVersion(), wantEffectiveVersion)
 	}
 	if len(got.GetParentGenerationIds()) != 0 {
 		t.Errorf("parent_generation_ids = %v, want empty (no id-space join available)", got.GetParentGenerationIds())
@@ -327,16 +319,48 @@ func TestBuildGeneration_TemperatureTopPAbsentWhenZero(t *testing.T) {
 	}
 }
 
-// TestBuildGeneration_EmptyToolsOmitted pins Tools staying nil (and so omitted from
-// the wire, per wireGeneration's trap #4 doc comment) when Turn.Tools is empty - the
-// COMMON case, since Tools is populated only on the one response where a catalogue's
-// hash first changes (turn.go's own comment on Tools/ToolsHash). This is correct
-// dedup behaviour, not a gap, and must not be "fixed" by synthesizing a catalogue.
-func TestBuildGeneration_EmptyToolsOmitted(t *testing.T) {
-	tr := &turn.Turn{RequestID: "req-1", ResponseID: "resp_x", Model: "gpt-5.6-sol", Status: "completed"}
+// A request catalogue body is intentionally sparse after its first appearance. The
+// Codex coding-agent plugin still exposes tools executed during each turn, so the
+// archive sink must use that same evidence instead of presenting an empty tool set.
+func TestBuildGeneration_ExecutedToolsFillSparseCatalogue(t *testing.T) {
+	tr := &turn.Turn{
+		RequestID: "req-1", ResponseID: "resp_x", Model: "gpt-5.6-sol", Status: "completed",
+		ToolCalls: []turn.ToolCall{{Name: "exec", Kind: "custom"}, {Name: "exec"}, {Name: "wait"}},
+	}
 	g := buildGeneration(tr, attr.NewGuard())
-	if g.Tools != nil {
-		t.Errorf("Tools = %+v, want nil", g.Tools)
+	if len(g.Tools) != 2 || g.Tools[0].Name != "exec" || g.Tools[0].Type != "custom" ||
+		g.Tools[1].Name != "wait" || g.Tools[1].Type != "function" {
+		t.Errorf("Tools = %+v, want source-typed exec and default-function wait", g.Tools)
+	}
+}
+
+func TestBuildGeneration_ModelFallbackMatchesCodexPlugin(t *testing.T) {
+	g := buildGeneration(&turn.Turn{RequestID: "transport", Status: turn.StatusTransport}, attr.NewGuard())
+	if g.Model == nil || g.Model.Name != "unknown" || g.Model.Provider != "codex" {
+		t.Fatalf("Model = %+v, want codex/unknown", g.Model)
+	}
+	if g.ResponseModel != "unknown" {
+		t.Errorf("ResponseModel = %q, want unknown", g.ResponseModel)
+	}
+	if g.StopReason != "" {
+		t.Errorf("StopReason = %q, want empty for a transport failure", g.StopReason)
+	}
+}
+
+func TestEffectiveVersionUsesRepeatedFingerprintsNotSparseBodies(t *testing.T) {
+	base := &turn.Turn{InstructionsHash: "instructions-a", ToolsHash: "tools-a"}
+	withBodies := &turn.Turn{
+		InstructionsHash: "instructions-a",
+		ToolsHash:        "tools-a",
+		Prompts:          []turn.Prompt{{Role: "instructions", Text: "full prompt body"}},
+		Tools:            []turn.ToolDef{{Name: "exec"}},
+	}
+	if got, want := effectiveVersion(withBodies), effectiveVersion(base); got != want {
+		t.Fatalf("sparse/body effective versions differ: %q != %q", got, want)
+	}
+	changed := &turn.Turn{InstructionsHash: "instructions-b", ToolsHash: "tools-a"}
+	if effectiveVersion(changed) == effectiveVersion(base) {
+		t.Fatal("an instruction fingerprint change did not change effective_version")
 	}
 }
 

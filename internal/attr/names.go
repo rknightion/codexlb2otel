@@ -118,11 +118,9 @@ const (
 	// without the other.
 	ToolCallArguments = "gen_ai.tool.call.arguments"
 	ToolCallResult    = "gen_ai.tool.call.result"
-	// GenAIAgentName is WHICH AGENT this service is reporting on, as
-	// "codexlb-<originator>" - codexlb-codex-tui, codexlb-codex_exec,
-	// codexlb-codex_cli_rs. Bounded and Turn-derived, and 1:1 correlated with
-	// Originator below, so it costs no cardinality that codexlb.originator was not
-	// already costing.
+	// GenAIAgentName is WHICH AGENT this service is reporting on: codex for ordinary
+	// coding-agent turns and codex/subagent only for source-proven child threads.
+	// Originator below retains the client entrypoint independently.
 	//
 	// It exists because Grafana's agent-observability groups its whole Agents surface
 	// by this exact label - apps/plugin's agentRows.ts keys rows on gen_ai_agent_name
@@ -385,12 +383,13 @@ const (
 // consumers only test it for non-emptiness; nothing downstream parses the value.
 const AgentO11ySDKNameValue = "codexlb2otel"
 
-// AgentNamePrefix and AgentNameFallback build GenAIAgentName. Agent Observability
-// treats a slash in an agent name as a subagent marker, so the prefix uses a hyphen:
-// these turns belong to distinct client agents, not a codexlb parent/subagent tree.
+// These values match the coding-agent identity exported by agento11y's Codex plugin.
+// Originator remains a separate attribute; it is an entrypoint, not another agent.
+// Agent Observability deliberately treats a slash as a subagent marker, so only a
+// source-proven child thread receives one.
 const (
-	AgentNamePrefix   = "codexlb-"
-	AgentNameFallback = "codexlb"
+	AgentNameValue    = "codex"
+	AgentSubagentName = "codex/subagent"
 )
 
 // TokenSemanticsInclusive is the only value GenAITokenSemantics takes: input_tokens

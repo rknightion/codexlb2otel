@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -78,7 +77,7 @@ func (s *Sink) Name() string { return "agento11y" }
 func (s *Sink) Emit(ctx context.Context, turns []*turn.Turn) error {
 	s.mu.Lock()
 	for _, t := range turns {
-		if t == nil || strings.TrimSpace(t.Model) == "" || attr.GenerationID(t) == "" {
+		if t == nil || attr.GenerationID(t) == "" {
 			continue
 		}
 		g := buildGeneration(t, s.guard)

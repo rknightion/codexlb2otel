@@ -1,6 +1,8 @@
 package agento11y
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -16,16 +18,11 @@ import (
 // only by ExportGenerations or its own tolerant OTLP-span decoder; the existing
 // otlptrace sink to Tempo is untouched by this package).
 //
-// agent_name and agent_version ARE now set (issue #32). This comment used to claim
-// they could not be - "no agent-name concept exists anywhere in the capture; codex-lb
-// has no notion of which agent, only which account and client binary served a request.
-// Permanent gap, not an oversight." THAT WAS WRONG, and expensively so: with the field
-// unset, everything this service reported landed in agent-observability's anonymous
-// bucket. "Which client binary served the request" is precisely an agent identity at
-// the granularity that product means it, and the claude-code plugin in the same tenant
-// names its agents on exactly that basis. See attr.AgentName and attr.GenAIAgentVersion
-// for the values and why the version is the instructions hash rather than
-// Turn.ClientVersion (which is always empty - the `version` header does not exist).
+// agent_name follows the dedicated Codex coding-agent plugin: ordinary turns are
+// "codex" and only source-proven child threads are "codex/subagent". The client
+// entrypoint remains in codexlb.originator rather than fragmenting one agent into
+// several catalog entries. agent_version remains the instructions fingerprint; the
+// full effective_version combines it with the repeated tool-catalogue fingerprint.
 //
 // Fields the proto defines but this function never sets, and why:
 //
@@ -39,39 +36,14 @@ import (
 //     on Part or ToolCall to attach a start/end anyway, so nothing here implies a
 //     timing this sink cannot back up.
 //
-// tools, temperature and top_p (issue #23) ARE now set, closing the three gaps this
-// comment used to list here - see toolsOf/wireGeneration's own doc comment for
-// tools/temperature/top_p respectively. Tools is empty on most turns because
-// Turn.Tools only carries a catalogue on the response where its hash first changes
-// (turn.go's own comment on Tools/ToolsHash) - that is correct dedup behaviour, not a
-// gap to work around, so this function never tries to backfill a catalogue for a
-// response that did not carry one.
+// tools combines the richer, deduplicated request catalogue with names actually
+// called by this response. That matches the Codex plugin's useful fallback when a
+// full catalogue body is unavailable, without pretending to reconstruct schemas.
 //
-// stop_reason is deliberately left unset, and this is the same call made for
-// gen_ai.response.finish_reasons on issue #18 - the two must agree or the codebase
-// holds two contradictory answers to one question.
-//
-// It is tempting to pass Turn.Status through verbatim, since stop_reason is free text
-// rather than an enum. But status is a DIFFERENT AXIS, not a coarser version of the
-// same one: it answers "did this pipeline observe the response finish", where
-// stop_reason answers "why did the model stop generating". Measured across the full
-// corpus, response.status takes exactly one value ever - "completed" - while
-// finish_reason and stop_reason appear nowhere in the capture at all, and three of our
-// four status values (incomplete, transport, error) are manufactured by this service
-// rather than reported by the server. Writing "transport" into stop_reason would tell
-// sigil's UI the model stopped for a reason the model had no part in.
-//
-// Nothing is lost: codexlb.status is already carried in tags, under a name that says
-// what it actually means.
-//
-// effective_version is deliberately left unset. The proto requires it to match
-// ^sha256:[0-9a-f]{64}$ or ingest REJECTS the generation outright; Turn.InstructionsHash
-// is sha256(instructions)[:8] hex-encoded - 16 hex characters, not 64 (see
-// turn.shortHash) - so it does not qualify, and prefixing "sha256:" onto a truncated
-// hash would produce a value that matches the regex but is not actually a sha256 sum
-// of anything, which is worse than omitting it. The proto's own fallback - "the
-// backend falls back to a server-computed sha256 of (system_prompt + sorted tools)
-// when omitted" - is what this emitter relies on instead.
+// stop_reason is "completed" only when the source reports successful completion and
+// no call error exists, matching the Codex plugin's completed-turn outcome. The
+// pipeline statuses incomplete, transport, and error are never passed through as
+// fabricated model stop reasons; they remain in codexlb.status and call_error.
 //
 // parent_generation_ids is deliberately left unset. Turn.ParentTurnID lives in the
 // SERVER's turn-id space (turn_*, from response.create's client_metadata); this
@@ -82,6 +54,12 @@ import (
 // ParentTurnID's raw value as a parent_generation_ids entry would produce an id that
 // resolves to nothing in sigil's id space, which is worse than the field being absent.
 func buildGeneration(t *turn.Turn, guard *attr.Guard) wireGeneration {
+	modelName := strings.TrimSpace(t.Model)
+	provider := attr.GenAIProviderValue
+	if modelName == "" {
+		modelName = "unknown"
+		provider = "codex"
+	}
 	g := wireGeneration{
 		ID:             attr.GenerationID(t),
 		ConversationID: t.ThreadID,
@@ -90,18 +68,22 @@ func buildGeneration(t *turn.Turn, guard *attr.Guard) wireGeneration {
 		// field is EMPTY (its generation service's normalizeGeneration), so a value it
 		// does not recognise is stored verbatim and classified as unknown; sending
 		// "chat" here was not a harmless approximation.
-		OperationName: attr.OperationName(t),
-		Mode:          mode(t),
-		TraceID:       correlation.TraceID(t).String(),
-		SpanID:        correlation.ResponseSpanID(t).String(),
-		Model:         &wireModelRef{Provider: attr.GenAIProviderValue, Name: t.Model},
-		ResponseID:    t.ResponseID,
-		ResponseModel: responseModel(t),
-		AgentName:     attr.AgentName(t),
-		AgentVersion:  t.InstructionsHash,
-		StartedAt:     rfc3339(startedAt(t)),
-		CompletedAt:   rfc3339(completedAt(t)),
-		CallError:     callError(t),
+		OperationName:    attr.OperationName(t),
+		Mode:             mode(t),
+		TraceID:          correlation.TraceID(t).String(),
+		SpanID:           correlation.ResponseSpanID(t).String(),
+		Model:            &wireModelRef{Provider: provider, Name: modelName},
+		ResponseID:       t.ResponseID,
+		ResponseModel:    responseModel(t, modelName),
+		AgentName:        attr.AgentName(t),
+		AgentVersion:     t.InstructionsHash,
+		EffectiveVersion: effectiveVersion(t),
+		StartedAt:        rfc3339(startedAt(t)),
+		CompletedAt:      rfc3339(completedAt(t)),
+		CallError:        callError(t),
+	}
+	if t.Status == "completed" && g.CallError == "" {
+		g.StopReason = "completed"
 	}
 
 	if tags := tagsOf(guard, t); len(tags) > 0 {
@@ -112,7 +94,7 @@ func buildGeneration(t *turn.Turn, guard *attr.Guard) wireGeneration {
 	}
 	g.Input, g.SystemPrompt = inputMessages(t)
 	g.Output = outputMessages(t)
-	g.Tools = toolsOf(t.Tools)
+	g.Tools = toolsOf(t.Tools, t.ToolCalls)
 	// != 0, not > 0: temperature 0 (fully greedy decoding) is a legitimate request
 	// setting, unlike every ms-duration field elsewhere in this codebase where 0 only
 	// ever means "not populated". See wireGeneration's own doc comment for the
@@ -130,19 +112,41 @@ func buildGeneration(t *turn.Turn, guard *attr.Guard) wireGeneration {
 	return g
 }
 
-// toolsOf maps Turn.Tools (populated only on the response where a catalogue's hash
-// first changes - see turn.go's comment on Tools/ToolsHash) onto proto's
-// ToolDefinition. Returns nil for an empty/nil input rather than an empty non-nil
-// slice, matching every other "absent means nothing to report" field in this file
-// (usageOf, tagsOf) and letting Go's own json encoding of a nil slice with omitempty
-// drop the field entirely, as wireGeneration's own doc comment requires.
-func toolsOf(defs []turn.ToolDef) []wireToolDefinition {
-	if len(defs) == 0 {
+// toolsOf maps the occasional full request catalogue and fills its gaps with the
+// names actually called in this response, which is the evidence available to the
+// Codex hook plugin too. Catalogue definitions win on duplicate names. Returns nil
+// only when neither source reports a tool.
+func toolsOf(defs []turn.ToolDef, calls []turn.ToolCall) []wireToolDefinition {
+	if len(defs) == 0 && len(calls) == 0 {
 		return nil
 	}
-	out := make([]wireToolDefinition, 0, len(defs))
+	out := make([]wireToolDefinition, 0, len(defs)+len(calls))
+	seen := make(map[string]struct{}, len(defs)+len(calls))
 	for _, d := range defs {
-		out = append(out, wireToolDefinition{Name: d.Name, Description: d.Description, Type: d.Kind})
+		name := strings.TrimSpace(d.Name)
+		if name == "" {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, wireToolDefinition{Name: name, Description: d.Description, Type: d.Kind})
+	}
+	for _, c := range calls {
+		name := strings.TrimSpace(c.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		toolType := strings.TrimSpace(c.Kind)
+		if toolType == "" {
+			toolType = "function"
+		}
+		seen[name] = struct{}{}
+		out = append(out, wireToolDefinition{Name: name, Type: toolType})
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -168,11 +172,21 @@ func mode(t *turn.Turn) string {
 // lives inside an unexported closure literal in attr's registry, not as a callable
 // function - reusing it as-is would mean exporting it from a package this lane does
 // not own.
-func responseModel(t *turn.Turn) string {
+func responseModel(t *turn.Turn, fallback string) string {
 	if t.SafetyRetryModel != "" {
 		return t.SafetyRetryModel
 	}
-	return t.Model
+	return fallback
+}
+
+// effectiveVersion joins the archive's repeated instruction and tool-catalogue
+// fingerprints into one full SHA-256 value accepted by Agent Observability. The
+// bodies are intentionally sparse; their fingerprints let those occasional bodies
+// accumulate under one catalog version rather than create empty phantom versions.
+func effectiveVersion(t *turn.Turn) string {
+	seed := fmt.Sprintf("codex\ninstructions=%s\ntools=%s", t.InstructionsHash, t.ToolsHash)
+	sum := sha256.Sum256([]byte(seed))
+	return fmt.Sprintf("sha256:%x", sum)
 }
 
 // startedAt/completedAt prefer the server's own response bounds over the capture

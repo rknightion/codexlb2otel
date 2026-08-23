@@ -38,26 +38,28 @@ func sampleTurn() *turn.Turn {
 	}
 }
 
-func TestAgentNameAvoidsAgentO11ySubagentMarker(t *testing.T) {
+func TestAgentNameMatchesCodexCodingAgentIdentity(t *testing.T) {
 	tests := []struct {
-		name       string
-		originator string
-		want       string
+		name         string
+		originator   string
+		threadSource string
+		want         string
 	}{
-		{name: "tui", originator: "codex-tui", want: "codexlb-codex-tui"},
-		{name: "exec", originator: "codex_exec", want: "codexlb-codex_exec"},
-		{name: "probe", originator: "codex_cli_rs", want: "codexlb-codex_cli_rs"},
-		{name: "missing originator", want: "codexlb"},
+		{name: "tui", originator: "codex-tui", want: "codex"},
+		{name: "exec", originator: "codex_exec", want: "codex"},
+		{name: "probe", originator: "codex_cli_rs", want: "codex"},
+		{name: "missing originator", want: "codex"},
+		{name: "proven subagent", originator: "codex-tui", threadSource: "subagent", want: "codex/subagent"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := AgentName(&turn.Turn{Originator: tt.originator})
+			got := AgentName(&turn.Turn{Originator: tt.originator, ThreadSource: tt.threadSource})
 			if got != tt.want {
 				t.Errorf("AgentName() = %q, want %q", got, tt.want)
 			}
-			if strings.Contains(got, "/") {
-				t.Errorf("AgentName() = %q contains Agent Observability's subagent marker", got)
+			if strings.Contains(got, "/") != (tt.threadSource == "subagent") {
+				t.Errorf("AgentName() = %q has the wrong Agent Observability subagent marker", got)
 			}
 		})
 	}

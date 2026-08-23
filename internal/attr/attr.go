@@ -171,16 +171,10 @@ var registry = []Field{
 	{Key: Originator, Class: Bounded, Cap: 16,
 		Observed: []string{"codex-tui", "codex_exec", "codex_cli_rs"},
 		Of:       func(t *turn.Turn) string { return t.Originator }},
-	// GenAIAgentName is Originator wearing agent-observability's name: its value set is
-	// Originator's with a prefix and nothing else, so the cap matches Originator's.
-	//
-	// On any attribute set that already carries Originator the two are perfectly
-	// correlated and this adds no series at all. On the three narrowed gen_ai.client.*
-	// sets it is a genuinely new dimension (they do not carry Originator), so it costs
-	// its value count there - three today. That is the price of the fix, not a free
-	// lunch: without it those series have no agent at all.
+	// GenAIAgentName follows the Codex coding-agent contract. Originator remains a
+	// separate bounded attribute; only a proven subagent uses the slash marker.
 	{Key: GenAIAgentName, Class: Bounded, Cap: 16,
-		Observed: []string{"codexlb-codex-tui", "codexlb-codex_exec", "codexlb-codex_cli_rs"},
+		Observed: []string{AgentNameValue, AgentSubagentName},
 		Of:       AgentName},
 	// A value set that turns over rather than accumulates: the hash changes only when
 	// codex ships a new system prompt, and the guard's state is per-process, so a
@@ -324,22 +318,15 @@ var registry = []Field{
 	{Key: SafetyID, Class: Sensitive, Of: func(t *turn.Turn) string { return t.SafetyID }},
 }
 
-// AgentName is GenAIAgentName's value for one turn: "codexlb-<originator>", or a bare
-// "codexlb" when the originator is absent.
-//
-// Never empty, unlike almost every other Field.Of in the registry. An agent name that
-// sometimes disappears is worse than a coarse one: a turn with no originator header
-// would drop out of every per-agent series and reappear in agent-observability's
-// anonymous bucket - the exact failure issue #32 fixed - so the fallback keeps it in
-// the right agent at a coarser granularity instead.
-//
-// Exported because internal/sink/agento11y sets the same value on Generation.agent_name
-// and the two must not be able to disagree.
+// AgentName is the Codex coding-agent identity for one turn. The dedicated Codex
+// plugin exports "codex" for ordinary turns and "codex/subagent" only after proving
+// the thread source. Originator remains available independently for entrypoint
+// analysis. Exported so Generations, spans, and metrics cannot disagree.
 func AgentName(t *turn.Turn) string {
-	if t.Originator == "" {
-		return AgentNameFallback
+	if t.ThreadSource == "subagent" {
+		return AgentSubagentName
 	}
-	return AgentNamePrefix + t.Originator
+	return AgentNameValue
 }
 
 // GenerationID is the id of the Generation representing this response - the value
