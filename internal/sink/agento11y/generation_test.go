@@ -98,8 +98,8 @@ func TestBuildGeneration_ConformsToProtojsonWireFormat(t *testing.T) {
 	// observability's "anonymous" bucket and give its agent catalog nothing to key on,
 	// which is a silent failure at the far end of the pipeline - so they are pinned
 	// here rather than left to the shape check alone.
-	if got.GetAgentName() != "codexlb/codex_exec" {
-		t.Errorf("agent_name = %q, want codexlb/codex_exec", got.GetAgentName())
+	if got.GetAgentName() != "codexlb-codex_exec" {
+		t.Errorf("agent_name = %q, want codexlb-codex_exec", got.GetAgentName())
 	}
 	if got.GetAgentVersion() != "3dcc72f5c56809d0" {
 		t.Errorf("agent_version = %q, want the instructions hash", got.GetAgentVersion())

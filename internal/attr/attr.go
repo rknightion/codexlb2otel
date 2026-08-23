@@ -179,7 +179,7 @@ var registry = []Field{
 	// its value count there - three today. That is the price of the fix, not a free
 	// lunch: without it those series have no agent at all.
 	{Key: GenAIAgentName, Class: Bounded, Cap: 16,
-		Observed: []string{"codexlb/codex-tui", "codexlb/codex_exec", "codexlb/codex_cli_rs"},
+		Observed: []string{"codexlb-codex-tui", "codexlb-codex_exec", "codexlb-codex_cli_rs"},
 		Of:       AgentName},
 	// A value set that turns over rather than accumulates: the hash changes only when
 	// codex ships a new system prompt, and the guard's state is per-process, so a
@@ -315,7 +315,7 @@ var registry = []Field{
 	{Key: SafetyID, Class: Sensitive, Of: func(t *turn.Turn) string { return t.SafetyID }},
 }
 
-// AgentName is GenAIAgentName's value for one turn: "codexlb/<originator>", or a bare
+// AgentName is GenAIAgentName's value for one turn: "codexlb-<originator>", or a bare
 // "codexlb" when the originator is absent.
 //
 // Never empty, unlike almost every other Field.Of in the registry. An agent name that
