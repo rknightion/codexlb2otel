@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Mint a scoped release token
         id: bao
-        uses: rknightion/.github/.github/actions/broker-token@fda5f3b9a3f88f187a827e85b33181ea5668478e
+        uses: rknightion/.github/.github/actions/broker-token@bc58399e49a8d8131a379f530fffe8c9659667f9
         with:
           permission-set: release-please-codexlb2otel
           tailscale-client-id: ${{ secrets.TS_WIF_CLIENT_ID }}

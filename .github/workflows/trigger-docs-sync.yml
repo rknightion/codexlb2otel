@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Mint a scoped docs-sync token
         id: bao
-        uses: rknightion/.github/.github/actions/broker-token@1cd0af4cdb0f46266b34f3b981543e32e7c98b4a
+        uses: rknightion/.github/.github/actions/broker-token@bc58399e49a8d8131a379f530fffe8c9659667f9
         with:
           permission-set: docs-sync
           role: docs-sync-codexlb2otel
