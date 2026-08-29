@@ -45,6 +45,11 @@ on:
 permissions:
   contents: read
 
+# Cancel a superseded run on the same ref (rapid pushes / PR updates) to free runners.
+concurrency:
+  group: scheduled-archive-probe-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   # Keep live archive scans on the measured encoding/json implementation.
   GOEXPERIMENT: nojsonv2
