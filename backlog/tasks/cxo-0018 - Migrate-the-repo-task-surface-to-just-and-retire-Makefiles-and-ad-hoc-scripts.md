@@ -1,10 +1,10 @@
 ---
 id: CXO-0018
 title: Migrate the repo task surface to just and retire Makefiles and ad-hoc scripts
-status: To Do
+status: Parked
 assignee: []
 created_date: '2026-08-28 19:19'
-updated_date: '2026-08-29 11:20'
+updated_date: '2026-08-29 13:54'
 labels:
   - 'wave:2-fleet'
 dependencies: []
@@ -522,6 +522,26 @@ CI is confirmed green on `just check`.
 - [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
 - [ ] #2 go build ./... succeeds
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Reconcile the frozen migration brief with the current codexlb2otel CI and the ratified 2otel alignment: retain the established shared-workflow pins and ci-success aggregator while mapping the required Go gates to documented just recipes.
+2. Add the top-level justfile and schema-v2 golangci-lint configuration, with gosec enabled within golangci-lint; add the Renovate manager/annotation only where the relocated govulncheck pin is actually managed.
+3. Convert ci.yml to the canonical GitHub-hosted 2otel job surface using setup-just and just recipes, preserving triggers, permissions, concurrency, out-of-scope workflows, and ci-success needs.
+4. Update task-interface documentation and Backlog definition of done; prove formatting, task-surface discovery, targeted recipes, and the complete local check.
+5. Stage named paths, run CodeRabbit before each code commit, push the justfile/CI transition, observe exact-head CI, then remove Makefile only after that evidence; run final checks, reference sweeps, task finalization, and push.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented the justfile, schema-v2 golangci-lint gate with gosec, the pinned Renovate custom manager, canonical 2otel CI jobs, docs, and migration-related operational references. Observed passing: just --fmt --check; just --list; just --dump --dump-format json; just setup; just lint; just build; just test-short; just vuln; just snapshot; just image; and actionlint for ci.yml.
+
+Full local probe-ci read 49 local archive files (4.8 GB) and correctly failed on pre-existing drift: one breaking safety-buffering bool-to-object shape change plus ten new paths/values. The baseline and decoder are out of this migration scope; CXO-0007 is still To Do but covers only older non-breaking baseline findings. No baseline was accepted or changed. Exact-head CI must still prove its intentionally archive-less exit-3 branch.
+
+PARKED: CodeRabbit review is mandatory before commit, but two authenticated reviews were rate-limited because the organization has exhausted included reviews and has no assigned seat. Resume only once CodeRabbit can return a review; rerun it against the staged diff before any commit. Full local just check also remains blocked by genuine corpus drift (one breaking safety-buffering shape change and ten new findings). Do not accept a baseline or alter decoder behavior in this task; route that contract work separately.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
