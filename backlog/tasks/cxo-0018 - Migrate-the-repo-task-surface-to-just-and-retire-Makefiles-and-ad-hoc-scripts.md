@@ -1,10 +1,10 @@
 ---
 id: CXO-0018
 title: Migrate the repo task surface to just and retire Makefiles and ad-hoc scripts
-status: Parked
+status: Done
 assignee: []
 created_date: '2026-08-28 19:19'
-updated_date: '2026-08-29 13:54'
+updated_date: '2026-08-29 18:18'
 labels:
   - 'wave:2-fleet'
 dependencies: []
@@ -541,6 +541,8 @@ Implemented the justfile, schema-v2 golangci-lint gate with gosec, the pinned Re
 Full local probe-ci read 49 local archive files (4.8 GB) and correctly failed on pre-existing drift: one breaking safety-buffering bool-to-object shape change plus ten new paths/values. The baseline and decoder are out of this migration scope; CXO-0007 is still To Do but covers only older non-breaking baseline findings. No baseline was accepted or changed. Exact-head CI must still prove its intentionally archive-less exit-3 branch.
 
 PARKED: CodeRabbit review is mandatory before commit, but two authenticated reviews were rate-limited because the organization has exhausted included reviews and has no assigned seat. Resume only once CodeRabbit can return a review; rerun it against the staged diff before any commit. Full local just check also remains blocked by genuine corpus drift (one breaking safety-buffering shape change and ten new findings). Do not accept a baseline or alter decoder behavior in this task; route that contract work separately.
+
+Unparked and completed 2026-08-29. CodeRabbit found a misplaced gosec nosec directive and a missing goreleaser install-only, both fixed in a follow-up. The corpus drift against corpus.sig.json is deliberately NOT baselined and remains its own concern. Migration at 4b1cecd; exact-head CI green.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
