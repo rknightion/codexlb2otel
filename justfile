@@ -14,7 +14,7 @@ tools := justfile_directory() / ".tools"
 golangci_lint_version := "v2.13.2"
 
 # renovate: datasource=go depName=golang.org/x/vuln
-govulncheck_version := "v1.3.0"
+govulncheck_version := "v1.7.0"
 
 # show the task surface
 default:
