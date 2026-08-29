@@ -130,6 +130,9 @@ jobs:
         with:
           distribution: goreleaser
           version: "v2.16.0"
+          # Install the binary only; `just snapshot` below runs it. Without
+          # this the action demands an `args:` input and fails the step.
+          install-only: true
 
       - name: just snapshot
         run: just snapshot < /dev/null

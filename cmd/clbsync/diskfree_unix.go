@@ -19,6 +19,8 @@ func diskFree(path string) (int64, bool) {
 	// one file portable across every unix the service runs on. Saturate rather than
 	// wrapping if an exotic filesystem reports a capacity beyond int64's range.
 	const maxInt64 = 1<<63 - 1
+	// #nosec G115 -- Bavail and Bsize are non-negative capacity counters; the
+	// saturation check below covers the only overflow this can produce.
 	avail, blockSize := uint64(fs.Bavail), uint64(fs.Bsize)
 	if blockSize != 0 && avail > uint64(maxInt64)/blockSize {
 		return maxInt64, true
