@@ -38,6 +38,11 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # zizmor artipacked: without this the checkout leaves the job's
+          # credentials in .git/config, where any later step -- or an uploaded
+          # artifact -- can read them.
+          persist-credentials: false
 
       - name: setup go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -119,3 +124,26 @@ jobs:
             1) echo "::error::clbprobe: drift at or above 'breaking' against corpus.sig.json"; exit 1 ;;
             *) echo "::error::clbprobe: exit $status (see output above)"; exit 1 ;;
           esac
+
+  # Dependency vulnerability scan against the Go vulnerability database.
+  # Pinned to v1.3.0 to match tailscale2otel, graph2otel, polylens2otel and
+  # rfc6035-2otel, which is what the rest of the 2otel family runs.
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: install govulncheck (pinned)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+
+      - name: govulncheck
+        run: govulncheck ./...
