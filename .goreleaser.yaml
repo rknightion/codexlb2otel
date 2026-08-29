@@ -1,0 +1,35 @@
+version: 2
+project_name: codexlb2otel
+
+# Snapshot CI validates the daemon's supported release targets without changing
+# the container-only publish contract in .github/workflows/publish.yml.
+builds:
+  - id: codexlb2otel
+    main: ./cmd/codexlb2otel
+    binary: codexlb2otel
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  disable: true

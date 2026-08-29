@@ -16,6 +16,13 @@ func diskFree(path string) (int64, bool) {
 		return 0, false
 	}
 	// Bsize is int64 on Linux and uint32 on Darwin; converting both sides keeps this
-	// one file portable across every unix the service runs on.
-	return int64(uint64(fs.Bavail) * uint64(fs.Bsize)), true
+	// one file portable across every unix the service runs on. Saturate rather than
+	// wrapping if an exotic filesystem reports a capacity beyond int64's range.
+	const maxInt64 = 1<<63 - 1
+	avail, blockSize := uint64(fs.Bavail), uint64(fs.Bsize)
+	if blockSize != 0 && avail > uint64(maxInt64)/blockSize {
+		return maxInt64, true
+	}
+	// #nosec G115 -- the bound above proves avail*blockSize fits in int64.
+	return int64(avail * blockSize), true
 }

@@ -41,16 +41,6 @@ func (c Coverage) Fraction() float64 {
 	return f
 }
 
-func (c *Coverage) merge(o Coverage) {
-	c.Files += o.Files
-	c.FileBytes += o.FileBytes
-	c.ReadBytes += o.ReadBytes
-	c.Windows += o.Windows
-	c.Resynced += o.Resynced
-	c.DeadWindows += o.DeadWindows
-	c.Sampled = c.Sampled || o.Sampled
-}
-
 // ScanFile profiles a whole archive, streaming so that memory is bounded by chunk
 // rather than by file size.
 func ScanFile(path string, chunk int) (*Profile, Coverage, error) {

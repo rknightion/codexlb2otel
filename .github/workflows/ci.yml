@@ -1,12 +1,6 @@
-# CI gate: format, vet, build, test, and a drift probe against the committed
-# corpus signature (corpus.sig.json). Runs on every push to main and every PR.
-#
-# There is no corpus in CI - see internal/fixture/fixture.go: the corpus holds
-# full conversation content and is gitignored by design, never committed. The
-# test step below sets CLB_NO_CORPUS=1 so corpus-backed tests skip cleanly
-# instead of failing (mirrors the Makefile's `test-short` target). The probe
-# step hits clbprobe's own "nothing to scan" exit code for the same reason
-# and treats that as an explicit, documented skip rather than a failure.
+# CI runs the toolchain-only gate plus the two heavyweight release checks. The
+# justfile owns GOEXPERIMENT and the pinned Go task-surface tools, so every
+# executable validation below goes through a documented `just` recipe.
 name: CI
 
 on:
@@ -17,144 +11,156 @@ on:
 permissions:
   contents: read
 
-env:
-  # Go 1.27's json/v2-backed implementation regresses multi-gigabyte archive
-  # scans; retain the established v1 behavior until that migration is measured.
-  GOEXPERIMENT: nojsonv2
-
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: build, vet, test, probe
+  build-test:
+    name: build, lint, test, probe
     runs-on: ubuntu-latest
     # Non-corpus tests are fast (seconds to low minutes); this ceiling is a
     # safety net against a hang, not a measurement of expected runtime. The
-    # full corpus suite (8-10 min locally, per the issue this workflow was
-    # written against) never runs here at all - see the test step below.
+    # full corpus suite never runs here: test-short explicitly opts out because
+    # archives are personal data and never committed.
     timeout-minutes: 15
     steps:
       - name: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # zizmor artipacked: without this the checkout leaves the job's
-          # credentials in .git/config, where any later step -- or an uploaded
-          # artifact -- can read them.
+          # zizmor artipacked: later steps and uploaded artifacts must not read
+          # checkout credentials from .git/config.
           persist-credentials: false
 
       - name: setup go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Reads the `go` directive straight out of go.mod, so CI tracks
-          # whatever version the module declares instead of a hardcoded
-          # duplicate that can silently drift from it.
           go-version-file: go.mod
-          # Built-in module + build cache (GOMODCACHE and GOCACHE), keyed on
-          # go.sum so a dependency bump busts it correctly.
           cache: true
           cache-dependency-path: go.sum
 
-      - name: gofmt
-        run: |
-          fmt_out="$(gofmt -l .)"
-          if [ -n "$fmt_out" ]; then
-            echo "gofmt found unformatted files:"
-            echo "$fmt_out"
-            exit 1
-          fi
+      - name: setup just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
 
-      - name: go vet
-        run: go vet ./...
+      - name: just check
+        run: just check < /dev/null
 
-      - name: go build
-        run: go build ./...
-
-      - name: go test (non-corpus)
-        # CLB_NO_CORPUS=1 (internal/fixture/fixture.go: EnvOptional) turns a
-        # missing corpus from a hard t.Fatalf into a clean t.Skip - this is
-        # the exact opt-out the fixture package documents CI as the intended
-        # user of. CLB_CORPUS is pointed at a path that provably has nothing
-        # under it, so a corpus accidentally present in the runner's working
-        # tree can never sneak in and make this step slow or flaky.
-        env:
-          CLB_CORPUS: /nonexistent
-          CLB_NO_CORPUS: "1"
-        run: go test ./...
-
-      - name: clbprobe drift check
-        # corpus/ is always present after checkout (corpus/sync is tracked -
-        # see .gitignore's `!/corpus/sync` exception), but the archives under
-        # corpus/processed are gitignored and never are. Passing the corpus/
-        # parent (not corpus/processed, which does not exist at all in CI)
-        # matters: clbprobe walks directories recursively for *.jsonl.gz, and
-        # a path that fails os.Stat entirely - as corpus/processed would -
-        # produces exit 2 (error), not exit 3 (nothing to scan). Only a path
-        # that exists but is empty of archives gives the correct exit 3.
-        #
-        # clbprobe exit codes: 0 clean, 1 drift at/above -fail-on, 2 error,
-        # 3 nothing to scan. In CI there is never an archive to scan, so exit
-        # 3 is the expected, PASSING outcome here - handled explicitly below
-        # rather than relying on `set -e` to paper over it as success, and
-        # never confused with exit 0 (which would claim a corpus was
-        # actually checked).
-        #
-        # No -full flag exists (checked clbprobe's own -h output, not the
-        # issue text) - a full scan is simply the default whenever -sampled
-        # is omitted, per clbprobe's package doc.
-        #
-        # BUILD THE BINARY, DO NOT `go run` IT. `go run` does not propagate a
-        # child's exit code - it collapses every non-zero status to 1 and
-        # prints "exit status N" to stderr instead. Measured: the binary
-        # returns 3 for an archive-less directory, `go run` returns 1 for the
-        # same input. Since 1 is this workflow's "breaking drift, fail the
-        # build" branch, running it through `go run` would turn the normal
-        # no-corpus-in-CI case into a red build on every single run, and the
-        # case statement below would be decorative.
-        run: |
-          go build -o /tmp/clbprobe ./cmd/clbprobe
-          set +e
-          /tmp/clbprobe -fail-on breaking corpus
-          status=$?
-          set -e
-          case "$status" in
-            0) echo "clbprobe: clean, no drift against corpus.sig.json" ;;
-            3) echo "clbprobe: no corpus present in CI (never committed, by design) - skipped" ;;
-            1) echo "::error::clbprobe: drift at or above 'breaking' against corpus.sig.json"; exit 1 ;;
-            *) echo "::error::clbprobe: exit $status (see output above)"; exit 1 ;;
-          esac
-
-  # Dependency vulnerability scan against the Go vulnerability database.
-  # Pinned to v1.3.0 to match tailscale2otel, graph2otel, polylens2otel and
-  # rfc6035-2otel, which is what the rest of the 2otel family runs.
-  govulncheck:
-    name: govulncheck
+  lint:
+    name: golangci-lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - name: setup go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
+          cache-dependency-path: go.sum
 
-      - name: install govulncheck (pinned)
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+      - name: setup just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
 
-      - name: govulncheck
-        run: govulncheck ./...
+      - name: just lint
+        run: just lint < /dev/null
+
+  # Dependency vulnerability scan against the Go vulnerability database. Its
+  # pin and installation live in justfile, so local and CI use the same tool.
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: setup go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: setup just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
+
+      - name: just vuln
+        run: just vuln < /dev/null
+
+  # Cross-compilation is deliberately outside `just check`: it is a CI-only
+  # release-artifact validation, not a pre-commit dependency.
+  goreleaser-snapshot:
+    name: goreleaser build (snapshot)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: setup go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          # Snapshot creates release-shaped artifacts; do not restore an
+          # attacker-influenced cache before it runs on pull requests.
+          cache: false
+
+      - name: setup just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
+
+      - name: setup goreleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "v2.16.0"
+
+      - name: just snapshot
+        run: just snapshot < /dev/null
+
+  # The runtime image needs a Docker daemon, so it is in CI's heavy leg rather
+  # than the portable `just check` pre-commit gate.
+  docker-build:
+    name: docker image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: setup just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
+
+      - name: just image
+        run: just image codexlb2otel:ci < /dev/null
 
   # Single aggregator the branch ruleset gates. Keeping the ruleset pinned to one
-  # check means the job list above can change without touching branch protection.
+  # check means jobs can change without a branch-protection edit.
   ci-success:
     name: ci-success
     runs-on: ubuntu-24.04
     if: always()
-    needs: [test, govulncheck]
+    needs: [build-test, lint, govulncheck, goreleaser-snapshot, docker-build]
     steps:
       - name: Fail if any required job did not pass
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}

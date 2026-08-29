@@ -54,5 +54,3 @@ func (s *seenSet) add(parts ...string) bool {
 	}
 	return true
 }
-
-func (s *seenSet) len() int { return s.order.Len() }

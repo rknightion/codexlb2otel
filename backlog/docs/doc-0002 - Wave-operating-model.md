@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 17:01'
-updated_date: '2026-08-23 12:05'
+updated_date: '2026-08-29 13:43'
 ---
 This document carries **only what is specific to codexlb2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -11,21 +11,18 @@ external-contract freezing, the unattended blocker contract, the goal-file templ
 pre-flight checklist - is the "Agent fan-out protocol (canonical)" document. Read that first. If
 anything here reads like a restatement of it, delete it here rather than maintaining two copies.
 
-## The gate
+## Task interface
 
-```bash
-make check        # gofmt -l . ; go vet ./... ; go test ./...
-go build ./...
-```
+This repo's task surface is a `justfile`. Discover it, don't guess it:
 
-`make test-short` (`CLB_CORPUS=/nonexistent CLB_NO_CORPUS=1 go test ./...`) is the fast inner loop -
-the corpus tests are the slow ones. **A green `test-short` is not a green gate.** CI runs with
-`CLB_NO_CORPUS=1` too, so corpus-backed assertions are skipped there as well; anything that claims a
-corpus-measured fact has to be run locally against a real corpus and the number recorded in the task.
+    just --list                        # human-readable
+    just --dump --dump-format json     # machine-readable
+    just --show <recipe>               # what a recipe actually runs
 
-`make build` depends on **every** Go file, not on `cmd/<tool>`. A directory's mtime does not change
-when a file inside it is edited, so the obvious dependency silently left a stale binary in place.
-Do not "tidy" that back.
+- `just check` is the toolchain-only pre-commit gate and exactly what CI's `build-test` job enforces. CI separately runs `just vuln` plus the Docker- and cross-compilation-dependent `just ci` legs.
+- Prefer `just <recipe>` over the underlying tool. If you are typing `go test`, you want `just test`.
+- Run `just` with stdin from `/dev/null`. `just baseline` is `[confirm]`-gated — it overwrites the committed `corpus.sig.json`. Stop and ask before running it; never pass `--yes` or `JUST_YES=1`.
+- `just test` is the full local race-test suite (uses the corpus if it has been synced). `just check` runs `just test-short` instead, matching CI's non-corpus path. A green `just test-short` (or `just check`) is not proof the corpus-backed tests pass; that only happens locally with `just test` against a synced corpus.
 
 ## Exclusive resources - one lane at a time, no exceptions
 

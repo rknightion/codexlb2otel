@@ -1,0 +1,39 @@
+# golangci-lint v2 configuration for the repository's single Go module.
+version: "2"
+
+linters:
+  # "standard" includes errcheck, govet, ineffassign, staticcheck, and unused.
+  default: standard
+  enable:
+    - gosec # security findings belong in the normal linter gate
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+      - std-error-handling
+    rules:
+      # Tests deliberately use compact fixture setup; security analysis of the
+      # production paths remains enabled.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+      # These files define OpenTelemetry's literal attribute vocabulary. Words
+      # such as "token" describe telemetry fields, not embedded credentials.
+      - path: internal/attr/names\.go
+        linters:
+          - gosec
+        text: "Potential hardcoded credentials"
+      - path: internal/sink/agento11y/wire\.go
+        linters:
+          - gosec
+        text: "Potential hardcoded credentials"
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  # Do not hide repeated findings behind golangci-lint's small default caps.
+  max-issues-per-linter: 0
+  max-same-issues: 0

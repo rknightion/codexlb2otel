@@ -58,15 +58,25 @@ func main() {
 	}
 
 	r := turn.New()
+	// Keep scanning after a failure so every bad archive is named, but do not
+	// let a partial scan report success.
+	scanFailed := false
 	for _, f := range files {
 		if err := s.scanFile(f, r, out); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", filepath.Base(f), err)
+			scanFailed = true
 		}
 	}
 	for _, t := range r.Flush() {
-		s.record(t, out)
+		if err := s.record(t, out); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 	s.report()
+	if scanFailed {
+		os.Exit(1)
+	}
 }
 
 type stats struct {
@@ -157,13 +167,15 @@ func (s *stats) feed(data []byte, r *turn.Reducer, out *os.File) error {
 			return err
 		}
 		if done != nil {
-			s.record(done, out)
+			if err := s.record(done, out); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
 }
 
-func (s *stats) record(t *turn.Turn, out *os.File) {
+func (s *stats) record(t *turn.Turn, out *os.File) error {
 	s.responses++
 	if t.Status == turn.StatusIncomplete {
 		s.incomplete++
@@ -183,13 +195,18 @@ func (s *stats) record(t *turn.Turn, out *os.File) {
 	}
 	b, err := json.Marshal(t)
 	if err != nil {
-		return
+		return err
 	}
 	s.turnJSONBytes += int64(len(b)) + 1
 	if out != nil {
-		out.Write(b)
-		out.Write([]byte{'\n'})
+		if _, err := out.Write(b); err != nil {
+			return err
+		}
+		if _, err := out.Write([]byte{'\n'}); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (s *stats) report() {

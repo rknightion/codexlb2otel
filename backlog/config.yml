@@ -1,7 +1,7 @@
 project_name: "codexlb2otel"
 default_status: "To Do"
 statuses: ["To Do", "In Progress", "Parked", "Done"]
-definition_of_done: ["make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green", "go build ./... succeeds"]
+definition_of_done: ["just check passes: fmt-check, lint, build, test-short and probe-ci all clean"]
 labels: []
 date_format: yyyy-mm-dd
 max_column_width: 20

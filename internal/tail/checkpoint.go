@@ -147,7 +147,7 @@ func (c *Checkpoint) contentSum() ([32]byte, error) {
 // write puts already-rendered bytes on disk atomically.
 func (c *Checkpoint) write(path string, b []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("checkpoint: mkdir %s: %w", dir, err)
 	}
 	tmp, err := os.CreateTemp(dir, ".checkpoint-*.tmp")
@@ -158,11 +158,11 @@ func (c *Checkpoint) write(path string, b []byte) error {
 	defer os.Remove(name) // no-op once the rename succeeds
 
 	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("checkpoint: write: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("checkpoint: sync: %w", err)
 	}
 	if err := tmp.Close(); err != nil {

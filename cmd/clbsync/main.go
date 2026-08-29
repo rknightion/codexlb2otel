@@ -139,7 +139,7 @@ func run() int {
 		return 0
 	}
 
-	if err := os.MkdirAll(*localDir, 0o755); err != nil {
+	if err := os.MkdirAll(*localDir, 0o750); err != nil {
 		fmt.Fprintf(os.Stderr, "clbsync: %v\n", err)
 		return 2
 	}
@@ -377,6 +377,7 @@ func fetch(host, remoteDir string, a action, progress bool) error {
 	if progress {
 		args = append(args, "--progress")
 	}
+	// #nosec G204 -- rsync is fixed and receives archive paths as argv, never a shell command.
 	cmd := exec.Command("rsync", append(args, src, a.target)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

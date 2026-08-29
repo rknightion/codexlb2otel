@@ -344,6 +344,7 @@ func writeSignature(path string, s *profile.Signature) error {
 		_, err := os.Stdout.Write(b)
 		return err
 	}
+	// #nosec G306 -- corpus signatures are content-free, tracked repository artifacts.
 	return os.WriteFile(path, b, 0o644)
 }
 

@@ -1,6 +1,6 @@
 # Build context hygiene, plus one deliberate leak guard.
 #
-# corpus/processed can hold REAL captured archive content on disk (`make sync`
+# corpus/processed can hold REAL captured archive content on disk (`just sync`
 # pulls it from camden) even though it is gitignored and never committed - see
 # README.md's Content warning and .gitignore's own corpus guard. If it exists on
 # the machine running `docker build .`, it must never enter the build context, or

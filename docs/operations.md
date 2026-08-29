@@ -41,21 +41,21 @@ first: fully ingested does not mean recoverable from a telemetry backend.
 Run a sampled drift probe for routine checks:
 
 ```sh
-make probe-sampled
+just probe-sampled
 ```
 
 Run a full scan before updating `corpus.sig.json` or claiming a shape has disappeared:
 
 ```sh
-make probe
-make baseline
+just probe
+just baseline
 ```
 
 The baseline contains structure and safe enums, not conversation bodies.
 
 ## Investigation tools
 
-Build all tools with `make build`:
+Build all tools with `just build`:
 
 - `clbfind` reconstructs one response or an entire thread;
 - `clbsum` summarizes selected sessions, with explicit third-party data handling;

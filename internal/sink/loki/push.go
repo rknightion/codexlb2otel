@@ -201,10 +201,13 @@ func (s *Sink) doOnce(ctx context.Context, body []byte) (status int, respBody []
 // backoff is exponential with a 30s cap. attempt is clamped before shifting so a
 // generously configured MaxRetries cannot overflow the shift.
 func backoff(attempt int) time.Duration {
+	if attempt < 0 {
+		attempt = 0
+	}
 	if attempt > 10 {
 		attempt = 10
 	}
-	d := 250 * time.Millisecond * time.Duration(uint64(1)<<uint(attempt))
+	d := 250 * time.Millisecond * time.Duration(1<<attempt)
 	if d <= 0 || d > 30*time.Second {
 		d = 30 * time.Second
 	}

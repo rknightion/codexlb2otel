@@ -1,6 +1,7 @@
 # Build artifacts
 /bin/
 /dist/
+/.tools/
 /codexlb2otel
 *.out
 

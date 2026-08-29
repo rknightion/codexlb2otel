@@ -47,7 +47,11 @@ func New(cfg config.Config, log *slog.Logger) *Server {
 	s := &Server{cfg: cfg, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handle)
-	s.http = &http.Server{Addr: cfg.Health.Listen, Handler: mux}
+	s.http = &http.Server{
+		Addr:              cfg.Health.Listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 	return s
 }
 

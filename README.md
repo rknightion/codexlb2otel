@@ -64,22 +64,25 @@ noticeable on a tool you use interactively:
 
 ```sh
 go run ./cmd/clbfind resp_052b6a...        # no build step
-make build && ./bin/clbfind resp_052b6a... # faster to re-run; bin/ is gitignored
+just build && ./bin/clbfind resp_052b6a... # faster to re-run; bin/ is gitignored
 ```
 
-Every tool prints its own `-h`. Common tasks have Make targets:
+Every tool prints its own `-h`. Common tasks have `just` recipes:
 
 | | |
 |---|---|
-| `make build` | build every tool into `bin/` |
-| `make sync` | pull new archives off the codex-lb host |
-| `make probe` | fast drift check against the baseline (exit 1 on anything new) |
-| `make probe-full` | exhaustive drift check |
-| `make baseline` | accept the current shape as the baseline (always from a full scan) |
-| `make check` | gofmt + vet + tests |
-| `make test-short` | tests without the corpus, the fast inner loop |
+| `just build` | build every tool into `bin/` |
+| `just sync` | pull new archives off the codex-lb host |
+| `just probe` | full drift check against the baseline (exit 1 on breaking drift) |
+| `just probe-sampled` | faster sampled drift check; cannot prove a shape is absent |
+| `just baseline` | accept the current shape as the baseline (always from a full scan; asks to confirm) |
+| `just check` | the toolchain-only gate: fmt-check, lint, build, test-short, probe-ci |
+| `just test` | full race-test suite (uses the local corpus if synced) |
+| `just test-short` | race-tests without the corpus, the fast inner loop |
+| `just vuln` | scan the module graph for known vulnerabilities |
+| `just ci` | run `check` plus the Docker image and cross-compile snapshot legs |
 
-`make probe CORPUS=some/other/dir` overrides the directory.
+`just corpus=some/other/dir probe` overrides the directory.
 
 ## Tools
 

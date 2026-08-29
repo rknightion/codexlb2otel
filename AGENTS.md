@@ -4,15 +4,25 @@ Tails codex-lb's conversation archives and emits OTLP metrics, Loki logs, Tempo 
 agento11y generations. `CLAUDE.md` imports this file, so Claude Code and Codex read the same
 instructions and cannot drift apart. Put project instructions here, never there.
 
-## The gate
+## Task interface
 
-```bash
-make check        # gofmt -l . ; go vet ./... ; go test ./...
-go build ./...
-```
+This repo's task surface is a `justfile`. Discover it, don't guess it:
 
-`make test-short` is the fast inner loop and skips the corpus tests. **A green `test-short` is not a
-green gate.**
+    just --list                        # human-readable
+    just --dump --dump-format json     # machine-readable
+    just --show <recipe>               # what a recipe actually runs
+
+- `just check` is the toolchain-only pre-commit gate and exactly what CI's `build-test` job enforces.
+  CI separately runs `just vuln` plus the Docker- and cross-compilation-dependent `just ci` legs.
+- Prefer `just <recipe>` over the underlying tool. If you are typing `go test`, you want `just test`.
+- Run `just` with stdin from `/dev/null`. `just baseline` is `[confirm]`-gated — it overwrites the
+  committed `corpus.sig.json`. Stop and ask before running it; never pass `--yes` or `JUST_YES=1`.
+- If a task you need does not exist, add a recipe with a `#` doc comment and a `[group(...)]` rather
+  than running a bare command.
+- `just test` is the full local race-test suite (uses the corpus if you have synced one). `just check`
+  runs `just test-short` instead, matching CI's non-corpus path. A green `just test-short` (or `just
+  check`) is not proof the corpus-backed tests pass; that only happens locally with `just test` against
+  a synced corpus.
 
 ## The archives are personal data
 
