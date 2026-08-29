@@ -109,7 +109,7 @@ jobs:
       id-token: write # cosign keyless signing
       attestations: write # build provenance
       security-events: write # Trivy SARIF into the Security tab
-    uses: rknightion/.github/.github/workflows/container-publish.yml@9c3981da69a2aa4eecd99e5740335219fd8c6a00 # v1.9.10
+    uses: rknightion/.github/.github/workflows/container-publish.yml@b3f1cef6e76ce206b01e1a3bae63ce115a1cf570 # v1.10.0
     with:
       release-tag: ${{ inputs.release-tag || '' }}
       build-args: |
