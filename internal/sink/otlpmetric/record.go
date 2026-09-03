@@ -21,6 +21,15 @@ import (
 // filters on this constant rather than "not empty".
 const requestKindTurn = "turn"
 
+// InstrumentAttributeSet is one emitted metric series key before the SDK aggregates
+// measurements with identical attributes. It is exported for clbstat's corpus survey:
+// the command counts these sets without having to know each recordX function's
+// narrowing rules itself.
+type InstrumentAttributeSet struct {
+	Instrument string
+	Attributes []attr.KV
+}
+
 // record turns one reduced Turn into every measurement it carries.
 //
 // base is fetched once via the shared guard and reused - every instrument below
@@ -33,6 +42,7 @@ func (s *Sink) record(ctx context.Context, t *turn.Turn) {
 
 	s.recordCounts(ctx, t, base)
 	s.recordTokens(ctx, t, base)
+	s.recordCost(ctx, t, base)
 	s.recordEngineCalls(ctx, t, base)
 	s.recordToolCalls(ctx, t, base)
 	s.recordToolCallsPerOperation(ctx, t, base)
@@ -46,20 +56,18 @@ func (s *Sink) record(ctx context.Context, t *turn.Turn) {
 // calls or tool calls - each of those has enough of its own logic (fan-out, a
 // preferred-source fallback) to earn its own function.
 func (s *Sink) recordCounts(ctx context.Context, t *turn.Turn, base []attr.KV) {
-	s.inst.responses.Add(ctx, 1, otelmetric.WithAttributes(toOtel(base)...))
+	s.inst.responses.Add(ctx, 1, otelmetric.WithAttributes(toOtel(responseCounterAttrs(base))...))
 
 	if t.RequestKind == requestKindTurn {
-		s.inst.turns.Add(ctx, 1, otelmetric.WithAttributes(toOtel(base)...))
+		s.inst.turns.Add(ctx, 1, otelmetric.WithAttributes(toOtel(responseCounterAttrs(base))...))
 	}
 
 	if t.WebSearchRequests > 0 {
-		attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-			attr.GenAIRequestModel, attr.AccountID, attr.RequestKind)
+		attrs := webSearchAttrs(base)
 		s.inst.webSearch.Add(ctx, int64(t.WebSearchRequests), otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 	if t.ImageGenTokens > 0 {
-		attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-			attr.GenAIRequestModel, attr.AccountID, attr.RequestKind)
+		attrs := imageGenTokenAttrs(base)
 		s.inst.imageGenTokens.Add(ctx, int64(t.ImageGenTokens), otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 
@@ -69,8 +77,7 @@ func (s *Sink) recordCounts(ctx context.Context, t *turn.Turn, base []attr.KV) {
 	// (for StatusError) and codexlb.close_code (for StatusTransport) are carried
 	// separately rather than folded into one undifferentiated total.
 	if t.Status == turn.StatusError {
-		attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-			attr.AccountID, attr.ErrorType, attr.ErrorCode, attr.Status)
+		attrs := errorCounterAttrs(base)
 		s.inst.errors.Add(ctx, 1, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 	if t.Status == turn.StatusTransport || t.CloseCode != nil || t.FrameErrors > 0 {
@@ -83,18 +90,18 @@ func (s *Sink) recordCounts(ctx context.Context, t *turn.Turn, base []attr.KV) {
 		// connection dropped without a handshake. close|error is the axis that separates
 		// "OpenAI restarted the backend under us" from "the connection died", and those
 		// two want different runbooks.
-		attrs := attr.Only(base, attr.Family, attr.AccountID, attr.CloseCode, attr.FrameType)
+		attrs := transportEventAttrs(base)
 		s.inst.transportEvents.Add(ctx, 1, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 	if t.SafetyBuffering {
 		// GenAIResponseModel differs from GenAIRequestModel exactly when safety
 		// buffering re-ran the response through a different model (see attr.go's
 		// GenAIResponseModel.Of) - both are worth keeping on this one.
-		attrs := attr.Only(base, attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID)
+		attrs := safetyBufferingAttrs(base)
 		s.inst.safetyBuffering.Add(ctx, 1, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 	if t.BaselineReset {
-		attrs := attr.Only(base, attr.Family, attr.RequestKind, attr.AccountID)
+		attrs := baselineResetAttrs(base)
 		s.inst.baselineResets.Add(ctx, 1, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 }
@@ -130,7 +137,8 @@ var tokenTypes = []struct {
 // than a replacement.
 //
 // The two instruments took IDENTICAL attribute sets until issue #32 and now
-// deliberately do not. Three attributes go on the convention-named histogram alone:
+// deliberately do not. Three attributes still go on the convention-named histogram
+// alone:
 //
 //   - gen_ai.agent.name / gen_ai.agent.version. gen_ai.client.token.usage is one of
 //     the three instruments Grafana agent observability reads, and its Agents table
@@ -140,24 +148,19 @@ var tokenTypes = []struct {
 //     provider-raw and adds cache_read and cache_write ON TOP of input, over-counting
 //     tokens and cost on every cached prompt. See attr.TokenSemanticsInclusive.
 //
-// codexlb.tokens keeps the older, narrower set because it has no such consumer and
-// would pay for them: neither the agent version nor the semantics marker is a
-// dimension anything queries this counter by, and the version multiplies its series by
-// the number of distinct system prompts for nothing. The agent NAME would in fact be
-// free here (it is a pure function of codexlb.originator), but splitting on the one
-// attribute that costs nothing while keeping the two that do would be a distinction no
-// reader could infer - the two sets differ by "what the sigil-facing instrument needs",
-// which is one rule rather than three.
+// CXO-0003 adds codexlb.family to both token instruments because it is the only probe
+// discriminator, and adds reasoning effort, thread source and API key name to the two
+// token instruments because token and cost shape are the panels that query them.
+// codexlb.tokens still deliberately drops the agent labels and token semantics marker
+// that only the convention-named histogram's consumer needs: agent version multiplies
+// by system-prompt hash, and token semantics has no counter-side query.
 //
 // The instruments stay parallel in what they MEASURE, which is what
 // names.go's MetricTokenUsage doc comment means by a deliberate parallel: same value,
 // same fan-out over token types, different instrument type. Not the same attributes.
 func (s *Sink) recordTokens(ctx context.Context, t *turn.Turn, base []attr.KV) {
-	narrowed := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind)
-	forSigil := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
-		attr.GenAIAgentName, attr.GenAIAgentVersion)
+	narrowed := tokenCounterAttrs(base)
+	forSigil := tokenUsageAttrs(base)
 	for _, tt := range tokenTypes {
 		v := tt.value(t)
 		if v <= 0 {
@@ -173,6 +176,19 @@ func (s *Sink) recordTokens(ctx context.Context, t *turn.Turn, base []attr.KV) {
 	}
 }
 
+// recordCost records codex-lb's own computed charge as the aggregation surface for
+// cost. It deliberately uses the same model/family/effort/thread/API-key shape as the
+// token instruments, minus gen_ai.token.type because a response cost is not split by
+// token bucket. Duration-only labels such as service tier and critical-path coverage
+// are dropped because they would multiply cost series without changing the accounting
+// question this counter answers.
+func (s *Sink) recordCost(ctx context.Context, t *turn.Turn, base []attr.KV) {
+	if t.CostUSD == nil {
+		return
+	}
+	s.inst.costUSD.Add(ctx, *t.CostUSD, otelmetric.WithAttributes(toOtel(costAttrs(base))...))
+}
+
 // recordEngineCalls prefers critical_path.engine_calls, which is genuinely
 // per-response, over the cumulative-delta arithmetic - see turn.CriticalPath's doc
 // comment. It falls back to the delta only when critical_path was not populated for
@@ -186,8 +202,7 @@ func (s *Sink) recordEngineCalls(ctx context.Context, t *turn.Turn, base []attr.
 	if calls <= 0 {
 		return
 	}
-	attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-		attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.BaselineReset)
+	attrs := engineCallAttrs(base)
 	s.inst.engineCalls.Add(ctx, int64(calls), otelmetric.WithAttributes(toOtel(attrs)...))
 }
 
@@ -201,8 +216,7 @@ func (s *Sink) recordToolCalls(ctx context.Context, t *turn.Turn, base []attr.KV
 	if len(t.ToolCalls) == 0 {
 		return
 	}
-	narrowed := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind)
+	narrowed := toolCallAttrs(base)
 	for _, tc := range t.ToolCalls {
 		if tc.Name == "" {
 			continue
@@ -224,8 +238,7 @@ func (s *Sink) recordToolCallsPerOperation(ctx context.Context, t *turn.Turn, ba
 	if strings.TrimSpace(t.Model) == "" {
 		return
 	}
-	attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIRequestModel,
-		attr.GenAIAgentName, attr.GenAIAgentVersion, attr.AccountID, attr.RequestKind)
+	attrs := toolCallsPerOperationAttrs(base)
 	s.inst.toolCallsPerOperation.Record(ctx, int64(len(t.ToolCalls)), otelmetric.WithAttributes(toOtel(attrs)...))
 }
 
@@ -259,10 +272,7 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 			// contract could say which tier a response ran under while no instrument
 			// could say whether it made any difference. Its value set is at most one
 			// per deployment at a time, so it costs ~nothing beyond the changeover.
-			attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-				attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Status,
-				attr.ErrorType, attr.ErrorCategory, attr.GenAIAgentName, attr.GenAIAgentVersion,
-				attr.ServiceTierRequested)
+			attrs := operationDurationAttrs(base)
 			s.inst.operationDuration.Record(ctx, d, otelmetric.WithAttributes(toOtel(attrs)...))
 		}
 	}
@@ -272,16 +282,13 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 	// to real turns: prewarm and compaction have no user waiting on them.
 	if t.RequestKind == requestKindTurn && !t.TurnStart.IsZero() && !t.ServerCompletedAt.IsZero() {
 		if d := t.ServerCompletedAt.Sub(t.TurnStart).Seconds(); d >= 0 {
-			attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-				attr.GenAIRequestModel, attr.AccountID, attr.ServiceTierRequested)
+			attrs := turnDurationAttrs(base)
 			s.inst.turnDuration.Record(ctx, d, otelmetric.WithAttributes(toOtel(attrs)...))
 		}
 	}
 
 	if t.TTFTMs > 0 {
-		attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-			attr.GenAIRequestModel, attr.AccountID, attr.RequestKind,
-			attr.GenAIAgentName, attr.GenAIAgentVersion, attr.ServiceTierRequested)
+		attrs := ttftAttrs(base)
 		s.inst.ttft.Record(ctx, msToS(t.TTFTMs), otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 
@@ -291,8 +298,7 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 	// rides along on these specifically (not on every instrument) because it is a
 	// verdict on critical_path's OWN trustworthiness, and these are the numbers it is
 	// a verdict about; a dashboard wanting only trustworthy numbers filters on it.
-	cpAttrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-		attr.AccountID, attr.RequestKind, attr.CriticalPathCoverage, attr.BaselineReset)
+	cpAttrs := criticalPathDurationAttrs(base)
 
 	if t.CriticalPath.EngineWallMs > 0 {
 		s.inst.engineWall.Record(ctx, msToS(t.CriticalPath.EngineWallMs), otelmetric.WithAttributes(toOtel(cpAttrs)...))
@@ -343,8 +349,7 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 // nothing happened in this delta window", not a real negative reading - unlike the TBT
 // fields below, which get `!= 0` for exactly the opposite reason.
 func (s *Sink) recordEngineTimingDeltas(ctx context.Context, t *turn.Turn, base []attr.KV) {
-	attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-		attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.BaselineReset)
+	attrs := engineTimingDurationAttrs(base)
 	opt := otelmetric.WithAttributes(toOtel(attrs)...)
 
 	for _, d := range []struct {
@@ -391,7 +396,8 @@ func (s *Sink) recordEngineTimingDeltas(ctx context.Context, t *turn.Turn, base 
 	//
 	// So: its own counter, entirely off the token.type axis - MetricEngineUncachedPromptTokens.
 	if t.EngineUncachedPromptTokensDelta > 0 {
-		s.inst.engineUncachedPromptTokens.Add(ctx, int64(t.EngineUncachedPromptTokensDelta), opt)
+		tokenOpt := otelmetric.WithAttributes(toOtel(engineUncachedPromptTokenAttrs(base))...)
+		s.inst.engineUncachedPromptTokens.Add(ctx, int64(t.EngineUncachedPromptTokensDelta), tokenOpt)
 	}
 }
 
@@ -412,8 +418,7 @@ func (s *Sink) recordEngineTimingDeltas(ctx context.Context, t *turn.Turn, base 
 // what matters here is that a NEGATIVE reading is never mistaken for "no data" the way
 // `> 0` would mistake it.
 func (s *Sink) recordTBT(ctx context.Context, t *turn.Turn, base []attr.KV) {
-	attrs := attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-		attr.AccountID, attr.RequestKind)
+	attrs := tbtAttrs(base)
 	opt := otelmetric.WithAttributes(toOtel(attrs)...)
 
 	if t.EngineServiceTBTMs > 0 {
@@ -438,7 +443,7 @@ func (s *Sink) recordRateLimits(ctx context.Context, t *turn.Turn, base []attr.K
 	if t.AccountID == "" {
 		return
 	}
-	accountAttrs := attr.Only(base, attr.AccountID, attr.PlanType)
+	accountAttrs := rateLimitAttrs(base)
 
 	// Presence, not value, is what has to be inferred here: the reducer leaves these
 	// fields at their Go zero value when the response carried no rate-limit block at
@@ -475,6 +480,359 @@ func (s *Sink) recordRateLimits(ctx context.Context, t *turn.Turn, base []attr.K
 	if bal, ok := parseCreditsBalance(t.CreditsBalance); ok {
 		s.inst.creditsBalance.Record(ctx, bal, otelmetric.WithAttributes(toOtel(accountAttrs)...))
 	}
+}
+
+// AttributeSetsForTurn returns the metric attribute sets this package would emit for
+// t, without recording any measurement values. clbstat uses it to measure corpus
+// cardinality against the sink's own selector contract rather than a hand-copied
+// approximation.
+func AttributeSetsForTurn(t *turn.Turn, guard *attr.Guard) []InstrumentAttributeSet {
+	base := guard.MetricAttrs(t)
+	return attributeSetsForTurn(t, guard, base)
+}
+
+func attributeSetsForTurn(t *turn.Turn, guard *attr.Guard, base []attr.KV) []InstrumentAttributeSet {
+	var out []InstrumentAttributeSet
+	add := func(name string, attrs []attr.KV) {
+		out = append(out, InstrumentAttributeSet{Instrument: name, Attributes: attrs})
+	}
+
+	add(attr.MetricResponses, responseCounterAttrs(base))
+	if t.RequestKind == requestKindTurn {
+		add(attr.MetricTurns, responseCounterAttrs(base))
+	}
+	if t.WebSearchRequests > 0 {
+		add(attr.MetricWebSearch, webSearchAttrs(base))
+	}
+	if t.ImageGenTokens > 0 {
+		add(attr.MetricImageGenTokens, imageGenTokenAttrs(base))
+	}
+	if t.Status == turn.StatusError {
+		add(attr.MetricErrors, errorCounterAttrs(base))
+	}
+	if t.Status == turn.StatusTransport || t.CloseCode != nil || t.FrameErrors > 0 {
+		add(attr.MetricTransportEvents, transportEventAttrs(base))
+	}
+	if t.SafetyBuffering {
+		add(attr.MetricSafetyBuffering, safetyBufferingAttrs(base))
+	}
+	if t.BaselineReset {
+		add(attr.MetricBaselineResets, baselineResetAttrs(base))
+	}
+
+	tokenBase := tokenCounterAttrs(base)
+	usageBase := tokenUsageAttrs(base)
+	for _, tt := range tokenTypes {
+		if tt.value(t) <= 0 {
+			continue
+		}
+		kind := attr.KV{Key: attr.GenAITokenType, Value: tt.kind}
+		add(attr.MetricTokens, guard.With(tokenBase, kind))
+		add(attr.MetricTokenUsage, guard.With(usageBase, kind,
+			attr.KV{Key: attr.GenAITokenSemantics, Value: attr.TokenSemanticsInclusive},
+		))
+	}
+	if t.CostUSD != nil {
+		add(attr.MetricCostUSD, costAttrs(base))
+	}
+
+	calls := t.EngineCallsDelta
+	if t.CriticalPath.Coverage != "" {
+		calls = t.CriticalPath.EngineCalls
+	}
+	if calls > 0 {
+		add(attr.MetricEngineCalls, engineCallAttrs(base))
+	}
+
+	if len(t.ToolCalls) > 0 {
+		narrowed := toolCallAttrs(base)
+		for _, tc := range t.ToolCalls {
+			if tc.Name == "" {
+				continue
+			}
+			add(attr.MetricToolCalls, guard.With(narrowed, attr.KV{Key: attr.ToolName, Value: tc.Name}))
+		}
+	}
+	if strings.TrimSpace(t.Model) != "" {
+		add(attr.MetricToolCallsPerOperation, toolCallsPerOperationAttrs(base))
+	}
+
+	if !t.ServerCreatedAt.IsZero() && !t.ServerCompletedAt.IsZero() && t.ServerCompletedAt.Sub(t.ServerCreatedAt).Seconds() >= 0 {
+		add(attr.MetricOperationDuration, operationDurationAttrs(base))
+	}
+	if t.RequestKind == requestKindTurn && !t.TurnStart.IsZero() && !t.ServerCompletedAt.IsZero() && t.ServerCompletedAt.Sub(t.TurnStart).Seconds() >= 0 {
+		add(attr.MetricTurnDuration, turnDurationAttrs(base))
+	}
+	if t.TTFTMs > 0 {
+		add(attr.MetricTTFT, ttftAttrs(base))
+	}
+
+	cpAttrs := criticalPathDurationAttrs(base)
+	if t.CriticalPath.EngineWallMs > 0 {
+		add(attr.MetricEngineWall, cpAttrs)
+	}
+	if t.CriticalPath.HarnessUnblockedMs > 0 {
+		add(attr.MetricHarnessUnblocked, cpAttrs)
+	}
+	if t.CriticalPath.SamplingStreamMs > 0 {
+		add(attr.MetricSamplingStream, cpAttrs)
+	}
+	preInference := t.PreInferenceMs
+	if t.CriticalPath.Coverage != "" {
+		preInference = t.CriticalPath.PreInferenceMs
+	}
+	if preInference > 0 {
+		add(attr.MetricPreInference, cpAttrs)
+	}
+	clientToolPause := t.ClientToolPauseMsDelta
+	if t.CriticalPath.Coverage != "" {
+		clientToolPause = t.CriticalPath.ClientToolPauseMs
+	}
+	if clientToolPause > 0 {
+		add(attr.MetricClientToolPause, cpAttrs)
+	}
+
+	timingAttrs := engineTimingDurationAttrs(base)
+	for _, d := range []struct {
+		name string
+		ms   float64
+	}{
+		{attr.MetricEngineServiceInference, t.EngineServiceInferenceMsDelta},
+		{attr.MetricEngineServiceSampling, t.EngineServiceSamplingMsDelta},
+		{attr.MetricEngineIapiInference, t.EngineIapiInferenceMsDelta},
+		{attr.MetricEngineIapiSampling, t.EngineIapiSamplingMsDelta},
+		{attr.MetricResponsesExclEngineAndTool, t.ResponsesExclEngineAndToolMsDelta},
+		{attr.MetricResponsesExclEngineWaitSampling, t.ResponsesExclEngineWaitSamplingMsDelta},
+		{attr.MetricResponsesExclEngineWaitSamplingIapi, t.ResponsesExclEngineWaitSamplingIapiMsDelta},
+		{attr.MetricResponsesAPIExclClientTools, t.ResponsesAPIExclClientToolsMsDelta},
+	} {
+		if d.ms > 0 {
+			add(d.name, timingAttrs)
+		}
+	}
+	if t.EngineUncachedPromptTokensDelta > 0 {
+		add(attr.MetricEngineUncachedPromptTokens, engineUncachedPromptTokenAttrs(base))
+	}
+
+	tbt := tbtAttrs(base)
+	if t.EngineServiceTBTMs > 0 {
+		add(attr.MetricEngineServiceTBT, tbt)
+	}
+	if t.EngineIapiTBTMs > 0 {
+		add(attr.MetricEngineIapiTBT, tbt)
+	}
+	if t.EngineServiceMinusIapiTBTMs != 0 {
+		add(attr.MetricEngineServiceMinusIapiTBT, tbt)
+	}
+
+	if t.AccountID != "" {
+		accountAttrs := rateLimitAttrs(base)
+		if t.RateLimitWindowMin > 0 {
+			add(attr.MetricRateLimitUsed, accountAttrs)
+			add(attr.MetricRateLimitReset, accountAttrs)
+		}
+		if t.RateLimit2WindowMin > 0 {
+			add(attr.MetricRateLimitUsed2, accountAttrs)
+		}
+		for model := range t.ExtraRateLimits {
+			if model == "" {
+				continue
+			}
+			add(attr.MetricRateLimitPerModel, guard.With(accountAttrs, attr.KV{Key: attr.GenAIRequestModel, Value: model}))
+		}
+		if t.HasCredits || t.CreditsUnlimited || t.CreditsBalance != "" {
+			add(attr.MetricCreditsUnlimited, accountAttrs)
+			if _, ok := parseCreditsBalance(t.CreditsBalance); ok {
+				add(attr.MetricCreditsBalance, accountAttrs)
+			}
+		}
+	}
+
+	return out
+}
+
+// responseCounterAttrs keeps the historical request/response shape plus API key name,
+// but deliberately drops reasoning effort and thread source because CXO-0003 reserves
+// those for token and cost shape. It also drops the bounded proxy_status/error_code/
+// failure_phase fields introduced in wave 0: those are response-span and Loki
+// diagnostics, not response-count dimensions.
+func responseCounterAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.GenAIResponseModel, attr.Status, attr.RequestKind, attr.Family, attr.AccountID,
+		attr.PlanType, attr.ServiceTier, attr.ServiceTierRequested, attr.APIKeyName,
+		attr.SubagentKind, attr.Originator, attr.GenAIAgentName, attr.GenAIAgentVersion,
+		attr.ErrorType, attr.ErrorCategory, attr.ErrorCode, attr.CriticalPathCoverage,
+		attr.CloseCode, attr.BaselineReset, attr.FrameType)
+}
+
+// tokenCounterAttrs is codexlb.tokens' query shape: model/account/request kind, plus
+// family for probe exclusion and effort/thread/API-key for cost-shape panels. It
+// deliberately drops agent version and token semantics, which only the convention
+// token-usage histogram's consumer needs.
+func tokenCounterAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
+		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
+		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName)
+}
+
+// tokenUsageAttrs starts from tokenCounterAttrs and adds the two agent labels required
+// by Grafana agent observability. It still drops duration-only dimensions such as
+// service tier and critical-path coverage because this instrument measures token
+// distribution, not latency.
+func tokenUsageAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
+		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
+		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName,
+		attr.GenAIAgentName, attr.GenAIAgentVersion)
+}
+
+// costAttrs mirrors the token shape, minus gen_ai.token.type: cost is response-level,
+// but needs the same family, effort, thread-source and API-key filters as tokens.
+func costAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
+		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
+		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName)
+}
+
+// imageGenTokenAttrs is a token counter, so it carries family and API key name for
+// probe and key-cost exclusion. It deliberately drops reasoning effort/thread source
+// because those only describe text-model token and cost shape in this wave.
+func imageGenTokenAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
+		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind, attr.Family, attr.APIKeyName)
+}
+
+// engineUncachedPromptTokenAttrs is baseline-sensitive engine-token data, so it keeps
+// response model and baseline_reset, adds family/API key as required for token
+// counters, and deliberately leaves out effort/thread source per CXO-0003's narrower
+// token-shape decision.
+func engineUncachedPromptTokenAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Family,
+		attr.APIKeyName, attr.BaselineReset)
+}
+
+// operationDurationAttrs is the agent-observability latency shape. It adds family for
+// probe exclusion and keeps error and agent labels for the SDK UI, while deliberately
+// dropping effort/thread source and API key name to keep duration histograms out of
+// token/cost-only dimensions.
+func operationDurationAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Status,
+		attr.ErrorType, attr.ErrorCategory, attr.GenAIAgentName, attr.GenAIAgentVersion,
+		attr.ServiceTierRequested, attr.Family)
+}
+
+// turnDurationAttrs measures user-visible latency only. It carries family and the
+// requested service tier because those answer latency questions, and drops effort,
+// thread source, API key and agent version because they are not duration dimensions.
+func turnDurationAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
+		attr.GenAIRequestModel, attr.AccountID, attr.ServiceTierRequested, attr.Family)
+}
+
+// ttftAttrs follows the agent-observability duration shape for first-token latency,
+// with family added for probe exclusion. It deliberately drops effort/thread/API key
+// because CXO-0003 keeps those off duration histograms.
+func ttftAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
+		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind,
+		attr.GenAIAgentName, attr.GenAIAgentVersion, attr.ServiceTierRequested, attr.Family)
+}
+
+// criticalPathDurationAttrs is specific to critical-path measurements: coverage and
+// baseline_reset describe whether these duration values are trustworthy. Family is
+// added for probe exclusion; effort/thread/API key are deliberately dropped.
+func criticalPathDurationAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.AccountID, attr.RequestKind, attr.CriticalPathCoverage, attr.BaselineReset,
+		attr.Family)
+}
+
+// engineTimingDurationAttrs is for the eight cumulative engine timing deltas. It
+// matches the engine-call shape, adds family for probe exclusion, and drops
+// effort/thread/API key because these are duration histograms.
+func engineTimingDurationAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.BaselineReset,
+		attr.Family)
+}
+
+// tbtAttrs is the TBT duration shape: model/account/request kind plus family for
+// probe exclusion. It deliberately drops effort/thread/API key like the other duration
+// histograms, and drops baseline_reset because these TBT fields are per-response
+// running averages, not cumulative deltas.
+func tbtAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.AccountID, attr.RequestKind, attr.Family)
+}
+
+// webSearchAttrs is not a token or duration instrument, so CXO-0003 does not add
+// family, effort, thread source or API key here. It keeps the small model/account
+// request shape that answers "how many web searches did this model issue".
+func webSearchAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
+		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind)
+}
+
+// errorCounterAttrs keeps the error runbook dimensions and deliberately drops family,
+// effort, thread source and API key because this counter is for rejection type, not
+// cost or latency attribution.
+func errorCounterAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.AccountID, attr.ErrorType, attr.ErrorCode, attr.Status)
+}
+
+// transportEventAttrs is the websocket lifecycle shape. It carries family because
+// transport events may belong to probe traffic, and drops request model/effort/thread
+// source because dropped connections are diagnosed by close code and frame type.
+func transportEventAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.Family, attr.AccountID, attr.CloseCode, attr.FrameType)
+}
+
+// safetyBufferingAttrs keeps only the model pair and account: this rare counter asks
+// which model rerouted to which safety retry model. It deliberately drops family,
+// effort, thread source and API key because none distinguishes that event.
+func safetyBufferingAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID)
+}
+
+// baselineResetAttrs carries family because reset size must be comparable with probe
+// exclusion, and otherwise only request kind and account. Model, effort and thread
+// source would multiply a hygiene counter whose job is simply to size the reset caveat.
+func baselineResetAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.Family, attr.RequestKind, attr.AccountID)
+}
+
+// engineCallAttrs intentionally remains a call-count shape, not a latency shape:
+// baseline_reset matters to cumulative deltas, while family/effort/thread/API key do
+// not answer the engine-call question in this wave.
+func engineCallAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.BaselineReset)
+}
+
+// toolCallAttrs fans out by tool name only after keeping the model/account/request
+// shape. It deliberately drops family, effort, thread source and API key because this
+// instrument counts tool invocations, not token/cost/latency.
+func toolCallAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
+		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind)
+}
+
+// toolCallsPerOperationAttrs is the agent-observability tool-use histogram. It keeps
+// agent labels for that UI, and deliberately drops family/effort/thread/API key
+// because it is neither a duration histogram nor a token/cost instrument.
+func toolCallsPerOperationAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIRequestModel,
+		attr.GenAIAgentName, attr.GenAIAgentVersion, attr.AccountID, attr.RequestKind)
+}
+
+// rateLimitAttrs is intentionally account-first. Plan type qualifies the quota; every
+// other bounded field, including family/API key, would make the gauges easier to
+// misaggregate and harder to read.
+func rateLimitAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.AccountID, attr.PlanType)
 }
 
 // msToS converts a millisecond field to the seconds every histogram in this sink is

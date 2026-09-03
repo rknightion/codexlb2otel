@@ -460,6 +460,183 @@ func TestTokenUsageHistogramParallelsCounter(t *testing.T) {
 	}
 }
 
+// TestFamilyEffortThreadSourceAndAPIKeyMetricScope pins CXO-0003's cardinality
+// decision. codexlb.family is the only probe discriminator, so it must be present on
+// every token counter and every duration histogram. The effort and thread-source
+// dimensions deliberately stay narrower: tokens, token-usage and cost only, where
+// they answer the dashboard question, and never on the duration histograms.
+func TestFamilyEffortThreadSourceAndAPIKeyMetricScope(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	tt := baseTurn("1")
+	tt.RequestKind = requestKindTurn
+	tt.Effort = "xhigh"
+	tt.ThreadSource = "subagent"
+	tt.APIKeyName = "default"
+	tt.InputTokens, tt.ImageGenTokens, tt.EngineUncachedPromptTokensDelta = 1, 2, 3
+	tt.TurnStart = time.Now().Add(-3 * time.Second)
+	tt.ServerCreatedAt = time.Now().Add(-2 * time.Second)
+	tt.ServerCompletedAt = time.Now()
+	tt.TTFTMs = 250
+	tt.CriticalPath.Coverage = "complete"
+	tt.CriticalPath.EngineWallMs = 100
+	tt.CriticalPath.HarnessUnblockedMs = 110
+	tt.CriticalPath.PreInferenceMs = 120
+	tt.CriticalPath.SamplingStreamMs = 130
+	tt.CriticalPath.ClientToolPauseMs = 140
+	tt.EngineServiceInferenceMsDelta = 150
+	tt.EngineServiceSamplingMsDelta = 160
+	tt.EngineIapiInferenceMsDelta = 170
+	tt.EngineIapiSamplingMsDelta = 180
+	tt.ResponsesExclEngineAndToolMsDelta = 190
+	tt.ResponsesExclEngineWaitSamplingMsDelta = 200
+	tt.ResponsesExclEngineWaitSamplingIapiMsDelta = 210
+	tt.ResponsesAPIExclClientToolsMsDelta = 220
+	tt.EngineServiceTBTMs = 23
+	tt.EngineIapiTBTMs = 24
+	tt.EngineServiceMinusIapiTBTMs = -1
+	cost := 1.25
+	tt.CostUSD = &cost
+
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	rm := collect(t, reader)
+
+	tokenLike := []string{
+		attr.MetricTokens,
+		attr.MetricTokenUsage,
+		attr.MetricImageGenTokens,
+		attr.MetricEngineUncachedPromptTokens,
+	}
+	for _, name := range tokenLike {
+		m, ok := findMetric(rm, name)
+		if !ok {
+			t.Fatalf("%s not recorded; the test turn should have produced one", name)
+		}
+		for _, set := range attrSets(t, m) {
+			assertAttr(t, name, set, attr.Family, "websocket")
+		}
+	}
+
+	richShape := []string{attr.MetricTokens, attr.MetricTokenUsage, attr.MetricCostUSD}
+	for _, name := range richShape {
+		m, ok := findMetric(rm, name)
+		if !ok {
+			t.Fatalf("%s not recorded; the test turn should have produced one", name)
+		}
+		for _, set := range attrSets(t, m) {
+			assertAttr(t, name, set, attr.ReasoningEffort, "xhigh")
+			assertAttr(t, name, set, attr.ThreadSource, "subagent")
+			assertAttr(t, name, set, attr.APIKeyName, "default")
+		}
+	}
+
+	durationHistograms := []string{
+		attr.MetricOperationDuration,
+		attr.MetricTurnDuration,
+		attr.MetricTTFT,
+		attr.MetricEngineWall,
+		attr.MetricHarnessUnblocked,
+		attr.MetricPreInference,
+		attr.MetricSamplingStream,
+		attr.MetricClientToolPause,
+		attr.MetricEngineServiceInference,
+		attr.MetricEngineServiceSampling,
+		attr.MetricEngineIapiInference,
+		attr.MetricEngineIapiSampling,
+		attr.MetricResponsesExclEngineAndTool,
+		attr.MetricResponsesExclEngineWaitSampling,
+		attr.MetricResponsesExclEngineWaitSamplingIapi,
+		attr.MetricResponsesAPIExclClientTools,
+		attr.MetricEngineServiceTBT,
+		attr.MetricEngineIapiTBT,
+		attr.MetricEngineServiceMinusIapiTBT,
+	}
+	for _, name := range durationHistograms {
+		m, ok := findMetric(rm, name)
+		if !ok {
+			t.Fatalf("%s not recorded; the test turn should have produced one", name)
+		}
+		for _, set := range attrSets(t, m) {
+			assertAttr(t, name, set, attr.Family, "websocket")
+			assertNoAttr(t, name, set, attr.ReasoningEffort)
+			assertNoAttr(t, name, set, attr.ThreadSource)
+		}
+	}
+
+	for _, name := range []string{attr.MetricResponses, attr.MetricTurns} {
+		m, ok := findMetric(rm, name)
+		if !ok {
+			t.Fatalf("%s not recorded; the test turn should have produced one", name)
+		}
+		for _, set := range attrSets(t, m) {
+			assertAttr(t, name, set, attr.APIKeyName, "default")
+			assertNoAttr(t, name, set, attr.ReasoningEffort)
+			assertNoAttr(t, name, set, attr.ThreadSource)
+			assertNoAttr(t, name, set, attr.ProxyStatus)
+			assertNoAttr(t, name, set, attr.ProxyErrorCode)
+			assertNoAttr(t, name, set, attr.ProxyFailurePhase)
+		}
+	}
+}
+
+func TestCostUSDRecordedOnlyWhenPresent(t *testing.T) {
+	if attr.MetricCostUSD != "codexlb.cost_usd" {
+		t.Fatalf("cost metric name = %q, want codexlb.cost_usd; Prometheus wire name is codexlb_cost_usd_total", attr.MetricCostUSD)
+	}
+
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	missing := baseTurn("missing")
+	zero := baseTurn("zero")
+	zero.APIKeyName = "zero-key"
+	zeroCost := 0.0
+	zero.CostUSD = &zeroCost
+	charged := baseTurn("charged")
+	charged.APIKeyName = "charged-key"
+	chargedCost := 2.75
+	charged.CostUSD = &chargedCost
+
+	if err := s.Emit(context.Background(), []*turn.Turn{missing, zero, charged}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	rm := collect(t, reader)
+	m, ok := findMetric(rm, attr.MetricCostUSD)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricCostUSD)
+	}
+	if m.Unit != "{USD}" {
+		t.Errorf("%s unit = %q, want {USD}", attr.MetricCostUSD, m.Unit)
+	}
+	sum := m.Data.(metricdata.Sum[float64])
+	if len(sum.DataPoints) != 2 {
+		t.Fatalf("%s: got %d data points, want the explicit zero cost and positive cost series",
+			attr.MetricCostUSD, len(sum.DataPoints))
+	}
+	gotByKey := map[string]float64{}
+	for _, dp := range sum.DataPoints {
+		key, ok := attrString(t, dp.Attributes, attr.APIKeyName)
+		if !ok {
+			t.Fatalf("%s: missing %s", attr.MetricCostUSD, attr.APIKeyName)
+		}
+		gotByKey[key] = dp.Value
+	}
+	if got := gotByKey["zero-key"]; got != 0 {
+		t.Errorf("%s zero-key sum = %v, want 0; an explicit zero cost pointer must be recorded",
+			attr.MetricCostUSD, got)
+	}
+	if got := gotByKey["charged-key"]; got != chargedCost {
+		t.Errorf("%s charged-key sum = %v, want %v", attr.MetricCostUSD, got, chargedCost)
+	}
+	if _, ok := gotByKey[""]; ok {
+		t.Errorf("%s emitted the nil-cost turn's empty API-key series; nil cost must be skipped",
+			attr.MetricCostUSD)
+	}
+}
+
 // TestToolCallsPerOperationCountsZero pins the deliberate difference from
 // recordToolCalls (which skips a response with no tool calls entirely): this
 // histogram measures the shape of tool use across every response, so a response with
@@ -600,6 +777,9 @@ func TestEveryEmittedAttributeKeyIsOnContract(t *testing.T) {
 	tt.ExtraRateLimits = map[string]float64{"gpt-5.3-codex-spark": 3}
 	tt.HasCredits = true
 	tt.CreditsBalance = "$12.50"
+	tt.APIKeyName = "default"
+	cost := 0.01
+	tt.CostUSD = &cost
 
 	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
 		t.Fatalf("Emit: %v", err)
@@ -759,6 +939,24 @@ func TestTransportEvents_UncleanDropIsCountedAndDistinguishable(t *testing.T) {
 }
 
 func intPtr(v int) *int { return &v }
+
+func assertAttr(t *testing.T, metricName string, set attribute.Set, key, want string) {
+	t.Helper()
+	got, ok := attrString(t, set, key)
+	if !ok {
+		t.Fatalf("%s: missing %s", metricName, key)
+	}
+	if got != want {
+		t.Errorf("%s: %s = %q, want %q", metricName, key, got, want)
+	}
+}
+
+func assertNoAttr(t *testing.T, metricName string, set attribute.Set, key string) {
+	t.Helper()
+	if got, ok := attrString(t, set, key); ok {
+		t.Errorf("%s: %s = %q, want absent", metricName, key, got)
+	}
+}
 
 func sumInt64(t *testing.T, m metricdata.Metrics) int64 {
 	t.Helper()
@@ -1027,6 +1225,10 @@ func attrSets(t *testing.T, m metricdata.Metrics) []attribute.Set {
 	var out []attribute.Set
 	switch d := m.Data.(type) {
 	case metricdata.Sum[int64]:
+		for _, dp := range d.DataPoints {
+			out = append(out, dp.Attributes)
+		}
+	case metricdata.Sum[float64]:
 		for _, dp := range d.DataPoints {
 			out = append(out, dp.Attributes)
 		}

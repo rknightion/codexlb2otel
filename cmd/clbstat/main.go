@@ -7,15 +7,21 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/rknightion/codexlb2otel/internal/archive"
+	"github.com/rknightion/codexlb2otel/internal/attr"
 	"github.com/rknightion/codexlb2otel/internal/frame"
+	"github.com/rknightion/codexlb2otel/internal/sink/otlpmetric"
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
@@ -46,6 +52,9 @@ func main() {
 		itemTypes: map[string]int{},
 		threads:   map[string]bool{},
 		logical:   map[string]bool{},
+
+		metricGuard:  attr.NewGuard(),
+		metricSeries: map[string]map[string]int{},
 	}
 
 	var out *os.File
@@ -97,6 +106,9 @@ type stats struct {
 	itemTypes map[string]int
 	threads   map[string]bool
 	logical   map[string]bool
+
+	metricGuard  *attr.Guard
+	metricSeries map[string]map[string]int
 }
 
 // handled lists the event types the reducer acts on. Anything else is reported so a
@@ -150,8 +162,7 @@ func (s *stats) scanFile(path string, r *turn.Reducer, out *os.File) error {
 }
 
 func (s *stats) feed(data []byte, r *turn.Reducer, out *os.File) error {
-	return frame.Lines(data, func(rec *frame.Record) error {
-		s.lines++
+	return s.linesLoose(data, func(rec *frame.Record) error {
 		ev, ok := rec.ParseEvent()
 		if !ok {
 			s.unparseable++
@@ -175,6 +186,50 @@ func (s *stats) feed(data []byte, r *turn.Reducer, out *os.File) error {
 	})
 }
 
+func (s *stats) linesLoose(data []byte, fn func(*frame.Record) error) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	for {
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		s.lines++
+		rec, ok := s.decodeRecord(raw)
+		if !ok {
+			s.unparseable++
+			continue
+		}
+		if err := fn(rec); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *stats) decodeRecord(raw json.RawMessage) (*frame.Record, bool) {
+	var probe struct {
+		Payload struct {
+			Text json.RawMessage `json:"text"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil, false
+	}
+	if len(probe.Payload.Text) > 0 && string(probe.Payload.Text) != "null" {
+		var text string
+		if err := json.Unmarshal(probe.Payload.Text, &text); err != nil {
+			return nil, false
+		}
+	}
+	var rec frame.Record
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return nil, false
+	}
+	return &rec, true
+}
+
 func (s *stats) record(t *turn.Turn, out *os.File) error {
 	s.responses++
 	if t.Status == turn.StatusIncomplete {
@@ -192,6 +247,12 @@ func (s *stats) record(t *turn.Turn, out *os.File) error {
 	}
 	for k, v := range t.ItemCounts {
 		s.itemTypes[k] += v
+	}
+	for _, set := range otlpmetric.AttributeSetsForTurn(t, s.metricGuard) {
+		if s.metricSeries[set.Instrument] == nil {
+			s.metricSeries[set.Instrument] = map[string]int{}
+		}
+		s.metricSeries[set.Instrument][metricAttrKey(set.Attributes)]++
 	}
 	b, err := json.Marshal(t)
 	if err != nil {
@@ -263,4 +324,46 @@ func (s *stats) report() {
 	dump("statuses", s.statuses)
 	dump("tool calls", s.tools)
 	dump("output item types", s.itemTypes)
+	s.dumpMetricSeries()
+}
+
+func (s *stats) dumpMetricSeries() {
+	fmt.Printf("\n-- metric attribute combinations by instrument (%d total) --\n", s.totalMetricSeries())
+	type kv struct {
+		k string
+		n int
+	}
+	var xs []kv
+	for name, combos := range s.metricSeries {
+		xs = append(xs, kv{name, len(combos)})
+	}
+	sort.Slice(xs, func(i, j int) bool {
+		if xs[i].n != xs[j].n {
+			return xs[i].n > xs[j].n
+		}
+		return xs[i].k < xs[j].k
+	})
+	for _, x := range xs {
+		fmt.Printf("  %8d  %s\n", x.n, x.k)
+	}
+	if rejected := s.metricGuard.Rejected(); len(rejected) > 0 {
+		fmt.Printf("guard_rejections=%v\n", rejected)
+	}
+}
+
+func (s *stats) totalMetricSeries() int {
+	var total int
+	for _, combos := range s.metricSeries {
+		total += len(combos)
+	}
+	return total
+}
+
+func metricAttrKey(kvs []attr.KV) string {
+	parts := make([]string, 0, len(kvs))
+	for _, kv := range kvs {
+		parts = append(parts, kv.Key+"="+kv.Value)
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\x00")
 }

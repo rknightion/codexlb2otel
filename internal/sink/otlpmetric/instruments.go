@@ -25,6 +25,7 @@ type instruments struct {
 	transportEvents otelmetric.Int64Counter
 	safetyBuffering otelmetric.Int64Counter
 	baselineResets  otelmetric.Int64Counter
+	costUSD         otelmetric.Float64Counter
 
 	// tokenUsage is the convention-named parallel to tokens - see names.go's
 	// MetricTokenUsage doc comment for why both exist rather than one replacing the
@@ -196,6 +197,12 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 			"this also counts them directly so the exclusion's own size is visible."),
 		otelmetric.WithUnit("{response}"))
 	must(attr.MetricBaselineResets, err)
+
+	i.costUSD, err = meter.Float64Counter(attr.MetricCostUSD,
+		otelmetric.WithDescription("Computed response cost in USD. Recorded only when "+
+			"codex-lb enrichment supplied an explicit cost value."),
+		otelmetric.WithUnit("{USD}"))
+	must(attr.MetricCostUSD, err)
 
 	// MetricAttrsRejected is intentionally an ObservableCounter, not something Emit
 	// increments: the guard already keeps a monotonic running total per field (see
