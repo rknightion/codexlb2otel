@@ -5,6 +5,27 @@ import (
 	"testing"
 )
 
+func TestPayloadTextAcceptsStringAndObjectShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		blob string
+		want string
+	}{
+		{name: "protocol string", blob: `{"payload":{"text":"{\"type\":\"response.created\"}"}}`, want: `{"type":"response.created"}`},
+		{name: "HTTP request object", blob: `{"payload":{"text":{"model":"test","stream":true}}}`, want: `{"model":"test","stream":true}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var r Record
+			if err := json.Unmarshal([]byte(tc.blob), &r); err != nil {
+				t.Fatal(err)
+			}
+			if r.Payload.Text != tc.want {
+				t.Fatalf("payload text = %q, want %q", r.Payload.Text, tc.want)
+			}
+		})
+	}
+}
+
 // Header casing is not stable in the capture: the websocket family sends
 // "chatgpt-account-id", the CLI family sends "ChatGPT-Account-Id", and Authorization
 // is capitalised everywhere. A case-sensitive lookup reads as absent with no error,

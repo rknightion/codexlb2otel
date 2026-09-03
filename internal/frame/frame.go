@@ -59,9 +59,33 @@ func (h *Headers) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Payload wraps the inner protocol event, which arrives as a JSON string.
+// Payload wraps the protocol payload. Websocket records carry a JSON string holding
+// the inner event. HTTP request records carry that request object directly. Preserve
+// either shape as JSON text so one newer request record cannot abort the whole
+// archive member; ParseEvent will naturally ignore objects without an event type.
 type Payload struct {
 	Text string `json:"text"`
+}
+
+// UnmarshalJSON accepts both archive shapes for payload.text while rejecting invalid
+// JSON normally. Direct objects are compacted through RawMessage without interpreting
+// or copying any field into a higher-cardinality contract.
+func (p *Payload) UnmarshalJSON(b []byte) error {
+	var wire struct {
+		Text json.RawMessage `json:"text"`
+	}
+	if err := json.Unmarshal(b, &wire); err != nil {
+		return err
+	}
+	if len(wire.Text) == 0 || bytes.Equal(wire.Text, []byte("null")) {
+		p.Text = ""
+		return nil
+	}
+	if wire.Text[0] == '"' {
+		return json.Unmarshal(wire.Text, &p.Text)
+	}
+	p.Text = string(wire.Text)
+	return nil
 }
 
 // Websocket frame types, from the archive's extra block.
