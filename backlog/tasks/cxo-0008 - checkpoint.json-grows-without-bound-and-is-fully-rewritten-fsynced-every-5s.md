@@ -4,7 +4,7 @@ title: checkpoint.json grows without bound and is fully rewritten + fsynced ever
 status: To Do
 assignee: []
 created_date: '2026-08-14 17:00'
-updated_date: '2026-08-23 12:10'
+updated_date: '2026-09-03 13:53'
 labels:
   - enhancement
   - from-gh-issue
@@ -74,7 +74,7 @@ The size is already observable: `Watcher.Progress` exposes `ReducerSeriesCount` 
 <!-- AC:BEGIN -->
 - [ ] #1 Decide and record whether eviction is by age, and what the age is anchored to
 - [ ] #2 prev/seq entries for long-dead series are removed; live and mid-turn ones never are
-- [ ] #3 A checkpoint save that would write identical bytes is skipped
+- [x] #3 A checkpoint save that would write identical bytes is skipped
 - [ ] #4 A test proves an evicted-then-returning series is flagged BaselineReset rather than silently over-counting - the failure this whole file exists to prevent
 - [ ] #5 Growth and save rate measured on the live host before and after
 <!-- AC:END -->
@@ -84,3 +84,11 @@ The size is already observable: `Watcher.Progress` exposes `ReducerSeriesCount` 
 - [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
 - [ ] #2 go build ./... succeeds
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Live measurement 2026-09-03 14:40 UTC on camden (/opt/codexlb2otel/data/checkpoint.json), the BEFORE figure for AC #5: 5,683,577 bytes total; files 532 entries (523 deleted tombstones) 63 KB; reducer.prev 8,854 entries 5.84 MB; reducer.seq 3,891 entries 168 KB. Versus 665 KB on 2026-08-09 that is ~200 KB/day growth, and at one full rewrite+fsync per 5s poll roughly 98 GB/day written. Deployed archive.poll_interval is 5s; config has a checkpoint_interval key (internal/config/config.go:117) - check whether it is already honoured by the save path before designing the dirty flag.
+
+CORRECTION 2026-09-03: the description's section 2 (save on every poll) is STALE and my earlier 98 GB/day figure in these notes was WRONG. Commit 7d93bc6 (2026-08-09, perf(tail): checkpoint on an interval, not on every poll) added archive.checkpoint_interval (default 15m, internal/tail/watcher.go saveDue) and an identical-bytes skip via a content fingerprint (watcher.go save, lastSaved). AC #3 is therefore already met and is checked here on code evidence plus the live config (no checkpoint_interval override, so 15m). Current write cost is bounded at ~96 saves/day x 5.7 MB = ~0.5 GB/day. What remains is section 1 only: reducer.prev/seq/files tombstones are still never evicted (8,854 prev entries live). AC #1, #2, #4 and the AFTER half of #5 are the open work.
+<!-- SECTION:NOTES:END -->

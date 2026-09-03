@@ -4,7 +4,7 @@ title: Run the drift probe on a schedule and alert on it
 status: To Do
 assignee: []
 created_date: '2026-08-14 16:58'
-updated_date: '2026-08-23 12:10'
+updated_date: '2026-09-03 14:11'
 labels:
   - enhancement
   - from-gh-issue
@@ -65,4 +65,6 @@ State at migration (2026-08-14), verified in the checkout rather than taken from
   registered on the tailnet, every trigger queues forever with nothing to pick it up. The
   archive-path placeholder needs a human too. **Do not read the file's presence as the job running.**
 - AC 3 and AC 4 are untouched.
+
+Decision 2026-09-03 (Rob to confirm before the wave): AC #2 is satisfied IN-PROCESS, not by GitHub Actions. rknightion is a User account with no runner groups and public-repo CI must not run on self-hosted runners, so scheduled-archive-probe.yml can never go live; delete it. codexlb2otel already tails the live archive, so it runs the sampled probe itself on a schedule (config block probe: enabled/interval, default 24h, sampled) against an embedded baseline and emits codexlb.archive_drift_findings (gauge, {finding}) by codexlb.selfobs.severity in breaking|new|info. The alert rule and the legacy panel already reference that name. Evidence the guard is needed: today's probe against the synced corpus reports 7 breaking and 576 new findings (see CXO-0007) that nothing had watched for since 2026-08-09.
 <!-- SECTION:NOTES:END -->

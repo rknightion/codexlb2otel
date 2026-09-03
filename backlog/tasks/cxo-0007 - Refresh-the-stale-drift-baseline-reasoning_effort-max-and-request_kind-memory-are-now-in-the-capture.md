@@ -6,12 +6,12 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-14 17:00'
-updated_date: '2026-08-23 12:10'
+updated_date: '2026-09-03 14:11'
 labels:
   - enhancement
   - from-gh-issue
 dependencies: []
-priority: medium
+priority: high
 type: chore
 ordinal: 7000
 ---
@@ -65,3 +65,9 @@ rather than because anything watched for it - which is the argument for the sche
 - [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
 - [ ] #2 go build ./... succeeds
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-03: this is no longer a plain refresh. After syncing today's 9 archive hours (corpus now 58 files, 7.2 GB, with a gap 2026-08-10 to 09-02 because the host keeps one day), just check is RED at probe-ci: 584 findings, 7 breaking, 576 new, 1 info (full output: codex/assessment-2026-09-03-drift-probe.txt). Live selfobs shows the decoder is NOT broken by them (830 undecodable of 18.2M lines in 7 days, 0 decode errors, http family still emitting), so the breaking findings are baseline staleness plus profiler gaps: sse-event-stream framing, the http request payload_shape, safety_buffering type change (reducer already handles it as RawMessage). 288+ of the new findings are response.usage.attribution.items.<id>.* where the keys are identifiers (at_<uuid>, ctc_<hex>), which exhausted the profiler's path budget and would put ids into corpus.sig.json. SEQUENCE: (1) teach internal/profile to record response.usage.attribution.items as an opaque keyed map (same mechanism as workspaces, opaqueKind), (2) full scan, (3) accept the baseline, (4) TestSignature_CarriesNoConversationContent must still pass. This lane must land FIRST in the wave because every other lane's just check fails at probe-ci until it does. Valuable new wire data surfaced by the same run is tracked separately (x-codex-turn-metadata agent_name/root_turn_id/sandbox_mode/window_number, prompt_cache_options, prompt_cache_diagnostics, safety_buffering.retry_model, additional_rate_limits secondary window).
+<!-- SECTION:NOTES:END -->

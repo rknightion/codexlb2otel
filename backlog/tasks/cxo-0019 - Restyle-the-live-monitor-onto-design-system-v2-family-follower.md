@@ -4,6 +4,7 @@ title: Restyle the live monitor onto design system v2 (family follower)
 status: To Do
 assignee: []
 created_date: '2026-08-31 12:13'
+updated_date: '2026-09-03 13:43'
 labels:
   - design-system
 dependencies: []
@@ -31,3 +32,9 @@ Scope: the single static ui/index.html with inline CSS/vanilla JS, served via go
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 - [ ] #2 make check green
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Pre-flight 2026-09-03: the description's NOTE that this repo's gate is make check is STALE - CXO-0018 migrated the task surface to just; the gate is 'just check' (DoD #1 is right, DoD #2 is the stale one). TSO-0103 (family standard-setter) is Done as of 2026-09-01, so the sequencing precondition is met; inherit whatever token block it landed. Design package is at design/console-v2/ (implementation-spec.md = family spec, codexlb2otel-implementation-spec.md = this repo, internal/ holds the draft index.html).
+<!-- SECTION:NOTES:END -->

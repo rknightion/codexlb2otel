@@ -6,7 +6,7 @@ title: >-
 status: Parked
 assignee: []
 created_date: '2026-08-14 16:59'
-updated_date: '2026-08-23 12:10'
+updated_date: '2026-09-03 13:44'
 labels:
   - from-gh-issue
   - blocked-on-human
@@ -53,9 +53,9 @@ stay parked indefinitely.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Publish runs are green, by whichever route
+- [x] #1 Publish runs are green, by whichever route
 - [ ] #2 Multi-arch :main and the semver release tags keep working
-- [ ] #3 cosign signing and SBOM generation keep working
+- [x] #3 cosign signing and SBOM generation keep working
 <!-- AC:END -->
 
 ## Definition of Done
@@ -76,4 +76,6 @@ stay parked indefinitely.
 
 Nothing in this repo can move it in the meantime; the attestation step is unconditional upstream.
 Do not re-litigate the two rejected fixes - the reasons are in the description.
+
+Pre-flight 2026-09-03: resume boundary (1) has occurred - the repo is PUBLIC (gh repo view: visibility PUBLIC, isFork false). Publish run 33759794468 at 9a481da (2026-09-03) is fully green including the 'merge + sign + sbom' job, which is where attest-build-provenance runs, so AC #1 and AC #3 are proven for the :main path. AC #2's semver half is NOT yet proven: no tag-triggered publish has run since the repo went public (last release v0.3.0 was 2026-08-23; publish.yml triggers on push tags). Stays Parked with a narrower boundary: close when the next release-please tag publishes green. Nothing for an agent to build here. The single red run since (33622188619, 2026-09-02) was a stepsecurity/trivy network timeout, unrelated.
 <!-- SECTION:NOTES:END -->

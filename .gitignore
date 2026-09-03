@@ -8,6 +8,12 @@
 # Scratch plans and specs - NEVER committed
 docs/superpowers/
 
+# Fan-out run artefacts (goal files, launch messages, run reports) - working
+# state, never deliverables. Ignored as a DIRECTORY so no new artefact type can
+# leak by being named something a pattern did not anticipate. The name is
+# load-bearing: codex-sync.sh matches it exactly.
+/codex/
+
 # Local config with secrets
 config.yaml
 .env

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-14 16:59'
-updated_date: '2026-08-23 12:05'
+updated_date: '2026-09-03 14:11'
 labels:
   - from-gh-issue
 dependencies: []
@@ -63,3 +63,9 @@ user-vs-subagent" is not answerable in PromQL either. Both are bounded and small
 - [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
 - [ ] #2 go build ./... succeeds
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Pre-flight 2026-09-03. Live series baseline on Mimir: ~7,100 active series for job=codexlb2otel; gen_ai_client_token_usage_bucket 1,140, the per-stage duration histograms 208-384 each, codexlb_tokens_total 56, codexlb_responses_total 66. Observed values today: family websocket|http|unknown (+probe in earlier captures), reasoning level low|medium|high|xhigh|max (5, 'max' is 11% of DB rows), thread_source user|subagent. Frozen decision for the wave (reversible, Rob to confirm): codexlb.family goes on every token counter and every duration histogram; gen_ai.request.reasoning.level and codexlb.thread_source go on the token counters and the new cost counter only, not on histograms. Budget: total active series must stay under 3x today's figure, measured on the synced corpus before landing (AC #5), with the arithmetic in these notes.
+<!-- SECTION:NOTES:END -->
