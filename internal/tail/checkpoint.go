@@ -74,7 +74,7 @@ func fingerprint(f *os.File) (string, error) {
 	return hex.EncodeToString(sum[:8]), nil
 }
 
-const checkpointVersion = 1
+const checkpointVersion = 2
 
 // LoadCheckpoint reads a checkpoint. A missing file yields an empty checkpoint
 // rather than an error - that is just a first run.
@@ -92,9 +92,13 @@ func LoadCheckpoint(path string) (Checkpoint, error) {
 		return c, fmt.Errorf("checkpoint: read %s: %w", path, err)
 	}
 	var loaded Checkpoint
-	if err := json.Unmarshal(b, &loaded); err != nil || loaded.Version != checkpointVersion {
+	if err := json.Unmarshal(b, &loaded); err != nil {
 		return c, nil
 	}
+	if loaded.Version != 1 && loaded.Version != checkpointVersion {
+		return c, nil
+	}
+	loaded.Version = checkpointVersion
 	if loaded.Files == nil {
 		loaded.Files = map[string]FileState{}
 	}
@@ -142,6 +146,31 @@ func (c *Checkpoint) contentSum() ([32]byte, error) {
 		return [32]byte{}, fmt.Errorf("checkpoint: marshal: %w", err)
 	}
 	return sha256.Sum256(b), nil
+}
+
+// PruneFileTombstones removes old Deleted file entries from the checkpoint. Deleted
+// entries exist to stop a moved-away archive from being re-read if it reappears, but
+// keeping them forever just moves the leak from files to checkpoint state. The archive
+// filename's UTC calendar day is the anchor, matching reclaim's RetainDays logic.
+func (c *Checkpoint) PruneFileTombstones(now time.Time) int {
+	if len(c.Files) == 0 {
+		return 0
+	}
+	y, m, d := now.UTC().Date()
+	cutoff := time.Date(y, m, d, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -3)
+	var removed int
+	for name, st := range c.Files {
+		if !st.Deleted {
+			continue
+		}
+		day, ok := archiveDay(name)
+		if !ok || !day.Before(cutoff) {
+			continue
+		}
+		delete(c.Files, name)
+		removed++
+	}
+	return removed
 }
 
 // write puts already-rendered bytes on disk atomically.

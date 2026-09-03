@@ -1,6 +1,11 @@
 package turn
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+	"sync"
+	"time"
+)
 
 // State is the Reducer's durable state.
 //
@@ -19,21 +24,19 @@ type State struct {
 	// by thread alone; those keys cannot be migrated because the request_kind half was
 	// never recorded, so a v1 snapshot is discarded rather than reinterpreted. The cost
 	// is one cold-start turn per thread, and cold starts are already flagged.
-	Prev map[string]cumulative `json:"prev"`
-	Seq  map[string]int        `json:"seq"`
+	Prev     map[string]cumulative `json:"prev"`
+	PrevSeen map[string]time.Time  `json:"prev_seen,omitempty"`
+	Seq      map[string]int        `json:"seq"`
+	SeqSeen  map[string]time.Time  `json:"seq_seen,omitempty"`
 }
 
-// stateVersion 3 adds nine cumulative baselines and the tool-call-duration array
-// (issue #12). Unlike the 1 -> 2 change this is not a key change, and a v2 snapshot
-// would decode without error - which is exactly why the version has to move anyway.
-// Every new counter would restore as zero while the server's own counter sits at its
-// real accumulated value, so the first response after a restart would report the
-// whole turn's inference and sampling time as its own delta. Worse, `seen` would be
-// true, so BaselineReset would NOT fire and the over-count would carry no flag saying
-// it was an upper bound. Same silent-over-count shape as #20, arriving through the
-// checkpoint instead of the series key. Discarding the snapshot costs one flagged
-// cold-start turn per series, which is honest.
-const stateVersion = 3
+// stateVersion 4 adds per-entry archive timestamps. State eviction is deliberately
+// age-based, anchored to the newest archive event timestamp seen for the series, not
+// the wall clock. Without persisting that anchor, a restart would either evict every
+// restored baseline immediately or keep all of them forever.
+const stateVersion = 4
+
+var seqSeenByReducer sync.Map // *Reducer -> map[thread_id]newest archive event timestamp
 
 // cumulativeWire is the checkpoint's on-disk shape for cumulative. A named struct
 // rather than an inline literal in both Marshal and Unmarshal, because the inline
@@ -119,9 +122,29 @@ func (c *cumulative) UnmarshalJSON(b []byte) error {
 
 // Snapshot captures the state that must survive a restart.
 func (r *Reducer) Snapshot() State {
-	s := State{Version: stateVersion, Prev: make(map[string]cumulative, len(r.prev)), Seq: make(map[string]int, len(r.seq))}
+	s := State{
+		Version:  stateVersion,
+		Prev:     make(map[string]cumulative, len(r.prev)),
+		PrevSeen: make(map[string]time.Time, len(r.prev)),
+		Seq:      make(map[string]int, len(r.seq)),
+		SeqSeen:  make(map[string]time.Time, len(r.seq)),
+	}
 	for k, v := range r.prev {
 		s.Prev[k] = v
+		if ts, ok := r.lastSeen[k]; ok && !ts.IsZero() {
+			s.PrevSeen[k] = ts
+			thread, _ := splitSeriesKey(k)
+			if ts.After(s.SeqSeen[thread]) {
+				s.SeqSeen[thread] = ts
+			}
+		}
+	}
+	if stored, ok := seqSeenByReducer.Load(r); ok {
+		for thread, ts := range stored.(map[string]time.Time) {
+			if _, ok := r.seq[thread]; ok && ts.After(s.SeqSeen[thread]) {
+				s.SeqSeen[thread] = ts
+			}
+		}
 	}
 	for k, v := range r.seq {
 		s.Seq[k] = v
@@ -133,7 +156,14 @@ func (r *Reducer) Snapshot() State {
 // rather than rejected: starting cold costs one turn's accuracy, whereas refusing to
 // start costs all of them.
 func (r *Reducer) Restore(s State) {
-	if s.Version != stateVersion {
+	r.RestoreAt(s, time.Now().UTC())
+}
+
+// RestoreAt reinstates a snapshot, using loadedAt as the freshness anchor for old
+// snapshots that predate persisted timestamps. That keeps the first pass after an
+// upgrade from evicting restored state solely because the checkpoint format was old.
+func (r *Reducer) RestoreAt(s State, loadedAt time.Time) {
+	if s.Version != stateVersion && s.Version != 3 {
 		return
 	}
 	if s.Prev != nil {
@@ -142,4 +172,107 @@ func (r *Reducer) Restore(s State) {
 	if s.Seq != nil {
 		r.seq = s.Seq
 	}
+	r.lastSeen = make(map[string]time.Time, len(r.prev))
+	if s.Version == stateVersion {
+		for k, ts := range s.PrevSeen {
+			if _, ok := r.prev[k]; ok && !ts.IsZero() {
+				r.lastSeen[k] = ts
+			}
+		}
+		seqSeen := make(map[string]time.Time, len(s.SeqSeen))
+		for thread, ts := range s.SeqSeen {
+			if _, ok := r.seq[thread]; ok && !ts.IsZero() {
+				seqSeen[thread] = ts
+			}
+		}
+		seqSeenByReducer.Store(r, seqSeen)
+		return
+	}
+
+	if loadedAt.IsZero() {
+		loadedAt = time.Now().UTC()
+	}
+	seqSeen := make(map[string]time.Time, len(r.seq))
+	for k := range r.prev {
+		r.lastSeen[k] = loadedAt
+		thread, _ := splitSeriesKey(k)
+		seqSeen[thread] = loadedAt
+	}
+	for thread := range r.seq {
+		if seqSeen[thread].IsZero() {
+			seqSeen[thread] = loadedAt
+		}
+	}
+	seqSeenByReducer.Store(r, seqSeen)
+}
+
+// StateCounts reports the currently retained reducer state entries.
+func (r *Reducer) StateCounts() (series, threads int) {
+	return len(r.prev), len(r.seq)
+}
+
+// EvictState removes completed reducer baselines older than cutoff. Age is measured
+// from the newest archive event timestamp for each cumulative series. Any thread with
+// an open response is exempt wholesale: an open response can learn its request_kind
+// after creation, so keeping every series for that thread is the safe mid-turn rule.
+func (r *Reducer) EvictState(cutoff time.Time) (seriesRemoved, threadsRemoved int) {
+	if cutoff.IsZero() {
+		return 0, 0
+	}
+	openThreads := map[string]bool{}
+	for _, t := range r.open {
+		if t.ThreadID != "" {
+			openThreads[t.ThreadID] = true
+		}
+	}
+
+	liveThreads := map[string]bool{}
+	for key := range r.prev {
+		thread, _ := splitSeriesKey(key)
+		if openThreads[thread] {
+			liveThreads[thread] = true
+			continue
+		}
+		if ts, ok := r.lastSeen[key]; ok && !ts.IsZero() && !ts.Before(cutoff) {
+			liveThreads[thread] = true
+			continue
+		}
+		delete(r.prev, key)
+		delete(r.lastSeen, key)
+		seriesRemoved++
+	}
+
+	seqSeen := map[string]time.Time{}
+	if stored, ok := seqSeenByReducer.Load(r); ok {
+		for thread, ts := range stored.(map[string]time.Time) {
+			seqSeen[thread] = ts
+		}
+	}
+	for key, ts := range r.lastSeen {
+		thread, _ := splitSeriesKey(key)
+		if ts.After(seqSeen[thread]) {
+			seqSeen[thread] = ts
+		}
+	}
+	for thread := range r.seq {
+		if openThreads[thread] || liveThreads[thread] {
+			continue
+		}
+		ts := seqSeen[thread]
+		if ts.IsZero() || ts.Before(cutoff) {
+			delete(r.seq, thread)
+			delete(seqSeen, thread)
+			threadsRemoved++
+		}
+	}
+	seqSeenByReducer.Store(r, seqSeen)
+	return seriesRemoved, threadsRemoved
+}
+
+func splitSeriesKey(key string) (thread, kind string) {
+	thread, kind, ok := strings.Cut(key, "\x00")
+	if !ok {
+		return key, ""
+	}
+	return thread, kind
 }

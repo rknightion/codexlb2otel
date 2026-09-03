@@ -713,3 +713,109 @@ func TestWatcher_ProgressReportsCurrentFileAndOpenResponses(t *testing.T) {
 	// this method exists to exercise.
 	_ = p.OpenResponses
 }
+
+func TestWatcher_StateRetainShrinksPublishedReducerCounts(t *testing.T) {
+	base := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	first := filepath.Join(dir, "2026-08-10T12.jsonl.gz")
+	later := filepath.Join(dir, "2026-08-10T14.jsonl.gz")
+	if err := os.WriteFile(first, buildTimedTurnArchive(t, base, "thread-retain", "req-base", 1, 10), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newWatcher(t, dir, func(c *Config) {
+		c.StateRetain = 0
+		c.now = func() time.Time { return base }
+	})
+	if err := w.Poll(context.Background(), noEmit); err != nil {
+		t.Fatal(err)
+	}
+	before := w.Progress()
+	if before.ReducerSeriesCount != 1 || before.ReducerThreadCount != 1 {
+		t.Fatalf("before eviction reducer counts = series %d threads %d, want 1 and 1",
+			before.ReducerSeriesCount, before.ReducerThreadCount)
+	}
+
+	if err := os.WriteFile(later, buildTimestampedArchive(t, base.Add(2*time.Hour)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.cfg.StateRetain = 30 * time.Minute
+	if err := w.Poll(context.Background(), noEmit); err != nil {
+		t.Fatal(err)
+	}
+	after := w.Progress()
+	if after.ReducerSeriesCount != 0 || after.ReducerThreadCount != 0 {
+		t.Fatalf("after eviction reducer counts = series %d threads %d, want 0 and 0",
+			after.ReducerSeriesCount, after.ReducerThreadCount)
+	}
+}
+
+// buildTimedTurnArchive writes one complete gzip member holding a response.create,
+// one logical-turn timing event, and response.completed. It is intentionally tiny:
+// state-retention tests need one reducer baseline, not fixture-shaped coverage.
+func buildTimedTurnArchive(t *testing.T, ts time.Time, thread, req string, calls, prompt int) []byte {
+	t.Helper()
+	meta, err := json.Marshal(map[string]string{
+		"thread_id": thread, "request_kind": frame.KindTurn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := []string{
+		`{"type":"response.create","model":"gpt-5.6-sol","client_metadata":{"thread_id":"` +
+			thread + `","x-codex-turn-metadata":` + jsonString(t, string(meta)) + `}}`,
+		`{"type":"responsesapi.websocket_timing","timing_metrics":{"timing_scope":"logical_turn",` +
+			`"num_engine_calls":` + jsonInt(t, calls) + `,"engine_total_prompt_tokens_total":` + jsonInt(t, prompt) + `}}`,
+		`{"type":"response.completed","response":{"status":"completed","model":"gpt-5.6-sol"}}`,
+	}
+	lines := make([]byte, 0, len(events)*256)
+	for i, event := range events {
+		rec := map[string]any{
+			"account_id":  "",
+			"direction":   frame.ToCodex,
+			"headers":     map[string]string{"thread-id": thread, "originator": "codex-tui"},
+			"kind":        "responses",
+			"method":      "",
+			"payload":     map[string]string{"text": event},
+			"request_id":  req,
+			"status_code": nil,
+			"timestamp":   ts.Add(time.Duration(i) * time.Millisecond).UTC().Format(time.RFC3339Nano),
+			"transport":   "websocket",
+			"url":         "",
+			"extra":       map[string]any{},
+		}
+		line, err := json.Marshal(rec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines = append(lines, line...)
+		lines = append(lines, '\n')
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(lines); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func jsonString(t *testing.T, s string) string {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func jsonInt(t *testing.T, n int) string {
+	t.Helper()
+	b, err := json.Marshal(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}

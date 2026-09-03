@@ -2,6 +2,7 @@ package tail
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -174,5 +175,61 @@ func TestSave_StampsUpdated(t *testing.T) {
 	}
 	if c.Updated.IsZero() {
 		t.Error("Save did not stamp Updated")
+	}
+}
+
+func TestLoadCheckpoint_AcceptsVersionOneAndWritesCurrentVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	raw := []byte(`{"version":1,"files":{"2026-08-10T10.jsonl.gz":{"offset":1,"size":1}}}`)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := LoadCheckpoint(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Version != checkpointVersion {
+		t.Fatalf("loaded version = %d, want current %d", c.Version, checkpointVersion)
+	}
+	if _, ok := c.Files["2026-08-10T10.jsonl.gz"]; !ok {
+		t.Fatal("version 1 checkpoint offsets were discarded instead of upgraded")
+	}
+	if err := c.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	var onDisk Checkpoint
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &onDisk); err != nil {
+		t.Fatal(err)
+	}
+	if onDisk.Version != checkpointVersion {
+		t.Fatalf("saved checkpoint version = %d, want %d", onDisk.Version, checkpointVersion)
+	}
+}
+
+func TestCheckpoint_PrunesOldFileTombstonesByFilenameDay(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	c := Checkpoint{Files: map[string]FileState{
+		"2026-08-06T23.jsonl.gz": {Deleted: true},
+		"2026-08-07T00.jsonl.gz": {Deleted: true},
+		"2026-08-06T22.jsonl.gz": {Offset: 1, Size: 1},
+		"not-an-archive-name":    {Deleted: true},
+	}}
+
+	if got := c.PruneFileTombstones(now); got != 1 {
+		t.Fatalf("pruned %d tombstones, want 1", got)
+	}
+	if _, ok := c.Files["2026-08-06T23.jsonl.gz"]; ok {
+		t.Fatal("tombstone with filename day more than three days old survived")
+	}
+	for _, keep := range []string{"2026-08-07T00.jsonl.gz", "2026-08-06T22.jsonl.gz", "not-an-archive-name"} {
+		if _, ok := c.Files[keep]; !ok {
+			t.Fatalf("%s was pruned but should have been kept", keep)
+		}
 	}
 }

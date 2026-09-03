@@ -49,6 +49,9 @@ type Config struct {
 	// 09:00 keeps half of yesterday, which is not what "delete yesterday" means. The
 	// two compose - either rule firing is enough to reclaim a file.
 	RetainDays int
+	// StateRetain evicts completed reducer baselines older than this duration,
+	// measured from each series' newest archive event timestamp. Zero disables it.
+	StateRetain time.Duration
 	// Logger receives operational events. Defaults to slog.Default().
 	Logger *slog.Logger
 
@@ -101,9 +104,9 @@ type Watcher struct {
 	// lastSaveAt is when the checkpoint was last written, driving the interval below.
 	lastSaveAt time.Time
 
-	// reducerStateEntries is [len(Prev), len(Seq)] as of the last checkpoint save -
-	// see turn.State's own doc comment for what those two maps hold. Recomputed in
-	// save() rather than on every read, since Snapshot() is already called there.
+	// reducerStateEntries is [len(Prev), len(Seq)] as of the last checkpoint save.
+	// Progress usually reports live reducer counts, but keeping this lets save() keep
+	// its checkpoint-facing accounting explicit.
 	reducerStateEntries [2]int
 
 	// mu guards every field above plus reducer against a self-observability read
@@ -199,11 +202,9 @@ type Progress struct {
 	// OpenResponses is turn.Reducer.Open() - see its own doc comment: "a steadily
 	// growing value means responses are never completing, which is worth alerting on."
 	OpenResponses int
-	// ReducerSeriesCount and ReducerThreadCount are the sizes of the two maps
-	// turn.State persists across a restart as of the last checkpoint save. Neither is
-	// ever pruned (reducer.go's own comment on why in-flight responses are dropped on
-	// restart but these are not), so unbounded growth here is the persisted-state
-	// twin of the OpenResponses leak.
+	// ReducerSeriesCount and ReducerThreadCount are the live sizes of the two maps
+	// turn.State persists across a restart. They move when completed reducer state is
+	// evicted, so operators can verify StateRetain is bounding the checkpoint state.
 	ReducerSeriesCount int
 	ReducerThreadCount int
 }
@@ -247,14 +248,15 @@ func (w *Watcher) publishProgress() {
 	if w.currentFile != "" {
 		offset = w.cp.Files[w.currentFile].Offset
 	}
+	series, threads := w.reducer.StateCounts()
 	w.progress.Store(&Progress{
 		Stats:              w.Stats,
 		Watermark:          w.watermark,
 		CurrentFile:        w.currentFile,
 		CurrentFileOffset:  offset,
 		OpenResponses:      w.reducer.Open(),
-		ReducerSeriesCount: w.reducerStateEntries[0],
-		ReducerThreadCount: w.reducerStateEntries[1],
+		ReducerSeriesCount: series,
+		ReducerThreadCount: threads,
 	})
 	f := w.reducer.InFlight()
 	w.inflight.Store(&f)
@@ -267,7 +269,7 @@ func New(cfg Config, r *turn.Reducer) (*Watcher, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.Restore(cp.Reducer)
+	r.RestoreAt(cp.Reducer, cfg.now().UTC())
 	w := &Watcher{cfg: cfg, reducer: r, cp: cp, log: cfg.Logger}
 	// Publish once before anything can poll, so a metrics collection arriving in the
 	// gap between startup and the first pass reads a zero snapshot rather than one
@@ -351,6 +353,17 @@ func (w *Watcher) Poll(ctx context.Context, emit Emit) error {
 			w.log.Info("evicted in-flight responses that never completed",
 				"count", len(stale), "watermark", w.watermark)
 			if err := emit(ctx, stale); err != nil {
+				return err
+			}
+		}
+	}
+
+	if w.cfg.StateRetain > 0 && !w.watermark.IsZero() {
+		seriesRemoved, threadsRemoved := w.reducer.EvictState(w.watermark.Add(-w.cfg.StateRetain))
+		if seriesRemoved > 0 || threadsRemoved > 0 {
+			w.log.Info("evicted completed reducer state",
+				"series", seriesRemoved, "threads", threadsRemoved, "watermark", w.watermark)
+			if err := w.save(); err != nil {
 				return err
 			}
 		}
@@ -568,6 +581,7 @@ func (w *Watcher) reduce(data []byte) ([]*turn.Turn, int64) {
 // decides whether there is anything to write. The two are separate because an idle host
 // and a busy one need different answers and only one of them can be expressed by a timer.
 func (w *Watcher) save() error {
+	w.cp.PruneFileTombstones(w.cfg.now())
 	st := w.reducer.Snapshot()
 	w.cp.Reducer = st
 	// See Progress/Watcher.reducerStateEntries: the size of the two maps turn.State
