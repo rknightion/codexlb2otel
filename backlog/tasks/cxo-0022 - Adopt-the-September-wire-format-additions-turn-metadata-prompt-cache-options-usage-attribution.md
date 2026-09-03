@@ -3,9 +3,11 @@ id: CXO-0022
 title: >-
   Adopt the September wire-format additions: turn metadata, prompt-cache
   options, usage attribution
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-03 14:11'
+updated_date: '2026-09-03 18:48'
 labels:
   - enhancement
 dependencies:
@@ -43,3 +45,9 @@ Constraints: every new attribute key is a contract decision recorded in internal
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 1 after wiring and baseline lane: decode the frozen September fields into Loki and spans only, test fixtures, and refresh the full-scan baseline if profiler output changes.
+<!-- SECTION:PLAN:END -->

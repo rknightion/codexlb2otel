@@ -3,10 +3,11 @@ id: CXO-0007
 title: >-
   Refresh the stale drift baseline: reasoning_effort "max" and request_kind
   "memory" are now in the capture
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-14 17:00'
-updated_date: '2026-09-03 14:11'
+updated_date: '2026-09-03 18:48'
 labels:
   - enhancement
   - from-gh-issue
@@ -65,6 +66,12 @@ rather than because anything watched for it - which is the argument for the sche
 - [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
 - [ ] #2 go build ./... succeeds
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 1 first lane: add the opaque attribution-items profiler rule, perform the authorised full baseline scan, and prove the privacy and zero-breaking gates.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

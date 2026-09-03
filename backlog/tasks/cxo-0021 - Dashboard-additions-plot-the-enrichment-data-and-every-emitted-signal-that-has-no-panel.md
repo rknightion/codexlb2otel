@@ -3,9 +3,11 @@ id: CXO-0021
 title: >-
   Dashboard additions: plot the enrichment data and every emitted signal that
   has no panel
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-03 14:11'
+updated_date: '2026-09-03 18:48'
 labels:
   - dashboards
 dependencies:
@@ -53,3 +55,9 @@ Deliberately NOT plotted, so nobody adds them later by mistake: gen_ai.provider.
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 1 dashboard lane after enrichment and metrics wiring: add all specified panels, family filtering and deliberate omissions, then root publishes and verifies live.
+<!-- SECTION:PLAN:END -->

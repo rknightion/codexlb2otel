@@ -1,10 +1,11 @@
 ---
 id: CXO-0020
 title: Fix the v2 dashboard name defects and make its coverage check honest
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-03 13:51'
-updated_date: '2026-09-03 14:11'
+updated_date: '2026-09-03 18:48'
 labels:
   - dashboards
 dependencies: []
@@ -41,6 +42,12 @@ Not in scope: adding panels for signals that have none (that is the dashboard-ad
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 1 dashboard lane after wiring: repair real wire names and labels, make sidecar and coverage validation honest, regenerate, then root publishes and reads back.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

@@ -3,10 +3,11 @@ id: CXO-0003
 title: >-
   Probe traffic cannot be excluded from token or latency metrics: codexlb.family
   is stripped from all of them
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-14 16:59'
-updated_date: '2026-09-03 14:11'
+updated_date: '2026-09-03 18:48'
 labels:
   - from-gh-issue
 dependencies: []
@@ -63,6 +64,12 @@ user-vs-subagent" is not answerable in PromQL either. Both are bounded and small
 - [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
 - [ ] #2 go build ./... succeeds
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 1: add the frozen family, effort and thread-source dimensions plus cost emission, measure corpus cardinality, then update dashboards after wiring.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

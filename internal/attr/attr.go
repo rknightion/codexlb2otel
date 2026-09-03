@@ -165,6 +165,14 @@ var registry = []Field{
 	{Key: ThreadSource, Class: Bounded, Cap: 8,
 		Observed: []string{"user", "subagent"},
 		Of:       func(t *turn.Turn) string { return t.ThreadSource }},
+	{Key: APIKeyName, Class: Bounded, Cap: 16,
+		Of: func(t *turn.Turn) string { return t.APIKeyName }},
+	{Key: ProxyStatus, Class: Bounded, Cap: 4,
+		Of: func(t *turn.Turn) string { return t.ProxyStatus }},
+	{Key: ProxyErrorCode, Class: Bounded, Cap: 32,
+		Of: func(t *turn.Turn) string { return t.ProxyErrorCode }},
+	{Key: ProxyFailurePhase, Class: Bounded, Cap: 4,
+		Of: func(t *turn.Turn) string { return t.ProxyFailurePhase }},
 	{Key: SubagentKind, Class: Bounded, Cap: 8,
 		Observed: []string{"collab_spawn", "thread_spawn", "memory_consolidation"},
 		Of:       func(t *turn.Turn) string { return t.SubagentKind }},
@@ -280,6 +288,19 @@ var registry = []Field{
 	{Key: WindowID, Class: Identity, Of: func(t *turn.Turn) string { return t.WindowID }},
 	{Key: InstallationID, Class: Identity, Of: func(t *turn.Turn) string { return t.InstallationID }},
 	{Key: PromptCacheKey, Class: Identity, Of: func(t *turn.Turn) string { return t.PromptCacheKey }},
+	{Key: APIKeyID, Class: Identity, Of: func(t *turn.Turn) string { return t.APIKeyID }},
+	{Key: CostUSD, Class: Identity, Of: func(t *turn.Turn) string {
+		if t.CostUSD == nil {
+			return ""
+		}
+		return strconv.FormatFloat(*t.CostUSD, 'g', -1, 64)
+	}},
+	{Key: ProxyTimeToResponseCreated, Class: Identity, Of: func(t *turn.Turn) string {
+		return positiveFloat(t.ProxyResponseCreatedMS / 1000)
+	}},
+	{Key: ProxyTimeToFirstUpstreamEvent, Class: Identity, Of: func(t *turn.Turn) string {
+		return positiveFloat(t.ProxyFirstUpstreamEventMS / 1000)
+	}},
 	{Key: EngineIDs, Class: Identity, Of: func(t *turn.Turn) string { return t.EngineIDs }},
 	{Key: InstructionsHash, Class: Identity, Of: func(t *turn.Turn) string { return t.InstructionsHash }},
 	{Key: ErrorMessage, Class: Identity, Of: func(t *turn.Turn) string { return t.ErrorMessage }},
@@ -372,6 +393,13 @@ func positiveItoa(n int) string {
 		return ""
 	}
 	return strconv.Itoa(n)
+}
+
+func positiveFloat(n float64) string {
+	if n <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(n, 'g', -1, 64)
 }
 
 var byKey = func() map[string]Field {

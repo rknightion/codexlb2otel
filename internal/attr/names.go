@@ -292,17 +292,28 @@ const (
 	// span this service classifies as invoke_agent. It held the standard
 	// gen_ai.agent.name key until issue #32; see GenAIAgentName above for why it was
 	// moved off it.
-	SubagentTask     = "codexlb.subagent_task"
-	TurnID           = "codexlb.turn_id"
-	ParentTurnID     = "codexlb.parent_turn_id"
-	LogicalTurnID    = "codexlb.logical_turn_id"
-	WindowID         = "codexlb.window_id"
-	InstallationID   = "codexlb.installation_id"
-	PromptCacheKey   = "codexlb.prompt_cache_key"
-	EngineIDs        = "codexlb.engine_ids"
-	InstructionsHash = "codexlb.instructions_hash"
-	ErrorMessage     = "codexlb.error_message"
-	SafetyID         = "codexlb.safety_identifier"
+	SubagentTask   = "codexlb.subagent_task"
+	TurnID         = "codexlb.turn_id"
+	ParentTurnID   = "codexlb.parent_turn_id"
+	LogicalTurnID  = "codexlb.logical_turn_id"
+	WindowID       = "codexlb.window_id"
+	InstallationID = "codexlb.installation_id"
+	PromptCacheKey = "codexlb.prompt_cache_key"
+	// CostUSD and the proxy timings are measurements carried on response spans. They
+	// are registered as Identity-class values so they can never become metric labels;
+	// the dedicated cost counter is the aggregation surface.
+	CostUSD                       = "codexlb.cost_usd"
+	APIKeyID                      = "codexlb.api_key_id"
+	APIKeyName                    = "codexlb.api_key_name"
+	ProxyStatus                   = "codexlb.proxy_status"
+	ProxyErrorCode                = "codexlb.proxy_error_code"
+	ProxyFailurePhase             = "codexlb.proxy_failure_phase"
+	ProxyTimeToResponseCreated    = "codexlb.proxy.time_to_response_created"
+	ProxyTimeToFirstUpstreamEvent = "codexlb.proxy.time_to_first_upstream_event"
+	EngineIDs                     = "codexlb.engine_ids"
+	InstructionsHash              = "codexlb.instructions_hash"
+	ErrorMessage                  = "codexlb.error_message"
+	SafetyID                      = "codexlb.safety_identifier"
 	// TransportEvent is the server's plain-text reason for a websocket lifecycle event
 	// - "no close frame received or sent", "received 1012 (service restart)". Prose,
 	// so it is identity-class; FrameType is the bounded classification of the same
@@ -465,6 +476,7 @@ const (
 	MetricBaselineResets  = "codexlb.baseline_resets"         // counter, {response}
 	MetricAttrsRejected   = "codexlb.attributes_rejected"     // counter, {attribute} - the guard's own output
 	MetricImageGenTokens  = "codexlb.image_gen_tokens"        // counter, {token}
+	MetricCostUSD         = "codexlb.cost_usd"                // float counter, {USD}
 
 	// MetricWebSearch: issue #18 proposed renaming this to "the convention's
 	// server-tool-use name". Checked against the live registry
@@ -640,6 +652,19 @@ const (
 	// a batch count nor a retry count has an accessor anywhere in internal/sink (see
 	// this feature's own delivery notes for what was left out and why).
 	MetricSelfSinkPending = "codexlb.selfobs.sink_pending" // gauge, {record}, by codexlb.selfobs.sink
+
+	MetricSelfEnrichLookups        = "codexlb.selfobs.enrich_lookups"         // counter, {lookup}, by codexlb.selfobs.result
+	MetricSelfEnrichLookupDuration = "codexlb.selfobs.enrich_lookup_duration" // histogram, s
+	MetricSelfEnrichCacheEntries   = "codexlb.selfobs.enrich_cache_entries"   // gauge, {entry}
+	MetricArchiveDriftFindings     = "codexlb.archive_drift_findings"         // gauge, {finding}, by codexlb.selfobs.severity
+)
+
+// Self-observability dimensions do not describe a Turn and therefore are not in the
+// Turn-backed registry. They remain frozen here so the producer and dashboards share
+// one spelling.
+const (
+	SelfObsResult   = "codexlb.selfobs.result"
+	SelfObsSeverity = "codexlb.selfobs.severity"
 )
 
 // Token type values, per the convention's gen_ai.token.type.

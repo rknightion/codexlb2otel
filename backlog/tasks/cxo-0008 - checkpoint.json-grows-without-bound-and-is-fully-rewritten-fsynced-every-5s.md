@@ -1,10 +1,11 @@
 ---
 id: CXO-0008
 title: checkpoint.json grows without bound and is fully rewritten + fsynced every 5s
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-14 17:00'
-updated_date: '2026-09-03 13:53'
+updated_date: '2026-09-03 18:48'
 labels:
   - enhancement
   - from-gh-issue
@@ -84,6 +85,12 @@ The size is already observable: `Watcher.Progress` exposes `ReducerSeriesCount` 
 - [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
 - [ ] #2 go build ./... succeeds
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 1: implement age-anchored reducer and tombstone eviction with mid-turn exemption and baseline-reset regression coverage, then measure live after deployment.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

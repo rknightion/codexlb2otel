@@ -1,10 +1,11 @@
 ---
 id: CXO-0019
 title: Restyle the live monitor onto design system v2 (family follower)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-31 12:13'
-updated_date: '2026-09-03 13:43'
+updated_date: '2026-09-03 18:48'
 labels:
   - design-system
 dependencies: []
@@ -32,6 +33,12 @@ Scope: the single static ui/index.html with inline CSS/vanilla JS, served via go
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 - [ ] #2 make check green
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 1: adopt the landed family token block, self-host fonts, preserve the live tree semantics, and validate light/dark, accessibility and no-network behavior.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

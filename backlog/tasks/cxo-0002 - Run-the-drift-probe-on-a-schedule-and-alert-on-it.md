@@ -1,10 +1,11 @@
 ---
 id: CXO-0002
 title: Run the drift probe on a schedule and alert on it
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-14 16:58'
-updated_date: '2026-09-03 14:11'
+updated_date: '2026-09-03 18:48'
 labels:
   - enhancement
   - from-gh-issue
@@ -51,6 +52,12 @@ from `-full` is the only correct way to accept a change.
 - [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
 - [ ] #2 go build ./... succeeds
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 1: replace the non-runnable scheduled workflow with the frozen in-process probe, embed the full-scan baseline, expose findings, then wire and verify live.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

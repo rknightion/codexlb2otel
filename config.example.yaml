@@ -65,11 +65,30 @@ archive:
   # before dropping any of it), and the newest file is never deleted at all (codex-lb
   # is still appending to it).
   retain_days: 1
+  # state_retain prunes reducer baselines for completed series after this much
+  # archive-event time. Open responses are exempt. Zero disables state eviction.
+  state_retain: 168h
   # delete_after is the rolling-duration alternative, for keeping a fixed margin
   # rather than a calendar day. Same two guards, same writable-mount requirement.
   # ZERO MEANS NEVER. Either rule firing is enough to reclaim a file, so leaving this
   # at zero alongside retain_days above is the normal case, not a contradiction.
   delete_after: 0s
+
+postgres:
+  # Enrichment ships disabled. Enable only with a SELECT-only role scoped to
+  # request_logs, api_keys and accounts.
+  enabled: false
+  dsn: "${CODEXLB2OTEL_POSTGRES_DSN}"
+  lookup_timeout: 2s
+  prefetch_interval: 5s
+  cache_entries: 50000
+
+probe:
+  # The in-process drift scan ships disabled; deployments with the live archive turn
+  # it on deliberately. Sampled scans detect common drift but never accept a baseline.
+  enabled: false
+  interval: 24h
+  sampled: true
 
 loki:
   # enabled turns on the native Loki log push. This is the ONLY log transport this

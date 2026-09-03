@@ -1,10 +1,11 @@
 ---
 id: CXO-0001
 title: 'P5 - Postgres enrichment: join archive turns to request_logs'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-14 16:58'
-updated_date: '2026-09-03 14:11'
+updated_date: '2026-09-03 18:48'
 labels:
   - enhancement
   - from-gh-issue
@@ -49,6 +50,12 @@ present there, and measure the join hit rate on the corpus first.
 - [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
 - [ ] #2 go build ./... succeeds
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 1: implement the frozen pgx enrichment seam, unit-tested cache and failure behavior, then wire it at root and verify live on camden.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

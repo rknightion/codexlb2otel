@@ -292,6 +292,44 @@ func TestEmptyFieldsAreOmitted(t *testing.T) {
 	}
 }
 
+func TestEnrichmentFieldsFollowTheirFrozenClasses(t *testing.T) {
+	cost := 1.25
+	tn := &turn.Turn{
+		CostUSD:                   &cost,
+		APIKeyID:                  "key-1",
+		APIKeyName:                "primary",
+		ProxyStatus:               "completed",
+		ProxyErrorCode:            "upstream_timeout",
+		ProxyFailurePhase:         "connect",
+		ProxyResponseCreatedMS:    1250,
+		ProxyFirstUpstreamEventMS: 2500,
+	}
+
+	want := map[string]Class{
+		CostUSD:                       Identity,
+		APIKeyID:                      Identity,
+		APIKeyName:                    Bounded,
+		ProxyStatus:                   Bounded,
+		ProxyErrorCode:                Bounded,
+		ProxyFailurePhase:             Bounded,
+		ProxyTimeToResponseCreated:    Identity,
+		ProxyTimeToFirstUpstreamEvent: Identity,
+	}
+	for key, class := range want {
+		field, ok := Lookup(key)
+		if !ok {
+			t.Errorf("%q is not registered", key)
+			continue
+		}
+		if field.Class != class {
+			t.Errorf("%q class = %s, want %s", key, field.Class, class)
+		}
+		if got := field.Of(tn); got == "" {
+			t.Errorf("%q extractor returned empty", key)
+		}
+	}
+}
+
 // The registry is the contract; a duplicate key would silently shadow a field, and a
 // field with no extractor would panic at emit rather than at startup.
 func TestRegistryIsWellFormed(t *testing.T) {

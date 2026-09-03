@@ -80,6 +80,8 @@ func (s Secret) Resolve() (string, error) {
 type Config struct {
 	Service   Service   `yaml:"service" json:"service"`
 	Archive   Archive   `yaml:"archive" json:"archive"`
+	Postgres  Postgres  `yaml:"postgres" json:"postgres"`
+	Probe     Probe     `yaml:"probe" json:"probe"`
 	Loki      Loki      `yaml:"loki" json:"loki"`
 	OTLP      OTLP      `yaml:"otlp" json:"otlp"`
 	AgentO11y AgentO11y `yaml:"agento11y" json:"agento11y"`
@@ -130,6 +132,28 @@ type Archive struct {
 	// old", which would keep half of yesterday. The day comes from the FILENAME,
 	// which codex-lb builds in UTC - see tail.archiveDay.
 	RetainDays int `yaml:"retain_days" json:"retain_days"`
+	// StateRetain evicts completed reducer baselines older than this duration, measured
+	// on the archive event clock. Zero disables state eviction.
+	StateRetain time.Duration `yaml:"state_retain" json:"state_retain"`
+}
+
+// Postgres configures optional request_logs enrichment. It ships disabled and every
+// lookup is independently timeout-bounded so an unavailable database cannot stop the
+// archive pipeline.
+type Postgres struct {
+	Enabled          bool          `yaml:"enabled" json:"enabled"`
+	DSN              Secret        `yaml:"dsn" json:"dsn"`
+	LookupTimeout    time.Duration `yaml:"lookup_timeout" json:"lookup_timeout"`
+	PrefetchInterval time.Duration `yaml:"prefetch_interval" json:"prefetch_interval"`
+	CacheEntries     int           `yaml:"cache_entries" json:"cache_entries"`
+}
+
+// Probe configures the in-process archive drift scan. It ships disabled and is
+// enabled deliberately only where a real archive and an embedded baseline exist.
+type Probe struct {
+	Enabled  bool          `yaml:"enabled" json:"enabled"`
+	Interval time.Duration `yaml:"interval" json:"interval"`
+	Sampled  bool          `yaml:"sampled" json:"sampled"`
 }
 
 // Loki configures the log sink. Native push, not OTLP: the label and structured
@@ -363,7 +387,16 @@ func Default() Config {
 			CheckpointInterval: 15 * time.Minute,
 			ChunkBytes:         16 << 20,
 			DeleteAfter:        0, // never; see the field comment
+			StateRetain:        168 * time.Hour,
 		},
+		Postgres: Postgres{
+			Enabled:          false,
+			DSN:              "${CODEXLB2OTEL_POSTGRES_DSN}",
+			LookupTimeout:    2 * time.Second,
+			PrefetchInterval: 5 * time.Second,
+			CacheEntries:     50000,
+		},
+		Probe: Probe{Enabled: false, Interval: 24 * time.Hour, Sampled: true},
 		Loki: Loki{
 			URL:    "https://logs-prod-035.grafana.net/loki/api/v1/push",
 			Labels: append([]string(nil), attr.DefaultLabels...),
@@ -459,8 +492,29 @@ func (c Config) Validate() error {
 	if c.Archive.RetainDays < 0 {
 		add("archive.retain_days cannot be negative, got %d", c.Archive.RetainDays)
 	}
+	if c.Archive.StateRetain < 0 {
+		add("archive.state_retain cannot be negative, got %s", c.Archive.StateRetain)
+	}
 	if c.Archive.ChunkBytes <= 0 {
 		add("archive.chunk_bytes must be positive, got %d", c.Archive.ChunkBytes)
+	}
+
+	if c.Postgres.Enabled {
+		if _, err := c.Postgres.DSN.Resolve(); err != nil {
+			add("postgres.dsn: %v", err)
+		}
+		if c.Postgres.LookupTimeout <= 0 {
+			add("postgres.lookup_timeout must be positive, got %s", c.Postgres.LookupTimeout)
+		}
+		if c.Postgres.PrefetchInterval <= 0 {
+			add("postgres.prefetch_interval must be positive, got %s", c.Postgres.PrefetchInterval)
+		}
+		if c.Postgres.CacheEntries <= 0 {
+			add("postgres.cache_entries must be positive, got %d", c.Postgres.CacheEntries)
+		}
+	}
+	if c.Probe.Enabled && c.Probe.Interval <= 0 {
+		add("probe.interval must be positive, got %s", c.Probe.Interval)
 	}
 
 	if c.Loki.Enabled {

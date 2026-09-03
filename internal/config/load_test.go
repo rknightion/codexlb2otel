@@ -51,7 +51,13 @@ func TestParse_ParsesDurationStrings(t *testing.T) {
 	yaml := `
 archive:
   poll_interval: "45s"
+  state_retain: "168h"
   delete_after: "72h"
+postgres:
+  lookup_timeout: "2s"
+  prefetch_interval: "5s"
+probe:
+  interval: "24h"
 loki:
   enabled: true
   user: "1"
@@ -75,7 +81,11 @@ otlp:
 		want time.Duration
 	}{
 		{"archive.poll_interval", cfg.Archive.PollInterval, 45 * time.Second},
+		{"archive.state_retain", cfg.Archive.StateRetain, 168 * time.Hour},
 		{"archive.delete_after", cfg.Archive.DeleteAfter, 72 * time.Hour},
+		{"postgres.lookup_timeout", cfg.Postgres.LookupTimeout, 2 * time.Second},
+		{"postgres.prefetch_interval", cfg.Postgres.PrefetchInterval, 5 * time.Second},
+		{"probe.interval", cfg.Probe.Interval, 24 * time.Hour},
 		{"loki.batch_wait", cfg.Loki.BatchWait, 3 * time.Second},
 		{"loki.timeout", cfg.Loki.Timeout, 10 * time.Second},
 		{"otlp.metrics.interval", cfg.OTLP.Metrics.Interval, 90 * time.Second},
@@ -213,6 +223,12 @@ func TestLoad_ExampleConfigIsDeployable(t *testing.T) {
 	// makes with the credential in hand, not an accident.
 	if cfg.AgentO11y.Enabled {
 		t.Error("agento11y.enabled is true; without sigil:write on the token that 401s and holds the checkpoint")
+	}
+	if cfg.Postgres.Enabled {
+		t.Error("postgres.enabled is true; enrichment must ship disabled until a read-only DSN is deployed")
+	}
+	if cfg.Probe.Enabled {
+		t.Error("probe.enabled is true; the in-process archive scan must ship disabled and be enabled deliberately")
 	}
 	if cfg.Loki.User == "" || cfg.OTLP.InstanceID == "" || cfg.AgentO11y.User == "" {
 		t.Error("a basic-auth username is missing; that is a 401 at push time, not a startup error")

@@ -53,6 +53,10 @@ var semconvJustified = map[string]string{
 	ThreadSource:         "user vs subagent thread origin - no GenAI concept at this granularity",
 	SubagentKind:         "how a subagent thread was created - no GenAI concept",
 	Originator:           "the client binary (codex-tui / codex_exec / the probe) - no GenAI concept",
+	APIKeyName:           "operator-facing codex-lb API key alias; no GenAI equivalent",
+	ProxyStatus:          "codex-lb proxy outcome, distinct from the model response status",
+	ProxyErrorCode:       "codex-lb proxy error code; error.type is already carried separately",
+	ProxyFailurePhase:    "codex-lb proxy pipeline phase; no GenAI equivalent",
 
 	// --- identifiers and lifecycle detail below gen_ai.conversation.id / gen_ai.response.id ---
 	// Forking a conversation is a codex-lb concept, not a model-API one, so there is
@@ -73,19 +77,23 @@ var semconvJustified = map[string]string{
 		"name, and unbounded per invocation; gen_ai.agent.name carries this service's " +
 		"own agent identity instead (issue #32)",
 
-	RequestID:        idJustification,
-	SessionID:        idJustification,
-	ThreadID:         idJustification,
-	ParentThreadID:   idJustification,
-	TurnID:           idJustification,
-	ParentTurnID:     idJustification,
-	LogicalTurnID:    idJustification,
-	WindowID:         idJustification,
-	InstallationID:   idJustification,
-	PromptCacheKey:   idJustification,
-	EngineIDs:        idJustification,
-	InstructionsHash: idJustification,
-	ErrorMessage:     idJustification,
+	RequestID:                     idJustification,
+	SessionID:                     idJustification,
+	ThreadID:                      idJustification,
+	ParentThreadID:                idJustification,
+	TurnID:                        idJustification,
+	ParentTurnID:                  idJustification,
+	LogicalTurnID:                 idJustification,
+	WindowID:                      idJustification,
+	InstallationID:                idJustification,
+	PromptCacheKey:                idJustification,
+	APIKeyID:                      idJustification,
+	CostUSD:                       "codex-lb's computed charge; the GenAI conventions define token usage but no cost attribute",
+	ProxyTimeToResponseCreated:    "codex-lb proxy-side timing; no GenAI equivalent",
+	ProxyTimeToFirstUpstreamEvent: "codex-lb proxy-side timing; no GenAI equivalent",
+	EngineIDs:                     idJustification,
+	InstructionsHash:              idJustification,
+	ErrorMessage:                  idJustification,
 
 	// --- sensitive ---
 	SafetyID: "maps 1:1 to a human; the convention has no notion of an operator identity at all",

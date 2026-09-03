@@ -55,6 +55,18 @@ type Turn struct {
 	ForkedFromThreadID string `json:"forked_from_thread_id,omitempty"`
 	PromptCacheKey     string `json:"prompt_cache_key,omitempty"`
 
+	// Postgres enrichment fields. CostUSD is a pointer because an explicitly computed
+	// zero cost is different from a lookup miss. The proxy fields are codex-lb's view
+	// of the same response and are carried to Loki and Tempo, not re-derived here.
+	CostUSD                   *float64 `json:"cost_usd,omitempty"`
+	APIKeyID                  string   `json:"api_key_id,omitempty"`
+	APIKeyName                string   `json:"api_key_name,omitempty"`
+	ProxyStatus               string   `json:"proxy_status,omitempty"`
+	ProxyErrorCode            string   `json:"proxy_error_code,omitempty"`
+	ProxyFailurePhase         string   `json:"proxy_failure_phase,omitempty"`
+	ProxyResponseCreatedMS    float64  `json:"proxy_response_created_ms,omitempty"`
+	ProxyFirstUpstreamEventMS float64  `json:"proxy_first_upstream_event_ms,omitempty"`
+
 	// Low cardinality - safe as metric attributes.
 	Model     string `json:"model,omitempty"`
 	Status    string `json:"status,omitempty"`
