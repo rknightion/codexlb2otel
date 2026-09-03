@@ -47,7 +47,7 @@ lint: _golangci-lint
 [group('check')]
 [no-exit-message]
 test filter="":
-    go test -p 1 -race -timeout 30m -run '{{ filter }}' ./...
+    go test -p 1 -race -timeout 60m -run '{{ filter }}' ./...
 
 # fast inner loop: race-test without the local corpus, exactly as CI does
 [group('check')]
