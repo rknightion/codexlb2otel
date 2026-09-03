@@ -1,25 +1,29 @@
 {
   "version": 3,
   "coverage": {
-    "files": 26,
-    "file_bytes": 2178562038,
-    "read_bytes": 2178562038,
+    "files": 58,
+    "file_bytes": 7581642505,
+    "read_bytes": 7581642505,
     "sampled": false
   },
   "storage": {
     "multi_member": true,
-    "lines_per_member": 1.19,
+    "lines_per_member": 1.22,
     "filename_patterns": [
       "N-N-NTN.jsonl.gz"
     ],
     "payload_framing": [
-      "json-object"
+      "json-object",
+      "sse-event-stream"
     ],
     "payload_shapes": [
-      "object{text}"
+      "object{client_metadata,include,input,instructions,model,parallel_tool_calls,prompt_cache_key,reasoning,service_tier,store,stream,text,tool_choice}",
+      "object{client_metadata,include,input,instructions,model,parallel_tool_calls,prompt_cache_key,reasoning,store,stream,text,tool_choice}",
+      "object{text}",
+      "text:not-a-string"
     ],
     "undecodable_line_share": 0,
-    "unparsed_payload_share": 0
+    "unparsed_payload_share": 0.0223
   },
   "record": {
     "keys": [
@@ -46,6 +50,9 @@
         "1012",
         "\u003cnil\u003e"
       ],
+      "extra.event_format": [
+        "sse"
+      ],
       "extra.frame_type": [
         "close",
         "error",
@@ -55,25 +62,32 @@
         "responses"
       ],
       "method": [
-        "GET"
+        "GET",
+        "POST"
       ],
       "status_code": [
-        ""
+        "",
+        "200"
       ],
       "transport": [
+        "http",
         "websocket"
       ],
       "url": null
     },
     "headers": [
+      "accept",
+      "accept-encoding",
       "authorization",
       "chatgpt-account-id",
+      "content-type",
       "openai-beta",
       "originator",
       "session-id",
       "thread-id",
       "traceparent",
       "tracestate",
+      "user-agent",
       "x-client-request-id",
       "x-codex-beta-features",
       "x-codex-installation-id",
@@ -81,20 +95,32 @@
       "x-codex-turn-metadata",
       "x-codex-turn-state",
       "x-codex-window-id",
+      "x-oai-attestation",
+      "x-openai-internal-codex-responses-lite",
       "x-openai-memgen-request",
       "x-openai-subagent",
       "x-request-id"
     ],
     "header_values": {
+      "accept": [
+        "text/event-stream"
+      ],
+      "accept-encoding": [
+        "\u003cset\u003e"
+      ],
       "authorization": [
         "\u003cset\u003e"
+      ],
+      "content-type": [
+        "application/json"
       ],
       "openai-beta": [
         "responses_websockets=2026-02-06"
       ],
       "originator": [
         "codex-tui",
-        "codex_exec"
+        "codex_exec",
+        "codex_work_desktop"
       ],
       "traceparent": [
         "\u003cset\u003e"
@@ -109,6 +135,12 @@
         "\u003cset\u003e"
       ],
       "x-codex-turn-state": [
+        "\u003cset\u003e"
+      ],
+      "x-oai-attestation": [
+        "\u003cset\u003e"
+      ],
+      "x-openai-internal-codex-responses-lite": [
         "\u003cset\u003e"
       ],
       "x-openai-memgen-request": [
@@ -149,11 +181,24 @@
   },
   "events": {
     "\u003cheader\u003e": {
-      "magnitude": 6,
+      "magnitude": 7,
       "paths": {
         "header.x-codex-turn-metadata{}": {
           "types": [
             "object"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.agent_name": {
+          "types": [
+            "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.auto_review_enabled": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
           ]
         },
         "header.x-codex-turn-metadata{}.compaction": {
@@ -174,7 +219,8 @@
             "string"
           ],
           "values": [
-            "mid_turn"
+            "mid_turn",
+            "pre_turn"
           ]
         },
         "header.x-codex-turn-metadata{}.compaction.reason": {
@@ -198,6 +244,11 @@
             "auto"
           ]
         },
+        "header.x-codex-turn-metadata{}.context_window_id": {
+          "types": [
+            "string"
+          ]
+        },
         "header.x-codex-turn-metadata{}.forked_from_thread_id": {
           "types": [
             "string"
@@ -206,6 +257,22 @@
         "header.x-codex-turn-metadata{}.installation_id": {
           "types": [
             "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.node_repl_auto_review_required": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.node_repl_disabled": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
           ]
         },
         "header.x-codex-turn-metadata{}.parent_thread_id": {
@@ -229,12 +296,27 @@
             "turn"
           ]
         },
+        "header.x-codex-turn-metadata{}.root_turn_id": {
+          "types": [
+            "string"
+          ]
+        },
         "header.x-codex-turn-metadata{}.sandbox": {
           "types": [
             "string"
           ],
           "values": [
-            "none"
+            "none",
+            "seatbelt"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.sandbox_mode": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "danger-full-access",
+            "read-only"
           ]
         },
         "header.x-codex-turn-metadata{}.session_id": {
@@ -262,6 +344,7 @@
           "values": [
             "memory_consolidation",
             "subagent",
+            "system",
             "user"
           ]
         },
@@ -278,6 +361,11 @@
         "header.x-codex-turn-metadata{}.window_id": {
           "types": [
             "string"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.window_number": {
+          "types": [
+            "number"
           ]
         },
         "header.x-codex-turn-metadata{}.workspaces": {
@@ -344,7 +432,28 @@
         },
         "additional_rate_limits.GPT-5.3-Codex-Spark.secondary": {
           "types": [
-            "null"
+            "null",
+            "object"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.secondary.reset_after_seconds": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.secondary.reset_at": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.secondary.used_percent": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.GPT-5.3-Codex-Spark.secondary.window_minutes": {
+          "types": [
+            "number"
           ]
         },
         "code_review_rate_limits": {
@@ -371,7 +480,8 @@
             "bool"
           ],
           "values": [
-            "false"
+            "false",
+            "true"
           ]
         },
         "credits.unlimited": {
@@ -482,6 +592,22 @@
             "gpt-5.6-luna"
           ]
         },
+        "headers.x-codex-turn-state": {
+          "types": [
+            "string"
+          ]
+        },
+        "headers.x-models-etag": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "W/\"796bcb5a04b039f45c70b61798ff2aec\"",
+            "W/\"7aab8774608793f66cebc9fcca613561\"",
+            "W/\"813645c2d5c52994b9518c36f731f646\"",
+            "W/\"e039a011d7349e83bf2856838464bfcc\""
+          ]
+        },
         "type": {
           "types": [
             "string"
@@ -516,6 +642,7 @@
         },
         "error.param": {
           "types": [
+            "null",
             "string"
           ],
           "values": [
@@ -667,9 +794,48 @@
             "string"
           ]
         },
+        "response.prompt_cache_diagnostics": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.prompt_cache_diagnostics.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "unavailable"
+          ]
+        },
         "response.prompt_cache_key": {
           "types": [
             "string"
+          ]
+        },
+        "response.prompt_cache_options": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.prompt_cache_options.comparison_response_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.prompt_cache_options.mode": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "implicit"
+          ]
+        },
+        "response.prompt_cache_options.ttl": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "30m"
           ]
         },
         "response.prompt_cache_retention": {
@@ -700,6 +866,7 @@
           "values": [
             "high",
             "low",
+            "max",
             "medium",
             "xhigh"
           ]
@@ -818,6 +985,26 @@
           ]
         },
         "response.text.format.schema.properties.rollout_summary.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.title": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.title.maxLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.title.minLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.title.type": {
           "types": [
             "string"
           ]
@@ -1071,6 +1258,71 @@
             "object"
           ]
         },
+        "response.usage.attribution": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.usage.attribution.items": {
+          "types": [
+            "identifier_map"
+          ]
+        },
+        "response.usage.attribution.request_fields": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.usage.attribution.request_fields.instructions": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.usage.attribution.request_fields.instructions.cache_write_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.attribution.request_fields.instructions.cached_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.attribution.request_fields.instructions.input_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.attribution.request_fields.instructions.output_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.attribution.request_fields.text.format": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.usage.attribution.request_fields.text.format.cache_write_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.attribution.request_fields.text.format.cached_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.attribution.request_fields.text.format.input_tokens": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.usage.attribution.request_fields.text.format.output_tokens": {
+          "types": [
+            "number"
+          ]
+        },
         "response.usage.input_tokens": {
           "types": [
             "number"
@@ -1148,7 +1400,8 @@
             "string"
           ],
           "values": [
-            "bio"
+            "bio",
+            "cyber"
           ]
         },
         "sequence_number": {
@@ -1301,6 +1554,11 @@
             "string"
           ]
         },
+        "client_metadata.root_turn_id": {
+          "types": [
+            "string"
+          ]
+        },
         "client_metadata.session_id": {
           "types": [
             "string"
@@ -1342,11 +1600,27 @@
         "client_metadata.x-codex-turn-metadata": {
           "types": [
             "string"
+          ],
+          "values": [
+            "{\"request_kind\":\"memory\"}"
           ]
         },
         "client_metadata.x-codex-turn-metadata{}": {
           "types": [
             "object"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.agent_name": {
+          "types": [
+            "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.auto_review_enabled": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
           ]
         },
         "client_metadata.x-codex-turn-metadata{}.code_mode_tool_names": {
@@ -1372,7 +1646,8 @@
             "string"
           ],
           "values": [
-            "mid_turn"
+            "mid_turn",
+            "pre_turn"
           ]
         },
         "client_metadata.x-codex-turn-metadata{}.compaction.reason": {
@@ -1396,6 +1671,11 @@
             "auto"
           ]
         },
+        "client_metadata.x-codex-turn-metadata{}.context_window_id": {
+          "types": [
+            "string"
+          ]
+        },
         "client_metadata.x-codex-turn-metadata{}.forked_from_thread_id": {
           "types": [
             "string"
@@ -1404,6 +1684,22 @@
         "client_metadata.x-codex-turn-metadata{}.installation_id": {
           "types": [
             "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.node_repl_auto_review_required": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.node_repl_disabled": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
           ]
         },
         "client_metadata.x-codex-turn-metadata{}.parent_thread_id": {
@@ -1427,6 +1723,11 @@
             "turn"
           ]
         },
+        "client_metadata.x-codex-turn-metadata{}.root_turn_id": {
+          "types": [
+            "string"
+          ]
+        },
         "client_metadata.x-codex-turn-metadata{}.sandbox": {
           "types": [
             "string"
@@ -1434,6 +1735,15 @@
           "values": [
             "none",
             "seatbelt"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.sandbox_mode": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "danger-full-access",
+            "read-only"
           ]
         },
         "client_metadata.x-codex-turn-metadata{}.session_id": {
@@ -1461,6 +1771,7 @@
           "values": [
             "memory_consolidation",
             "subagent",
+            "system",
             "user"
           ]
         },
@@ -1474,9 +1785,22 @@
             "number"
           ]
         },
+        "client_metadata.x-codex-turn-metadata{}.turn_trigger": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "goal"
+          ]
+        },
         "client_metadata.x-codex-turn-metadata{}.window_id": {
           "types": [
             "string"
+          ]
+        },
+        "client_metadata.x-codex-turn-metadata{}.window_number": {
+          "types": [
+            "number"
           ]
         },
         "client_metadata.x-codex-turn-metadata{}.workspaces": {
@@ -1608,6 +1932,11 @@
         "input[].output[]": {
           "types": [
             "object"
+          ]
+        },
+        "input[].output[].image_url": {
+          "types": [
+            "string"
           ]
         },
         "input[].output[].text": {
@@ -1783,6 +2112,7 @@
           "values": [
             "high",
             "low",
+            "max",
             "medium",
             "xhigh"
           ]
@@ -1864,6 +2194,26 @@
           ]
         },
         "text.format.schema.properties.rollout_summary.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "text.format.schema.properties.title": {
+          "types": [
+            "object"
+          ]
+        },
+        "text.format.schema.properties.title.maxLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "text.format.schema.properties.title.minLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "text.format.schema.properties.title.type": {
           "types": [
             "string"
           ]
@@ -2043,6 +2393,32 @@
             "string"
           ]
         },
+        "response.prompt_cache_options": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.prompt_cache_options.comparison_response_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.prompt_cache_options.mode": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "implicit"
+          ]
+        },
+        "response.prompt_cache_options.ttl": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "30m"
+          ]
+        },
         "response.prompt_cache_retention": {
           "types": [
             "string"
@@ -2071,6 +2447,7 @@
           "values": [
             "high",
             "low",
+            "max",
             "medium",
             "xhigh"
           ]
@@ -2188,6 +2565,26 @@
           ]
         },
         "response.text.format.schema.properties.rollout_summary.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.title": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.title.maxLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.title.minLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.title.type": {
           "types": [
             "string"
           ]
@@ -2508,7 +2905,7 @@
       }
     },
     "response.custom_tool_call_input.done": {
-      "magnitude": 3,
+      "magnitude": 4,
       "paths": {
         "input": {
           "types": [
@@ -2733,9 +3130,48 @@
             "string"
           ]
         },
+        "response.prompt_cache_diagnostics": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.prompt_cache_diagnostics.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "unavailable"
+          ]
+        },
         "response.prompt_cache_key": {
           "types": [
             "string"
+          ]
+        },
+        "response.prompt_cache_options": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.prompt_cache_options.comparison_response_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.prompt_cache_options.mode": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "implicit"
+          ]
+        },
+        "response.prompt_cache_options.ttl": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "30m"
           ]
         },
         "response.prompt_cache_retention": {
@@ -2766,6 +3202,7 @@
           "values": [
             "high",
             "low",
+            "max",
             "medium",
             "xhigh"
           ]
@@ -2883,6 +3320,26 @@
           ]
         },
         "response.text.format.schema.properties.rollout_summary.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.title": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.title.maxLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.title.minLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.title.type": {
           "types": [
             "string"
           ]
@@ -3521,10 +3978,37 @@
         },
         "safety_buffering": {
           "types": [
-            "bool"
+            "bool",
+            "object"
           ],
           "values": [
             "false"
+          ]
+        },
+        "safety_buffering.reasons": {
+          "types": [
+            "array"
+          ]
+        },
+        "safety_buffering.retry_model": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "gpt-5.6-luna"
+          ]
+        },
+        "safety_buffering.use_cases": {
+          "types": [
+            "array"
+          ]
+        },
+        "safety_buffering.use_cases[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "cyber"
           ]
         },
         "sequence_number": {

@@ -419,14 +419,16 @@ func TestNullDecodesIntoAnyTypeWithoutAbandoningTheEvent(t *testing.T) {
 
 func TestOpaque(t *testing.T) {
 	for path, want := range map[string]bool{
-		"response.tools[].parameters":          true,
-		"response.tools[].tools[].parameters":  true,
-		"response.tools[].format":              true,
-		"input[].tools[].parameters":           true,
-		"response.tools[].name":                false,
-		"response.tools[].parameters.required": false,
-		"parameters":                           false,
-		"reasoning.format":                     false,
+		"response.tools[].parameters":                          true,
+		"response.tools[].tools[].parameters":                  true,
+		"response.tools[].format":                              true,
+		"input[].tools[].parameters":                           true,
+		"response.tools[].name":                                false,
+		"response.tools[].parameters.required":                 false,
+		"response.usage.attribution.items":                     true,
+		"response.usage.attribution.items.rs_abc.input_tokens": false,
+		"parameters":       false,
+		"reasoning.format": false,
 		// The client's per-installation tool catalog, embedded inside
 		// x-codex-turn-metadata - see opaque's doc comment for why this floods the
 		// same path budget tools[].parameters already needed protecting from.
@@ -478,5 +480,33 @@ func TestOpaque_WorkspacesNeverBecomesAPath(t *testing.T) {
 	if _, ok := ep.Paths["client_metadata.x-codex-turn-metadata{}.workspaces"]; !ok {
 		t.Error("workspaces vanished entirely; presence and type must still be recorded " +
 			"so it appearing or changing shape is still a finding")
+	}
+}
+
+// TestOpaque_AttributionItemsNeverBecomesIdentifierPaths covers the same privacy
+// boundary as workspaces, but for usage attribution. The object is keyed by
+// per response item IDs, so walking it turns those IDs into path segments and can
+// exhaust the profiler budget before protocol fields are compared.
+func TestOpaque_AttributionItemsNeverBecomesIdentifierPaths(t *testing.T) {
+	if got := opaqueKind("response.usage.attribution.items"); got != "identifier_map" {
+		t.Errorf("opaqueKind(attribution items) = %q, want identifier_map", got)
+	}
+
+	ep := &EventProfile{Paths: map[string]*Path{}}
+	var v any
+	if err := json.Unmarshal([]byte(`{"response":{"usage":{"attribution":{"items":{
+		"rs_private_identifier":{"input_tokens":10,"output_tokens":2},
+		"amsg_private_identifier":{"cache_write_tokens":4}}}}}}`), &v); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	walk(ep, "", v)
+
+	for path := range ep.Paths {
+		if strings.Contains(path, "private_identifier") {
+			t.Errorf("an attribution identifier became a signature path: %q", path)
+		}
+	}
+	if _, ok := ep.Paths["response.usage.attribution.items"]; !ok {
+		t.Error("attribution items vanished entirely; presence and type must still be recorded")
 	}
 }

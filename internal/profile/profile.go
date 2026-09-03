@@ -410,6 +410,13 @@ func (p *Profile) induce(t string, raw json.RawMessage) {
 // nondeterministic per run rather than merely noisy. Verified against corpus data
 // 2026-08-07: without this, TestInduceEmbedded_RequestKindValuesFoundInRealCorpus
 // passed or failed at random across repeated runs of the same code.
+//
+// response.usage.attribution.items is keyed by per response item identifiers. The
+// token counters under each key are protocol fields, but the keys themselves are
+// high cardinality IDs and must not be promoted into signature paths. Presence and
+// type of the map are enough signal for drift here; walking the IDs both leaks
+// identifiers into the committed baseline and can exhaust the same path budget.
+//
 // workspaces is opaque for a different and much sharper reason than the two above,
 // and it is the reason opaqueKind reports a KIND rather than a bool.
 //
@@ -432,6 +439,9 @@ func (p *Profile) induce(t string, raw json.RawMessage) {
 // exactly the shape of thing that must never reach it. Presence and type are still
 // recorded, so workspaces appearing, vanishing or changing type is still a finding.
 func opaqueKind(path string) string {
+	if path == "response.usage.attribution.items" {
+		return "identifier_map"
+	}
 	if path == "workspaces" || strings.HasSuffix(path, ".workspaces") {
 		return "user-keyed-map"
 	}
