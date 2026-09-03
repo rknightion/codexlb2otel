@@ -16,7 +16,7 @@ groups:
       datasourceUid: grafanacloud-prom
       model:
         editorMode: code
-        expr: sum(codexlb_archive_drift_findings{service_name="codexlb2otel", severity="breaking"})
+        expr: sum(codexlb_archive_drift_findings{service_name="codexlb2otel", codexlb_selfobs_severity="breaking"})
         instant: true
         range: false
         intervalMs: 1000
@@ -55,10 +55,8 @@ groups:
       service: codexlb2otel
     annotations:
       summary: codex-lb archive format drift detected (breaking)
-      description: 'NOT YET IMPLEMENTED (issue #13, still absent as of this dashboard''s authoring) -
-        this metric does not exist in the deployed service today. See dashboards/07-pipeline-health.json
-        and dashboards/README.md. Metric name is issue #13''s own text verbatim, already in final Prometheus
-        form: codexlb_archive_drift_findings{severity="breaking|new|info"}. Per issue #13: a breaking
-        finding should page (this rule); new should notify (not built here - lower urgency, add a second
-        rule at severity=info/notify once the metric exists); absence findings (info) must never page,
-        so they are deliberately excluded from this condition.'
+      description: 'codexlb2otel runs the archive drift probe in-process against the live archive.
+        This rule pages only on codexlb.archive_drift_findings with codexlb.selfobs.severity=breaking,
+        exposed in Prometheus as codexlb_archive_drift_findings{codexlb_selfobs_severity="breaking"}.
+        New findings should notify elsewhere; absence findings are informational by design and must
+        never page.'
