@@ -47,7 +47,7 @@ lint: _golangci-lint
 [group('check')]
 [no-exit-message]
 test filter="":
-    go test -race -run '{{ filter }}' ./...
+    go test -race -timeout 30m -run '{{ filter }}' ./...
 
 # fast inner loop: race-test without the local corpus, exactly as CI does
 [group('check')]
@@ -100,7 +100,7 @@ sync:
     go build -o bin/clbsync ./cmd/clbsync
     ./bin/clbsync
 
-# full drift check against corpus.sig.json; override with `just corpus=path probe`
+# full drift check against the embedded baseline; override with `just corpus=path probe`
 [group('check')]
 probe:
     mkdir -p bin
@@ -114,13 +114,13 @@ probe-sampled:
     go build -o bin/clbprobe ./cmd/clbprobe
     ./bin/clbprobe -sampled '{{ corpus }}'
 
-# accept the current corpus shape as the baseline (always run from a full scan)
-[confirm('This overwrites corpus.sig.json from a full scan of the local corpus. Continue?')]
+# accept the current corpus shape as the embedded baseline (always run from a full scan)
+[confirm('This overwrites internal/profile/baseline/corpus.sig.json from a full scan of the local corpus. Continue?')]
 [group('gen')]
 baseline:
     mkdir -p bin
     go build -o bin/clbprobe ./cmd/clbprobe
-    ./bin/clbprobe -update corpus.sig.json '{{ corpus }}'
+    ./bin/clbprobe -update internal/profile/baseline/corpus.sig.json '{{ corpus }}'
 
 # CI's drift probe: scan corpus/ and pass only clean or intentionally absent data.
 [group('check')]
@@ -133,9 +133,9 @@ probe-ci:
     status=$?
     set -e
     case "$status" in
-      0) echo "clbprobe: clean, no drift against corpus.sig.json" ;;
+      0) echo "clbprobe: clean, no drift against the embedded baseline" ;;
       3) echo "clbprobe: nothing to scan - skipped" ;;
-      1) echo "clbprobe: drift at or above 'breaking' against corpus.sig.json"; exit 1 ;;
+      1) echo "clbprobe: drift at or above 'breaking' against the embedded baseline"; exit 1 ;;
       *) echo "clbprobe: exit $status (see output above)"; exit 1 ;;
     esac
 

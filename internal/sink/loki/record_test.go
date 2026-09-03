@@ -114,6 +114,30 @@ func TestBuildLines_MetadataSurvivesOversizedToolOutput(t *testing.T) {
 	}
 }
 
+func TestTurnLineCarriesPostgresEnrichment(t *testing.T) {
+	cost := 0.75
+	tn := &turn.Turn{
+		CostUSD: &cost, APIKeyID: "key-1", APIKeyName: "primary",
+		ProxyStatus: "error", ProxyErrorCode: "upstream_timeout",
+		ProxyFailurePhase: "upstream", ProxyResponseCreatedMS: 1250,
+		ProxyFirstUpstreamEventMS: 2500,
+	}
+	body, ok := turnLine(tn, 64<<10)
+	if !ok {
+		t.Fatal("enriched turn line did not fit the normal metadata budget")
+	}
+	var got turn.Turn
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.CostUSD == nil || *got.CostUSD != cost || got.APIKeyName != "primary" ||
+		got.ProxyStatus != "error" || got.ProxyErrorCode != "upstream_timeout" ||
+		got.ProxyFailurePhase != "upstream" || got.ProxyResponseCreatedMS != 1250 ||
+		got.ProxyFirstUpstreamEventMS != 2500 {
+		t.Fatalf("turn line lost Postgres enrichment: %+v", got)
+	}
+}
+
 // TestBuildLines_DropsWhenNothingFitsAtAll covers the escape hatch: a budget so
 // small that not even an empty text field plus the marker fits. The line must be
 // dropped and counted, never shipped over budget.

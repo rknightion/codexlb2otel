@@ -499,20 +499,11 @@ func (c Config) Validate() error {
 		add("archive.chunk_bytes must be positive, got %d", c.Archive.ChunkBytes)
 	}
 
-	if c.Postgres.Enabled {
-		if _, err := c.Postgres.DSN.Resolve(); err != nil {
-			add("postgres.dsn: %v", err)
-		}
-		if c.Postgres.LookupTimeout <= 0 {
-			add("postgres.lookup_timeout must be positive, got %s", c.Postgres.LookupTimeout)
-		}
-		if c.Postgres.PrefetchInterval <= 0 {
-			add("postgres.prefetch_interval must be positive, got %s", c.Postgres.PrefetchInterval)
-		}
-		if c.Postgres.CacheEntries <= 0 {
-			add("postgres.cache_entries must be positive, got %d", c.Postgres.CacheEntries)
-		}
-	}
+	// Postgres is an optional enrichment source, not part of the archive delivery
+	// path. Its settings are checked when the runtime builds that source so a missing
+	// credential or bad bound disables enrichment without stopping Loki, metrics or
+	// traces. Rejecting it here would turn one optional config fault into total signal
+	// loss before a logger exists.
 	if c.Probe.Enabled && c.Probe.Interval <= 0 {
 		add("probe.interval must be positive, got %s", c.Probe.Interval)
 	}

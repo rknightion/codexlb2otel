@@ -46,6 +46,11 @@ type Snapshot struct {
 	OpenResponses      int64
 	ReducerSeriesCount int64
 	ReducerThreadCount int64
+	EnrichCacheEntries int64
+	HasDrift           bool
+	DriftBreaking      int64
+	DriftNew           int64
+	DriftInfo          int64
 
 	Sinks []SinkHealth
 }
@@ -85,19 +90,31 @@ func (s Snapshot) IngestLagSeconds() (float64, bool) {
 // w and s must be the actual instances wired into the running service - a Collector
 // over any other pair would report someone else's progress.
 type Collector struct {
-	w *tail.Watcher
-	s sink.Sink
+	w             *tail.Watcher
+	s             sink.Sink
+	enrichEntries func() int64
+	driftCounts   func() (breaking, newFindings, info int64)
 }
 
 // New builds a Collector over w and s.
 func New(w *tail.Watcher, s sink.Sink) *Collector { return &Collector{w: w, s: s} }
+
+// SetEnrichmentSource adds the optional Postgres cache-size source. It is configured
+// once during startup before the first metric collection.
+func (c *Collector) SetEnrichmentSource(source func() int64) { c.enrichEntries = source }
+
+// SetDriftSource adds the optional archive-drift finding source. It is configured
+// once during startup before the first metric collection.
+func (c *Collector) SetDriftSource(source func() (breaking, newFindings, info int64)) {
+	c.driftCounts = source
+}
 
 // Collect builds a fresh Snapshot. Safe to call from any goroutine: the one call here
 // that touches state Poll also mutates - w.Progress() - is lock-protected for exactly
 // that (see tail.Watcher's own doc comment on its mutex).
 func (c *Collector) Collect() Snapshot {
 	p := c.w.Progress()
-	return Snapshot{
+	snap := Snapshot{
 		Now:                time.Now().UTC(),
 		Watermark:          p.Watermark,
 		HasWatermark:       !p.Watermark.IsZero(),
@@ -119,6 +136,14 @@ func (c *Collector) Collect() Snapshot {
 		ReducerThreadCount: int64(p.ReducerThreadCount),
 		Sinks:              collectSinkHealth(c.s),
 	}
+	if c.enrichEntries != nil {
+		snap.EnrichCacheEntries = c.enrichEntries()
+	}
+	if c.driftCounts != nil {
+		snap.HasDrift = true
+		snap.DriftBreaking, snap.DriftNew, snap.DriftInfo = c.driftCounts()
+	}
+	return snap
 }
 
 // collectSinkHealth walks the sink tree the same way cmd/codexlb2otel's own

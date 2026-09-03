@@ -131,6 +131,27 @@ func TestRunRepeatsScanOnInterval(t *testing.T) {
 	}
 }
 
+func TestStartWaitsForCancellation(t *testing.T) {
+	baseline := signatureBytes(t, stableArchiveRecord(`{"type":"response.completed"}`))
+	ctx, cancel := context.WithCancel(context.Background())
+	r, err := Start(ctx, Config{
+		ArchiveDir:    t.TempDir(),
+		BaselineBytes: baseline,
+		Scanner: func(context.Context, ScanOptions) (*profile.Signature, profile.Coverage, error) {
+			return decodeSignature(t, baseline), profile.Coverage{Files: 1}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	waitCtx, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	if err := r.Wait(waitCtx); err != nil {
+		t.Fatalf("Wait after cancellation: %v", err)
+	}
+}
+
 func TestRunOnceRecordsLastErrorAndKeepsLastGoodFindings(t *testing.T) {
 	firstRun := time.Date(2026, 9, 3, 18, 0, 0, 0, time.UTC)
 	secondRun := firstRun.Add(time.Hour)

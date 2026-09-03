@@ -40,7 +40,7 @@ import (
 // DefaultBaseline is the committed signature. It is content-free by construction -
 // see profile.Signature - which is what makes it safe to keep in a repository whose
 // corpus never can be.
-const DefaultBaseline = "corpus.sig.json"
+const DefaultBaseline = "internal/profile/baseline/corpus.sig.json"
 
 // Exit codes. Distinct so a scheduled run can act on the difference.
 const (

@@ -160,6 +160,35 @@ func toAttrs(kvs []attr.KV) []attribute.KeyValue {
 	return out
 }
 
+// traceAttrs separates Postgres enrichment from the attributes inherited by every
+// span in the tree. Enrichment describes one response, so it belongs on that span
+// alone. Cost and proxy timings are measurements and stay numeric rather than being
+// flattened through attr.KV's string representation.
+func traceAttrs(t *turn.Turn, kvs []attr.KV) (base, response []attribute.KeyValue) {
+	for _, kv := range kvs {
+		switch kv.Key {
+		case attr.CostUSD, attr.ProxyTimeToResponseCreated, attr.ProxyTimeToFirstUpstreamEvent:
+			continue
+		case attr.APIKeyID, attr.APIKeyName, attr.ProxyStatus, attr.ProxyErrorCode, attr.ProxyFailurePhase:
+			response = append(response, attribute.String(kv.Key, kv.Value))
+		default:
+			base = append(base, attribute.String(kv.Key, kv.Value))
+		}
+	}
+	if t.CostUSD != nil {
+		response = append(response, attribute.Float64(attr.CostUSD, *t.CostUSD))
+	}
+	if t.ProxyResponseCreatedMS > 0 {
+		response = append(response,
+			attribute.Float64(attr.ProxyTimeToResponseCreated, t.ProxyResponseCreatedMS/1000))
+	}
+	if t.ProxyFirstUpstreamEventMS > 0 {
+		response = append(response,
+			attribute.Float64(attr.ProxyTimeToFirstUpstreamEvent, t.ProxyFirstUpstreamEventMS/1000))
+	}
+	return base, response
+}
+
 // Sink-local span attributes, deliberately NOT in internal/attr.
 //
 // internal/attr governs values that can become a metric attribute or a Loki label -
@@ -227,7 +256,7 @@ func turnLinks(t *turn.Turn) []trace.Link {
 // emitTurn builds and starts/ends the whole span tree for one Turn.
 func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 	raw := s.guard.SpanAttrs(t)
-	full := toAttrs(raw)
+	full, enrichmentAttrs := traceAttrs(t, raw)
 
 	tid := traceID(t)
 	tsid := turnSpanID(t)
@@ -293,6 +322,7 @@ func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 		attribute.String(attr.GenAIProvider, attr.GenAIProviderValue),
 		attribute.String(attr.AgentO11ySDKName, attr.AgentO11ySDKNameValue),
 	)
+	respAttrs = append(respAttrs, enrichmentAttrs...)
 	if gid := attr.GenerationID(t); gid != "" {
 		respAttrs = append(respAttrs, attribute.String(attr.AgentO11yGenerationID, gid))
 	}

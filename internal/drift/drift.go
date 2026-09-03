@@ -128,6 +128,7 @@ type Runner struct {
 
 	mu    sync.RWMutex
 	stats Stats
+	done  chan error
 }
 
 // New validates cfg and prepares a runner. It does not start any goroutines.
@@ -198,8 +199,26 @@ func Start(ctx context.Context, cfg Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	go func() { _ = r.Run(ctx) }()
+	r.done = make(chan error, 1)
+	go func() {
+		r.done <- r.Run(ctx)
+		close(r.done)
+	}()
 	return r, nil
+}
+
+// Wait waits for a runner started by Start to stop. A Runner built with New and run
+// directly has no background goroutine and returns immediately.
+func (r *Runner) Wait(ctx context.Context) error {
+	if r == nil || r.done == nil {
+		return nil
+	}
+	select {
+	case err := <-r.done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Run performs one immediate probe and then repeats it every configured interval

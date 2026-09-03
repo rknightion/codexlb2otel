@@ -36,12 +36,39 @@ func TestServer_Routes(t *testing.T) {
 		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") {
 			t.Errorf("CSP = %q, want default-src 'none'", csp)
 		}
+		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "font-src 'self'") {
+			t.Errorf("CSP = %q, want same-origin fonts", csp)
+		}
 		// The page must never reach off-box: no CDN, no font host, nothing. A strict CSP
 		// would break it, which is the point of asserting both together.
 		for _, bad := range []string{"http://", "https://"} {
 			if strings.Contains(rec.Body.String(), bad) {
 				t.Errorf("index references an external URL (%q); the CSP forbids loading it", bad)
 			}
+		}
+	})
+
+	t.Run("embedded font is served locally with an immutable cache policy", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+			"/_static/fonts/hanken-grotesk-latin.woff2", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if got := rec.Header().Get("Content-Type"); got != "font/woff2" {
+			t.Errorf("Content-Type = %q, want font/woff2", got)
+		}
+		if rec.Body.Len() == 0 {
+			t.Fatal("font response is empty")
+		}
+	})
+
+	t.Run("unknown font is rejected", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+			"/_static/fonts/not-embedded.woff2", nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", rec.Code)
 		}
 	})
 

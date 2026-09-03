@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/rknightion/codexlb2otel/internal/attr"
+	"github.com/rknightion/codexlb2otel/internal/enrich"
 	"github.com/rknightion/codexlb2otel/internal/selfobs"
 	"github.com/rknightion/codexlb2otel/internal/sink"
 )
@@ -205,6 +206,80 @@ func TestRegisterSelfObs_CalledTwiceErrors(t *testing.T) {
 	}
 	if err := s.RegisterSelfObs(source); err == nil {
 		t.Error("second RegisterSelfObs succeeded, want an error")
+	}
+}
+
+func TestRegisterSelfObs_EnrichmentAndDriftSignals(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	source := func() selfobs.Snapshot {
+		return selfobs.Snapshot{
+			EnrichCacheEntries: 37,
+			HasDrift:           true,
+			DriftBreaking:      2,
+			DriftNew:           5,
+			DriftInfo:          7,
+		}
+	}
+	if err := s.RegisterSelfObs(source); err != nil {
+		t.Fatalf("RegisterSelfObs: %v", err)
+	}
+	s.RecordEnrichment(context.Background(), enrich.Result{
+		Outcome: enrich.OutcomeDBHit, LookupDuration: 125 * time.Millisecond,
+	})
+	s.RecordEnrichment(context.Background(), enrich.Result{Outcome: enrich.OutcomeCacheHit})
+
+	rm := collect(t, reader)
+	lookups, ok := findMetric(rm, attr.MetricSelfEnrichLookups)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricSelfEnrichLookups)
+	}
+	lookupSum := lookups.Data.(metricdata.Sum[int64])
+	gotResults := map[string]int64{}
+	for _, dp := range lookupSum.DataPoints {
+		v, found := dp.Attributes.Value(attribute.Key(attr.SelfObsResult))
+		if !found {
+			t.Fatal("enrichment lookup point has no result attribute")
+		}
+		gotResults[v.AsString()] = dp.Value
+	}
+	if gotResults["db_hit"] != 1 || gotResults["cache_hit"] != 1 {
+		t.Fatalf("lookup results = %v, want one db_hit and one cache_hit", gotResults)
+	}
+
+	duration, ok := findMetric(rm, attr.MetricSelfEnrichLookupDuration)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricSelfEnrichLookupDuration)
+	}
+	hist := duration.Data.(metricdata.Histogram[float64])
+	if len(hist.DataPoints) != 1 || hist.DataPoints[0].Count != 1 || hist.DataPoints[0].Sum != 0.125 {
+		t.Fatalf("lookup duration = %+v, want one 0.125s database lookup", hist.DataPoints)
+	}
+
+	cache, ok := findMetric(rm, attr.MetricSelfEnrichCacheEntries)
+	if !ok {
+		t.Fatalf("enrichment cache gauge missing or wrong: %+v", cache)
+	}
+	cacheGauge := cache.Data.(metricdata.Gauge[int64])
+	if len(cacheGauge.DataPoints) != 1 || cacheGauge.DataPoints[0].Value != 37 {
+		t.Fatalf("enrichment cache gauge = %+v, want one point of 37", cacheGauge.DataPoints)
+	}
+	driftMetric, ok := findMetric(rm, attr.MetricArchiveDriftFindings)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricArchiveDriftFindings)
+	}
+	driftGauge := driftMetric.Data.(metricdata.Gauge[int64])
+	gotDrift := map[string]int64{}
+	for _, dp := range driftGauge.DataPoints {
+		v, found := dp.Attributes.Value(attribute.Key(attr.SelfObsSeverity))
+		if !found {
+			t.Fatal("drift point has no severity attribute")
+		}
+		gotDrift[v.AsString()] = dp.Value
+	}
+	if gotDrift["breaking"] != 2 || gotDrift["new"] != 5 || gotDrift["info"] != 7 {
+		t.Fatalf("drift findings = %v, want breaking=2 new=5 info=7", gotDrift)
 	}
 }
 

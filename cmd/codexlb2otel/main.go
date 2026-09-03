@@ -14,10 +14,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/rknightion/codexlb2otel/internal/config"
+	"github.com/rknightion/codexlb2otel/internal/drift"
+	"github.com/rknightion/codexlb2otel/internal/enrich"
 	"github.com/rknightion/codexlb2otel/internal/health"
 	"github.com/rknightion/codexlb2otel/internal/live"
+	"github.com/rknightion/codexlb2otel/internal/profile"
 	"github.com/rknightion/codexlb2otel/internal/selfobs"
 	"github.com/rknightion/codexlb2otel/internal/sink"
 	"github.com/rknightion/codexlb2otel/internal/sink/otlpmetric"
@@ -127,6 +131,13 @@ func newLogger(cfg config.Log) *slog.Logger {
 // liveStore is nil whenever the live view is disabled, in which case no second
 // listener is started and nothing observes the watcher's in-flight snapshot.
 func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink, metricsSink *otlpmetric.Sink, liveStore *live.Store) error {
+	enricher := buildEnricher(ctx, cfg.Postgres, log)
+	defer enricher.Close()
+
+	probeCtx, stopProbe := context.WithCancel(ctx)
+	probe := buildDriftProbe(probeCtx, cfg, log)
+	defer stopProbe()
+
 	reducer := turn.New()
 	w, err := tail.New(tail.Config{
 		Dir:                cfg.Archive.Dir,
@@ -136,6 +147,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 		CheckpointInterval: cfg.Archive.CheckpointInterval,
 		DeleteAfter:        cfg.Archive.DeleteAfter,
 		RetainDays:         cfg.Archive.RetainDays,
+		StateRetain:        cfg.Archive.StateRetain,
 		Logger:             log,
 	}, reducer)
 	if err != nil {
@@ -148,6 +160,15 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 	// instead of being reconstructed by walking snk.
 	if metricsSink != nil {
 		collector := selfobs.New(w, snk)
+		collector.SetEnrichmentSource(func() int64 {
+			return int64(enricher.Stats().CacheEntries)
+		})
+		if probe != nil {
+			collector.SetDriftSource(func() (int64, int64, int64) {
+				counts := probe.Stats().Findings
+				return counts.Breaking, counts.New, counts.Info
+			})
+		}
 		if err := metricsSink.RegisterSelfObs(collector.Collect); err != nil {
 			return fmt.Errorf("register self-observability: %w", err)
 		}
@@ -197,7 +218,14 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 	// Watcher.Run blocks until ctx is cancelled (SIGINT/SIGTERM), at which point it
 	// stops polling on its own and performs its own final flush-then-checkpoint of
 	// whatever the reducer was still holding in-flight.
-	runErr := w.Run(ctx, sinkEmit(snk))
+	runErr := w.Run(ctx, enrichingEmit(enricher, metricsSink, snk))
+	stopProbe()
+	var probeErr error
+	if probe != nil {
+		waitCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		probeErr = probe.Wait(waitCtx)
+		cancel()
+	}
 
 	if hsrv != nil {
 		hsrv.SetReady(false)
@@ -223,7 +251,70 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 		liveErr = <-liveDone
 	}
 
-	return errors.Join(runErr, flushErr, closeErr, healthErr, liveErr)
+	return errors.Join(runErr, probeErr, flushErr, closeErr, healthErr, liveErr)
+}
+
+func buildEnricher(ctx context.Context, cfg config.Postgres, log *slog.Logger) enrich.Enricher {
+	if !cfg.Enabled {
+		return enrich.Disabled
+	}
+	if cfg.LookupTimeout <= 0 || cfg.PrefetchInterval <= 0 || cfg.CacheEntries <= 0 {
+		log.Warn("postgres enrichment disabled: invalid bounds",
+			"lookup_timeout", cfg.LookupTimeout,
+			"prefetch_interval", cfg.PrefetchInterval,
+			"cache_entries", cfg.CacheEntries)
+		return enrich.Disabled
+	}
+	dsn, err := cfg.DSN.Resolve()
+	if err != nil {
+		log.Warn("postgres enrichment disabled: dsn unavailable", "err", err)
+		return enrich.Disabled
+	}
+	e, err := enrich.NewPostgres(ctx, dsn, enrich.Options{
+		LookupTimeout:    cfg.LookupTimeout,
+		PrefetchInterval: cfg.PrefetchInterval,
+		CacheEntries:     cfg.CacheEntries,
+	})
+	if err != nil {
+		log.Warn("postgres enrichment disabled: pool unavailable", "err", err)
+		return enrich.Disabled
+	}
+	log.Info("postgres enrichment enabled",
+		"lookup_timeout", cfg.LookupTimeout,
+		"prefetch_interval", cfg.PrefetchInterval,
+		"cache_entries", cfg.CacheEntries)
+	return e
+}
+
+func buildDriftProbe(ctx context.Context, cfg config.Config, log *slog.Logger) *drift.Runner {
+	if !cfg.Probe.Enabled {
+		return nil
+	}
+	runner, err := drift.Start(ctx, drift.Config{
+		ArchiveDir:    cfg.Archive.Dir,
+		BaselineBytes: profile.EmbeddedBaseline(),
+		Interval:      cfg.Probe.Interval,
+		Sampled:       cfg.Probe.Sampled,
+	})
+	if err != nil {
+		log.Warn("archive drift probe disabled", "err", err)
+		return nil
+	}
+	log.Info("archive drift probe enabled", "interval", cfg.Probe.Interval, "sampled", cfg.Probe.Sampled)
+	return runner
+}
+
+func enrichingEmit(enricher enrich.Enricher, metrics *otlpmetric.Sink, downstream sink.Sink) tail.Emit {
+	emit := sinkEmit(downstream)
+	return func(ctx context.Context, turns []*turn.Turn) error {
+		for _, t := range turns {
+			result := enricher.Enrich(ctx, t)
+			if metrics != nil {
+				metrics.RecordEnrichment(ctx, result)
+			}
+		}
+		return emit(ctx, turns)
+	}
 }
 
 // sinkEmit adapts a Sink into the tail.Emit function Watcher.Run/Poll call.

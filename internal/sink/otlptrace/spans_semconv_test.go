@@ -95,6 +95,61 @@ func TestSemconv_OnlyTheResponseSpanClaimsToBeTheInference(t *testing.T) {
 	}
 }
 
+func TestPostgresEnrichmentIsTypedAndResponseScoped(t *testing.T) {
+	s, exp := newTestSink(t)
+	now := time.Now()
+	cost := 1.25
+	tn := &turn.Turn{
+		RequestID: "ws_1", ResponseID: "resp_1", ThreadID: "thread-1", TurnID: "turn-1",
+		Model: "gpt-5.6-sol", Status: "completed", Family: "websocket", RequestKind: "turn",
+		FirstTS: now.Add(-time.Second), LastTS: now, ServerCreatedAt: now.Add(-time.Second),
+		ServerCompletedAt: now, CostUSD: &cost, APIKeyID: "key-1", APIKeyName: "primary",
+		ProxyStatus: "success", ProxyResponseCreatedMS: 1250, ProxyFirstUpstreamEventMS: 2500,
+	}
+	if err := s.Emit(context.Background(), []*turn.Turn{tn}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	found := map[string]bool{}
+	for _, sp := range exp.GetSpans() {
+		for _, a := range sp.Attributes {
+			switch string(a.Key) {
+			case attr.CostUSD:
+				found[attr.CostUSD] = true
+				if sp.Name != "generateText gpt-5.6-sol" || a.Value.AsFloat64() != cost {
+					t.Errorf("span %q cost = %v, want typed response-only value %v", sp.Name, a.Value, cost)
+				}
+			case attr.ProxyTimeToResponseCreated:
+				found[attr.ProxyTimeToResponseCreated] = true
+				if sp.Name != "generateText gpt-5.6-sol" || a.Value.AsFloat64() != 1.25 {
+					t.Errorf("span %q response-created time = %v, want typed response-only 1.25", sp.Name, a.Value)
+				}
+			case attr.ProxyTimeToFirstUpstreamEvent:
+				found[attr.ProxyTimeToFirstUpstreamEvent] = true
+				if sp.Name != "generateText gpt-5.6-sol" || a.Value.AsFloat64() != 2.5 {
+					t.Errorf("span %q first-upstream time = %v, want typed response-only 2.5", sp.Name, a.Value)
+				}
+			case attr.APIKeyID, attr.APIKeyName, attr.ProxyStatus:
+				found[string(a.Key)] = true
+				if sp.Name != "generateText gpt-5.6-sol" {
+					t.Errorf("span %q carries response-only enrichment %s", sp.Name, a.Key)
+				}
+			}
+		}
+	}
+	for _, key := range []string{
+		attr.CostUSD, attr.ProxyTimeToResponseCreated, attr.ProxyTimeToFirstUpstreamEvent,
+		attr.APIKeyID, attr.APIKeyName, attr.ProxyStatus,
+	} {
+		if !found[key] {
+			t.Errorf("response span did not carry %s", key)
+		}
+	}
+}
+
 // TestBoundArguments_CapsTheTailWithoutSplittingARune covers issue #22 item 5. The
 // corpus says ToolCall.Input is median 318 bytes but reaches 33.4 KB, and unlike
 // ToolOutput nothing upstream bounds it.

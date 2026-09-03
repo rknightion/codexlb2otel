@@ -14,8 +14,22 @@ import (
 	"time"
 )
 
-//go:embed ui/index.html
+//go:embed ui/index.html ui/fonts/*.woff2
 var ui embed.FS
+
+var (
+	fontHankenLatin    = mustReadUI("ui/fonts/hanken-grotesk-latin.woff2")
+	fontHankenLatinExt = mustReadUI("ui/fonts/hanken-grotesk-latin-ext.woff2")
+	fontJetBrainsMono  = mustReadUI("ui/fonts/JetBrainsMono-Variable.woff2")
+)
+
+func mustReadUI(name string) []byte {
+	body, err := ui.ReadFile(name)
+	if err != nil {
+		panic("live: embedded UI asset missing: " + name)
+	}
+	return body
+}
 
 // shutdownGrace bounds the drain on stop. Deliberately short: the only long-lived
 // request this server has is the SSE stream, and every one of those is by definition
@@ -56,6 +70,7 @@ func NewServer(store *Store, cfg ServerConfig, log *slog.Logger) *Server {
 	mux.HandleFunc("GET /api/threads", s.handleThreads)
 	mux.HandleFunc("GET /api/threads/{id}", s.handleThread)
 	mux.HandleFunc("GET /api/stream", s.handleStream)
+	mux.HandleFunc("GET /_static/fonts/{name}", s.handleFont)
 	mux.HandleFunc("GET /", s.handleIndex)
 	s.http = &http.Server{
 		Addr:    cfg.Listen,
@@ -101,14 +116,36 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// The page is entirely self-contained: no external scripts, styles or fonts, so a
-	// CSP this strict costs nothing and removes the whole class of injection where
-	// conversation content lands in the DOM. Content is inserted via textContent, but
-	// defence in depth matters more here than usual given what this page displays.
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'")
+	// The page is entirely self-contained. Fonts are served from the same embedded FS;
+	// no external script, style or font origin is allowed. Content is inserted through
+	// DOM text nodes, but defence in depth matters more here than usual given what this
+	// page displays.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; font-src 'self'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if _, err := w.Write(body); err != nil {
 		s.log.Debug("live: write index", "err", err)
+	}
+}
+
+func (s *Server) handleFont(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	var body []byte
+	switch name {
+	case "hanken-grotesk-latin.woff2":
+		body = fontHankenLatin
+	case "hanken-grotesk-latin-ext.woff2":
+		body = fontHankenLatinExt
+	case "JetBrainsMono-Variable.woff2":
+		body = fontJetBrainsMono
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if _, err := w.Write(body); err != nil {
+		s.log.Debug("live: write font", "name", name, "err", err)
 	}
 }
 

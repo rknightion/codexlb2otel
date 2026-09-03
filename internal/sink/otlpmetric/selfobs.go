@@ -29,6 +29,7 @@ import (
 	otelmetric "go.opentelemetry.io/otel/metric"
 
 	"github.com/rknightion/codexlb2otel/internal/attr"
+	"github.com/rknightion/codexlb2otel/internal/enrich"
 	"github.com/rknightion/codexlb2otel/internal/selfobs"
 )
 
@@ -63,6 +64,10 @@ type selfInstruments struct {
 	reducerThreads    otelmetric.Int64ObservableGauge
 	sinkRejections    otelmetric.Int64ObservableCounter
 	sinkPending       otelmetric.Int64ObservableGauge
+	enrichLookups     otelmetric.Int64Counter
+	enrichDuration    otelmetric.Float64Histogram
+	enrichCache       otelmetric.Int64ObservableGauge
+	driftFindings     otelmetric.Int64ObservableGauge
 }
 
 // newSelfInstruments creates every self-observability instrument up front, the same
@@ -218,6 +223,26 @@ func newSelfInstruments(meter otelmetric.Meter) (selfInstruments, error) {
 		otelmetric.WithUnit("{record}"))
 	must(attr.MetricSelfSinkPending, err)
 
+	i.enrichLookups, err = meter.Int64Counter(attr.MetricSelfEnrichLookups,
+		otelmetric.WithDescription("Postgres enrichment attempts by bounded result."),
+		otelmetric.WithUnit("{lookup}"))
+	must(attr.MetricSelfEnrichLookups, err)
+
+	i.enrichDuration, err = meter.Float64Histogram(attr.MetricSelfEnrichLookupDuration,
+		otelmetric.WithDescription("Duration of point lookups attempted against Postgres."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricSelfEnrichLookupDuration, err)
+
+	i.enrichCache, err = meter.Int64ObservableGauge(attr.MetricSelfEnrichCacheEntries,
+		otelmetric.WithDescription("Response rows currently retained in the enrichment LRU."),
+		otelmetric.WithUnit("{entry}"))
+	must(attr.MetricSelfEnrichCacheEntries, err)
+
+	i.driftFindings, err = meter.Int64ObservableGauge(attr.MetricArchiveDriftFindings,
+		otelmetric.WithDescription("Archive profile differences from the embedded baseline by severity."),
+		otelmetric.WithUnit("{finding}"))
+	must(attr.MetricArchiveDriftFindings, err)
+
 	if len(errs) > 0 {
 		return selfInstruments{}, errors.Join(errs...)
 	}
@@ -251,7 +276,7 @@ func (s *Sink) RegisterSelfObs(collect func() selfobs.Snapshot) error {
 		inst.membersDecoded, inst.linesDecoded, inst.undecodableLines, inst.partialMembers,
 		inst.decodeErrors, inst.fileReplacements, inst.filesReclaimed, inst.turnsEmitted,
 		inst.turnsEvicted, inst.openResponses, inst.reducerSeries, inst.reducerThreads,
-		inst.sinkRejections, inst.sinkPending,
+		inst.sinkRejections, inst.sinkPending, inst.enrichCache, inst.driftFindings,
 	}
 	_, err = meter.RegisterCallback(func(_ context.Context, o otelmetric.Observer) error {
 		snap := collect()
@@ -277,6 +302,15 @@ func (s *Sink) RegisterSelfObs(collect func() selfobs.Snapshot) error {
 		o.ObserveInt64(inst.openResponses, snap.OpenResponses)
 		o.ObserveInt64(inst.reducerSeries, snap.ReducerSeriesCount)
 		o.ObserveInt64(inst.reducerThreads, snap.ReducerThreadCount)
+		o.ObserveInt64(inst.enrichCache, snap.EnrichCacheEntries)
+		if snap.HasDrift {
+			o.ObserveInt64(inst.driftFindings, snap.DriftBreaking,
+				otelmetric.WithAttributes(attribute.String(attr.SelfObsSeverity, "breaking")))
+			o.ObserveInt64(inst.driftFindings, snap.DriftNew,
+				otelmetric.WithAttributes(attribute.String(attr.SelfObsSeverity, "new")))
+			o.ObserveInt64(inst.driftFindings, snap.DriftInfo,
+				otelmetric.WithAttributes(attribute.String(attr.SelfObsSeverity, "info")))
+		}
 
 		for _, sh := range snap.Sinks {
 			sinkAttr := attribute.String(selfObsSink, sh.Name)
@@ -295,5 +329,21 @@ func (s *Sink) RegisterSelfObs(collect func() selfobs.Snapshot) error {
 		return fmt.Errorf("otlpmetric: registering self-observability callback: %w", err)
 	}
 	s.selfObsRegistered = true
+	s.selfInst = inst
 	return nil
+}
+
+// RecordEnrichment records one lookup result on the same OTLP pipeline as the turn
+// metrics. Lookup latency is recorded only when a database query was attempted;
+// cache hits and disabled enrichment therefore do not manufacture a zero duration.
+func (s *Sink) RecordEnrichment(ctx context.Context, result enrich.Result) {
+	if s == nil || !s.selfObsRegistered || result.Outcome == "" {
+		return
+	}
+	s.selfInst.enrichLookups.Add(ctx, 1, otelmetric.WithAttributes(
+		attribute.String(attr.SelfObsResult, string(result.Outcome))))
+	switch result.Outcome {
+	case enrich.OutcomeDBHit, enrich.OutcomeMiss, enrich.OutcomeError:
+		s.selfInst.enrichDuration.Record(ctx, result.LookupDuration.Seconds())
+	}
 }

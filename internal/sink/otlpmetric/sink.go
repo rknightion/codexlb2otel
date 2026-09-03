@@ -46,6 +46,7 @@ type Sink struct {
 	// twice, which would register a second callback and double-report every
 	// self-observability instrument.
 	selfObsRegistered bool
+	selfInst          selfInstruments
 }
 
 // New builds a Sink that exports over real OTLP HTTP to cfg.Endpoint, authenticating

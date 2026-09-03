@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/rknightion/codexlb2otel/internal/config"
+	"github.com/rknightion/codexlb2otel/internal/enrich"
 	"github.com/rknightion/codexlb2otel/internal/sink"
+	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
 func TestNewLogger_LevelsAndFormats(t *testing.T) {
@@ -69,6 +71,60 @@ func TestRun_ExitsCleanlyOnContextCancel(t *testing.T) {
 		t.Fatal("run() did not return within 5s of context cancellation")
 	}
 }
+
+func TestBuildEnricher_InvalidOptionalConfigDegradesToDisabled(t *testing.T) {
+	cfg := config.Default().Postgres
+	cfg.Enabled = true
+	cfg.DSN = "${CODEXLB2OTEL_MISSING_TEST_DSN}"
+	t.Setenv("CODEXLB2OTEL_MISSING_TEST_DSN", "")
+
+	e := buildEnricher(t.Context(), cfg, slog.New(slog.DiscardHandler))
+	defer e.Close()
+	result := e.Enrich(t.Context(), &turn.Turn{ResponseID: "resp_test"})
+	if result.Outcome != enrich.OutcomeDisabled {
+		t.Fatalf("outcome = %q, want disabled", result.Outcome)
+	}
+}
+
+func TestEnrichingEmitJoinsBeforeDownstreamDelivery(t *testing.T) {
+	downstream := &captureSink{}
+	emit := enrichingEmit(attachingEnricher{}, nil, downstream)
+	tn := &turn.Turn{ResponseID: "resp_test"}
+	if err := emit(t.Context(), []*turn.Turn{tn}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if downstream.apiKeyName != "joined" {
+		t.Fatalf("downstream API key name = %q, want enrichment attached first", downstream.apiKeyName)
+	}
+	if !downstream.flushed {
+		t.Fatal("downstream was not flushed before the callback succeeded")
+	}
+}
+
+type attachingEnricher struct{}
+
+func (attachingEnricher) Enrich(_ context.Context, tn *turn.Turn) enrich.Result {
+	tn.APIKeyName = "joined"
+	return enrich.Result{Found: true, Outcome: enrich.OutcomeCacheHit}
+}
+func (attachingEnricher) Stats() enrich.Stats { return enrich.Stats{} }
+func (attachingEnricher) Close()              {}
+
+type captureSink struct {
+	apiKeyName string
+	flushed    bool
+}
+
+func (*captureSink) Name() string { return "capture" }
+func (s *captureSink) Emit(_ context.Context, turns []*turn.Turn) error {
+	s.apiKeyName = turns[0].APIKeyName
+	return nil
+}
+func (s *captureSink) Flush(context.Context) error {
+	s.flushed = true
+	return nil
+}
+func (*captureSink) Close(context.Context) error { return nil }
 
 // The health endpoint must come up and answer while the service runs, and go quiet
 // once shutdown starts - readiness flipping false is what a load balancer or

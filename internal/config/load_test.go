@@ -190,6 +190,19 @@ loki:
 	}
 }
 
+func TestParse_UnresolvablePostgresSecretDoesNotStopOtherSignals(t *testing.T) {
+	const name = "CODEXLB2OTEL_MISSING_POSTGRES_TEST_DSN"
+	t.Setenv(name, "")
+	cfg, err := parse([]byte("postgres:\n  enabled: true\n  dsn: ${" + name + "}\n" +
+		"loki:\n  enabled: true\n  user: test\n  token: test\n"))
+	if err != nil {
+		t.Fatalf("optional postgres config stopped the service: %v", err)
+	}
+	if !cfg.Postgres.Enabled {
+		t.Fatal("postgres.enabled was not retained for runtime degradation")
+	}
+}
+
 // config.example.yaml is not documentation: it is copied verbatim onto camden as the
 // deployed config (see docker-compose.yml's CONFIG FILE block), and nothing else
 // checks it. A typo in a yaml key is silent - the field keeps its Default() value and
