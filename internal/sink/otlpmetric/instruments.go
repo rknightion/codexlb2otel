@@ -389,25 +389,24 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 	// never calling these without it, rather than trusting every call site to
 	// remember.
 	i.rateLimitUsed, err = meter.Float64Gauge(attr.MetricRateLimitUsed,
-		otelmetric.WithDescription("Primary rate-limit window headroom used, per account."),
+		otelmetric.WithDescription("Primary rate-limit window headroom used, per account and window length."),
 		otelmetric.WithUnit("%"))
 	must(attr.MetricRateLimitUsed, err)
 
 	i.rateLimitReset, err = meter.Float64Gauge(attr.MetricRateLimitReset,
-		otelmetric.WithDescription("Seconds until the primary rate-limit window resets, "+
-			"per account."),
+		otelmetric.WithDescription("Seconds until a rate-limit window resets, per account and window length."),
 		otelmetric.WithUnit("s"))
 	must(attr.MetricRateLimitReset, err)
 
 	i.rateLimitUsed2, err = meter.Float64Gauge(attr.MetricRateLimitUsed2,
 		otelmetric.WithDescription("Secondary rate-limit window headroom used, per account, "+
-			"where the plan has a secondary window."),
+			"where the plan has a secondary window; labelled by window length."),
 		otelmetric.WithUnit("%"))
 	must(attr.MetricRateLimitUsed2, err)
 
 	i.rateLimitPerModel, err = meter.Float64Gauge(attr.MetricRateLimitPerModel,
 		otelmetric.WithDescription("Rate-limit headroom used for a specific model's separate "+
-			"quota, per account and gen_ai.request.model."),
+			"quota, per account, gen_ai.request.model, and window length."),
 		otelmetric.WithUnit("%"))
 	must(attr.MetricRateLimitPerModel, err)
 

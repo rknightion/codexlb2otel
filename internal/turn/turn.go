@@ -264,13 +264,16 @@ type Turn struct {
 	RateLimitAllowed      bool    `json:"rate_limit_allowed,omitempty"`
 
 	// Secondary window, when the plan has one.
-	RateLimit2UsedPercent float64 `json:"rate_limit_secondary_used_percent,omitempty"`
-	RateLimit2WindowMin   int     `json:"rate_limit_secondary_window_minutes,omitempty"`
+	RateLimit2UsedPercent  float64 `json:"rate_limit_secondary_used_percent,omitempty"`
+	RateLimit2WindowMin    int     `json:"rate_limit_secondary_window_minutes,omitempty"`
+	RateLimit2ResetSeconds float64 `json:"rate_limit_secondary_reset_after_seconds,omitempty"`
 
 	// ExtraRateLimits is keyed by model name - the server reports separate headroom
 	// for models such as GPT-5.3-Codex-Spark. Bounded by the number of models on the
-	// plan, so it is safe to fan out into per-model gauges.
-	ExtraRateLimits map[string]float64 `json:"extra_rate_limits,omitempty"`
+	// plan, so it is safe to fan out into per-model gauges. Each model can carry both
+	// the primary and secondary plan windows; retaining only the percentage loses
+	// which quota the reading describes.
+	ExtraRateLimits map[string][]RateLimitWindow `json:"extra_rate_limits,omitempty"`
 
 	CreditsBalance   string `json:"credits_balance,omitempty"`
 	CreditsUnlimited bool   `json:"credits_unlimited,omitempty"`
@@ -309,6 +312,13 @@ type Turn struct {
 	Frames       int            `json:"frames"`
 	Bytes        int            `json:"bytes"`
 	ReasoningEnc int            `json:"reasoning_encrypted_chars,omitempty"`
+}
+
+// RateLimitWindow is one quota window reported for an account or model.
+type RateLimitWindow struct {
+	UsedPercent  float64 `json:"used_percent"`
+	WindowMin    int     `json:"window_minutes"`
+	ResetSeconds float64 `json:"reset_after_seconds,omitempty"`
 }
 
 // ToolDef is one entry of a re-sent tool catalogue, deduplicated onto Turn.Tools by

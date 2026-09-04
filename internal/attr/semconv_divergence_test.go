@@ -49,14 +49,15 @@ var semconvJustified = map[string]string{
 	// does not raise at all: the convention has no notion of a REQUESTED tier as
 	// distinct from a served one. openai.response.service_tier is, by its name, the
 	// response's - there is no openai.request.service_tier to map this to.
-	ServiceTierRequested: "the tier the client asked for, which the convention has no key for at all - openai.response.service_tier names the served value and this is deliberately not that; see the ServiceTierRequested const",
-	ThreadSource:         "user vs subagent thread origin - no GenAI concept at this granularity",
-	SubagentKind:         "how a subagent thread was created - no GenAI concept",
-	Originator:           "the client binary (codex-tui / codex_exec / the probe) - no GenAI concept",
-	APIKeyName:           "operator-facing codex-lb API key alias; no GenAI equivalent",
-	ProxyStatus:          "codex-lb proxy outcome, distinct from the model response status",
-	ProxyErrorCode:       "codex-lb proxy error code; error.type is already carried separately",
-	ProxyFailurePhase:    "codex-lb proxy pipeline phase; no GenAI equivalent",
+	ServiceTierRequested:   "the tier the client asked for, which the convention has no key for at all - openai.response.service_tier names the served value and this is deliberately not that; see the ServiceTierRequested const",
+	RateLimitWindowMinutes: "the provider account quota window in minutes; the GenAI convention has no rate-limit or quota-window attribute",
+	ThreadSource:           "user vs subagent thread origin - no GenAI concept at this granularity",
+	SubagentKind:           "how a subagent thread was created - no GenAI concept",
+	Originator:             "the client binary (codex-tui / codex_exec / the probe) - no GenAI concept",
+	APIKeyName:             "operator-facing codex-lb API key alias; no GenAI equivalent",
+	ProxyStatus:            "codex-lb proxy outcome, distinct from the model response status",
+	ProxyErrorCode:         "codex-lb proxy error code; error.type is already carried separately",
+	ProxyFailurePhase:      "codex-lb proxy pipeline phase; no GenAI equivalent",
 
 	// --- identifiers and lifecycle detail below gen_ai.conversation.id / gen_ai.response.id ---
 	// Forking a conversation is a codex-lb concept, not a model-API one, so there is

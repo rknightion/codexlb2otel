@@ -1135,6 +1135,26 @@ func TestReducer_RequestedAndServedServiceTiersAreSeparate(t *testing.T) {
 	}
 }
 
+func TestApplyRateLimitsRetainsBothAdditionalModelWindows(t *testing.T) {
+	r := New()
+	tn := &Turn{}
+	r.applyRateLimits(tn, frame.Event{Raw: []byte(`{
+		"plan_type":"pro",
+		"additional_rate_limits":{"gpt-5.6-sol":{
+			"primary":{"used_percent":12.5,"window_minutes":300,"reset_after_seconds":10},
+			"secondary":{"used_percent":34.5,"window_minutes":10080,"reset_after_seconds":20}
+		}}
+	}`)})
+	windows := tn.ExtraRateLimits["gpt-5.6-sol"]
+	if len(windows) != 2 {
+		t.Fatalf("got %d model windows, want 2: %#v", len(windows), windows)
+	}
+	if windows[0].WindowMin != 300 || windows[0].UsedPercent != 12.5 ||
+		windows[1].WindowMin != 10080 || windows[1].UsedPercent != 34.5 {
+		t.Errorf("model windows = %#v, want primary 300/12.5 and secondary 10080/34.5", windows)
+	}
+}
+
 // The *float64/*int/*bool idiom on timingEvent exists so a genuinely missing
 // measurement is distinguishable from one reported as exactly zero - the trap is a
 // silently-absent field reading as 0ms and pulling an average toward zero for every

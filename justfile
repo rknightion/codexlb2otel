@@ -189,6 +189,7 @@ dashboard-check:
     cmp -s "$tmp" dashboards/v2/.metrics_from_code.txt || { diff -u dashboards/v2/.metrics_from_code.txt "$tmp"; exit 1; }
     python3 dashboards/v2/generate.py > "$tmp"
     cmp -s "$tmp" dashboards/v2/codexlb2otel-full.json || { diff -u dashboards/v2/codexlb2otel-full.json "$tmp"; exit 1; }
+    python3 -m unittest dashboards/scripts/check_names_test.py
     python3 dashboards/scripts/check_names.py
 
 # build the runtime container image; pass a tag to override the default

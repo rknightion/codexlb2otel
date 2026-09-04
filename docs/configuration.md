@@ -67,8 +67,9 @@ bound because work may have happened while its baseline was absent.
 
 Archive deletion is disabled by default. `archive.delete_after` applies a duration and
 `archive.retain_days` applies UTC calendar-day retention. Reclamation never removes the newest file
-or a file that has not been fully read, but deletion remains irreversible—enable only one policy
-after confirming that the archive is a disposable buffer.
+or a file that has not been fully read. The two policies are independent OR rules: an eligible file
+is deleted when either configured policy selects it. Enabling both broadens reclamation, so confirm
+that the archive is a disposable buffer and choose both thresholds deliberately.
 
 Deleted-file tombstones are retained briefly so a restarted tailer does not mistake a reclaimed
 filename for a new generation. Tombstones whose UTC filename day is more than three days old are
@@ -103,8 +104,11 @@ Lookup outcomes are
 
 The database role must already exist and have `SELECT` on `request_logs`, `api_keys`, and
 `accounts`. The service does not create roles, change grants, or write to the database. Invalid
-bounds, an unavailable DSN, a pool failure, a timeout, or a query error disables or loses only
-enrichment. The archive, Loki, metrics, traces, and other enabled sinks continue independently.
+bounds, an empty or unresolved DSN secret, or a malformed DSN that prevents pool construction
+disables enrichment at startup. A syntactically valid DSN whose database is unreachable can still
+construct the lazy pool; the service starts, enrichment lookups and prefetches report errors until
+the database is reachable, and the archive, Loki, metrics, traces, and other enabled sinks continue
+independently. Lookup timeouts and query errors lose only the affected enrichment result.
 
 ## In-process drift probe
 

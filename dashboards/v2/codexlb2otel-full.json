@@ -6915,7 +6915,7 @@
                       },
                       "spec": {
                         "expr": "codexlb_rate_limit_used_percent{job=\"codexlb2otel\"}",
-                        "legendFormat": "{{codexlb_account_id}} ({{codexlb_plan_type}})"
+                        "legendFormat": "{{codexlb_account_id}} ({{codexlb_plan_type}}, {{codexlb_rate_limit_window_minutes}}m)"
                       }
                     }
                   }
@@ -7001,7 +7001,7 @@
                       },
                       "spec": {
                         "expr": "codexlb_rate_limit_secondary_used_percent{job=\"codexlb2otel\"}",
-                        "legendFormat": "{{codexlb_account_id}} ({{codexlb_plan_type}})"
+                        "legendFormat": "{{codexlb_account_id}} ({{codexlb_plan_type}}, {{codexlb_rate_limit_window_minutes}}m)"
                       }
                     }
                   }
@@ -7087,7 +7087,7 @@
                       },
                       "spec": {
                         "expr": "codexlb_rate_limit_model_used_percent{job=\"codexlb2otel\"}",
-                        "legendFormat": "{{codexlb_account_id}} / {{codexlb_plan_type}} / {{gen_ai_request_model}}"
+                        "legendFormat": "{{codexlb_account_id}} / {{codexlb_plan_type}} / {{gen_ai_request_model}} / {{codexlb_rate_limit_window_minutes}}m"
                       }
                     }
                   }
@@ -7173,7 +7173,7 @@
                       },
                       "spec": {
                         "expr": "codexlb_rate_limit_reset_after_seconds{job=\"codexlb2otel\"}",
-                        "legendFormat": "{{codexlb_account_id}} ({{codexlb_plan_type}})"
+                        "legendFormat": "{{codexlb_account_id}} ({{codexlb_plan_type}}, {{codexlb_rate_limit_window_minutes}}m)"
                       }
                     }
                   }

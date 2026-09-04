@@ -63,7 +63,7 @@
           "type": "prometheus",
           "uid": "grafanacloud-prom"
         },
-        "query": "label_values(codexlb_responses_total{service_name=~\"$service_name\"}, gen_ai_request_model)",
+        "query": "label_values(codexlb_responses_total{codexlb_family!=\"probe\", service_name=~\"$service_name\"}, gen_ai_request_model)",
         "refresh": 2,
         "sort": 1,
         "multi": true,
@@ -190,7 +190,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -202,7 +202,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.90, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.90, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -214,7 +214,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
           "refId": "C",
           "range": true,
           "instant": false,
@@ -271,7 +271,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -328,7 +328,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -340,7 +340,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.90, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.90, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -401,7 +401,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_wall_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_wall_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -413,7 +413,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_harness_unblocked_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_harness_unblocked_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -425,7 +425,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_pre_inference_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_pre_inference_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "C",
           "range": true,
           "instant": false,
@@ -437,7 +437,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_sampling_and_stream_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_sampling_and_stream_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "D",
           "range": true,
           "instant": false,
@@ -449,7 +449,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_client_tool_pause_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_client_tool_pause_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_critical_path_coverage=~\"$coverage\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "E",
           "range": true,
           "instant": false,
@@ -506,7 +506,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_inference_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_inference_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -518,7 +518,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_iapi_inference_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_iapi_inference_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -575,7 +575,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_sampling_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_sampling_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -587,7 +587,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_iapi_sampling_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_iapi_sampling_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -644,7 +644,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responses_excl_engine_and_tool_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responses_excl_engine_and_tool_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -656,7 +656,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responses_excl_engine_wait_sampling_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responses_excl_engine_wait_sampling_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -668,7 +668,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responses_excl_engine_wait_sampling_iapi_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responses_excl_engine_wait_sampling_iapi_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "C",
           "range": true,
           "instant": false,
@@ -680,7 +680,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responsesapi_excl_client_tools_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_responsesapi_excl_client_tools_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_baseline_reset=~\"$baseline_reset\"}[$__rate_interval])))",
           "refId": "D",
           "range": true,
           "instant": false,
@@ -737,7 +737,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_tbt_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_tbt_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -749,7 +749,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_iapi_tbt_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_iapi_tbt_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -761,7 +761,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_minus_iapi_tbt_seconds_bucket{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_engine_service_minus_iapi_tbt_seconds_bucket{codexlb_family!=\"probe\", service_name=~\"$service_name\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
           "refId": "C",
           "range": true,
           "instant": false,

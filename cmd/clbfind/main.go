@@ -419,7 +419,9 @@ func report(w io.Writer, t *turn.Turn, maxText int) {
 			kv(w, "secondary window used", fmt.Sprintf("%.1f%% of a %dmin window", t.RateLimit2UsedPercent, t.RateLimit2WindowMin))
 		}
 		for _, k := range sortedKeys(t.ExtraRateLimits) {
-			kv(w, "  "+k, fmt.Sprintf("%.1f%%", t.ExtraRateLimits[k]))
+			for _, window := range t.ExtraRateLimits[k] {
+				kv(w, "  "+k, fmt.Sprintf("%.1f%% of a %dmin window", window.UsedPercent, window.WindowMin))
+			}
 		}
 	}
 

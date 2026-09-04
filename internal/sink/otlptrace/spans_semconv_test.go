@@ -95,6 +95,55 @@ func TestSemconv_OnlyTheResponseSpanClaimsToBeTheInference(t *testing.T) {
 	}
 }
 
+func TestTurnSpanCarriesRequestedTierAndOmitsAbsentNormalTier(t *testing.T) {
+	tests := []struct {
+		name string
+		tier string
+		want bool
+	}{
+		{name: "priority", tier: "priority", want: true},
+		{name: "normal", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, exp := newTestSink(t)
+			now := time.Now()
+			if err := s.Emit(context.Background(), []*turn.Turn{{
+				RequestID: "ws_" + tc.name, ResponseID: "resp_" + tc.name,
+				ThreadID: "thread_" + tc.name, TurnID: "turn_" + tc.name,
+				Model: "gpt-5.6-sol", Status: "completed", Family: "websocket",
+				RequestKind: "turn", ServiceTierRequested: tc.tier,
+				FirstTS: now.Add(-time.Second), LastTS: now,
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Flush(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+
+			for _, sp := range exp.GetSpans() {
+				if sp.Name != "turn" {
+					continue
+				}
+				var got string
+				for _, a := range sp.Attributes {
+					if string(a.Key) == attr.ServiceTierRequested {
+						got = a.Value.AsString()
+					}
+				}
+				if tc.want && got != tc.tier {
+					t.Errorf("turn span requested tier = %q, want %q", got, tc.tier)
+				}
+				if !tc.want && got != "" {
+					t.Errorf("normal turn span requested tier = %q, want absent", got)
+				}
+				return
+			}
+			t.Fatal("turn span not emitted")
+		})
+	}
+}
+
 func TestPostgresEnrichmentIsTypedAndResponseScoped(t *testing.T) {
 	s, exp := newTestSink(t)
 	now := time.Now()

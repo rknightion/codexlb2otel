@@ -3,6 +3,7 @@ package otlpmetric
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -168,10 +169,14 @@ func TestExtraRateLimitsFanOutCarryAccountID(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close(context.Background()) })
 
 	tt := baseTurn("1")
-	tt.ExtraRateLimits = map[string]float64{"GPT-5.3-Codex-Spark": 17.5}
+	tt.ExtraRateLimits = map[string][]turn.RateLimitWindow{
+		"GPT-5.3-Codex-Spark": {{UsedPercent: 17.5, WindowMin: 300}},
+	}
 	noAcct := baseTurn("2")
 	noAcct.AccountID = ""
-	noAcct.ExtraRateLimits = map[string]float64{"GPT-5.3-Codex-Spark": 88}
+	noAcct.ExtraRateLimits = map[string][]turn.RateLimitWindow{
+		"GPT-5.3-Codex-Spark": {{UsedPercent: 88, WindowMin: 300}},
+	}
 
 	if err := s.Emit(context.Background(), []*turn.Turn{tt, noAcct}); err != nil {
 		t.Fatalf("Emit: %v", err)
@@ -203,6 +208,124 @@ func TestExtraRateLimitsFanOutCarryAccountID(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("%s: gen_ai.request.model appears %d times on one data point, want 1", attr.MetricRateLimitPerModel, n)
+	}
+}
+
+func TestRateLimitWindowsAreDistinctAndNeverCarryRequestedTier(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	tt := baseTurn("windows")
+	tt.PlanType = "pro"
+	tt.ServiceTierRequested = "priority"
+	tt.RateLimitWindowMin, tt.RateLimitUsedPercent, tt.RateLimitResetSeconds = 300, 11, 100
+	tt.RateLimit2WindowMin, tt.RateLimit2UsedPercent, tt.RateLimit2ResetSeconds = 10080, 22, 200
+	tt.ExtraRateLimits = map[string][]turn.RateLimitWindow{
+		"gpt-5.6-sol": {
+			{UsedPercent: 33, WindowMin: 300},
+			{UsedPercent: 44, WindowMin: 10080},
+		},
+	}
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatal(err)
+	}
+	rm := collect(t, reader)
+
+	for _, name := range []string{
+		attr.MetricRateLimitUsed, attr.MetricRateLimitUsed2,
+		attr.MetricRateLimitReset, attr.MetricRateLimitPerModel,
+	} {
+		m, ok := findMetric(rm, name)
+		if !ok {
+			t.Fatalf("%s not recorded", name)
+		}
+		seen := map[string]bool{}
+		for _, set := range attrSets(t, m) {
+			window, ok := attrString(t, set, attr.RateLimitWindowMinutes)
+			if !ok {
+				t.Errorf("%s has no %s", name, attr.RateLimitWindowMinutes)
+			}
+			seen[window] = true
+			assertNoAttr(t, name, set, attr.ServiceTierRequested)
+		}
+		if name == attr.MetricRateLimitReset || name == attr.MetricRateLimitPerModel {
+			if !seen["300"] || !seen["10080"] || len(seen) != 2 {
+				t.Errorf("%s windows = %v, want exactly 300 and 10080", name, seen)
+			}
+		}
+	}
+}
+
+func TestRequestedTierMetricScopePreservesExactAttributes(t *testing.T) {
+	s, reader, _ := newTestSink(t)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	tt := baseTurn("tier")
+	tt.RequestKind = requestKindTurn
+	tt.ServiceTierRequested = "priority"
+	tt.Effort = "xhigh"
+	tt.ThreadSource = "subagent"
+	tt.APIKeyName = "default"
+	tt.ErrorType, tt.ErrorCode, tt.Status = "server_error", "overloaded", turn.StatusError
+	tt.InputTokens = 1
+	tt.CriticalPath.Coverage = "complete"
+	tt.CriticalPath.HarnessUnblockedMs = 10
+	tt.ResponsesAPIExclClientToolsMsDelta = 20
+	tt.ServerCreatedAt = time.Now().Add(-time.Second)
+	tt.ServerCompletedAt = time.Now()
+
+	if err := s.Emit(context.Background(), []*turn.Turn{tt}); err != nil {
+		t.Fatal(err)
+	}
+	rm := collect(t, reader)
+
+	tests := []struct {
+		name string
+		want []string
+	}{
+		{name: attr.MetricHarnessUnblocked, want: []string{
+			attr.CriticalPathCoverage, attr.Family, attr.ServiceTierRequested,
+		}},
+		{name: attr.MetricResponsesAPIExclClientTools, want: []string{
+			attr.Family, attr.ServiceTierRequested,
+		}},
+		{name: attr.MetricTokens, want: []string{
+			attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+			attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Family,
+			attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName,
+			attr.ServiceTierRequested, attr.GenAITokenType,
+		}},
+		{name: attr.MetricErrors, want: []string{
+			attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+			attr.AccountID, attr.ErrorType, attr.ErrorCode, attr.Status,
+			attr.ServiceTierRequested,
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m, ok := findMetric(rm, tc.name)
+			if !ok {
+				t.Fatalf("metric not recorded")
+			}
+			sets := attrSets(t, m)
+			if len(sets) != 1 {
+				t.Fatalf("got %d attribute sets, want 1", len(sets))
+			}
+			got := dataPointKeys(t, m)
+			slices.Sort(got)
+			slices.Sort(tc.want)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("attribute keys = %v, want %v", got, tc.want)
+			}
+			assertAttr(t, tc.name, sets[0], attr.ServiceTierRequested, "priority")
+		})
+	}
+	operation, ok := findMetric(rm, attr.MetricOperationDuration)
+	if !ok {
+		t.Fatalf("%s not recorded", attr.MetricOperationDuration)
+	}
+	for _, set := range attrSets(t, operation) {
+		assertAttr(t, attr.MetricOperationDuration, set, attr.ServiceTierRequested, "priority")
 	}
 }
 
@@ -836,7 +959,9 @@ func TestEveryEmittedAttributeKeyIsOnContract(t *testing.T) {
 	tt.ToolCalls = []turn.ToolCall{{Name: "exec"}}
 	tt.RateLimitWindowMin, tt.RateLimitUsedPercent = 300, 10
 	tt.RateLimit2WindowMin, tt.RateLimit2UsedPercent = 60, 5
-	tt.ExtraRateLimits = map[string]float64{"gpt-5.3-codex-spark": 3}
+	tt.ExtraRateLimits = map[string][]turn.RateLimitWindow{
+		"gpt-5.3-codex-spark": {{UsedPercent: 3, WindowMin: 300}},
+	}
 	tt.HasCredits = true
 	tt.CreditsBalance = "$12.50"
 	tt.APIKeyName = "default"

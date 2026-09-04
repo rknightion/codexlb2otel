@@ -1279,20 +1279,20 @@ def tab_limits():
     p.append(panel(
         "Primary window utilisation", [
             q(f'{prom("codexlb.rate_limit.used_percent")}{{{JOB}}}',
-              "{{codexlb_account_id}} ({{codexlb_plan_type}})"),
+              "{{codexlb_account_id}} ({{codexlb_plan_type}}, {{codexlb_rate_limit_window_minutes}}m)"),
         ], unit="percent", maxv=100, minv=0, opts=LEG, thresholds=GREEN_RED,
         desc="Percent of the account's primary rate-limit window consumed. This is "
              "reported BY the provider in the frames, not inferred here."))
     p.append(panel(
         "Secondary window utilisation", [
             q(f'{prom("codexlb.rate_limit.secondary_used_percent")}{{{JOB}}}',
-              "{{codexlb_account_id}} ({{codexlb_plan_type}})"),
+              "{{codexlb_account_id}} ({{codexlb_plan_type}}, {{codexlb_rate_limit_window_minutes}}m)"),
         ], unit="percent", maxv=100, minv=0, opts=LEG, thresholds=GREEN_RED,
         desc="The independently reported secondary limit window. Its plan type is retained so unlike accounts are never averaged together."))
     p.append(panel(
         "Per-model window utilisation", [
             q(f'{prom("codexlb.rate_limit.model_used_percent")}{{{JOB}}}',
-              "{{codexlb_account_id}} / {{codexlb_plan_type}} / {{gen_ai_request_model}}"),
+              "{{codexlb_account_id}} / {{codexlb_plan_type}} / {{gen_ai_request_model}} / {{codexlb_rate_limit_window_minutes}}m"),
         ], unit="percent", maxv=100, minv=0, opts=LEG, thresholds=GREEN_RED,
         desc="Some models carry their own window. This one can be exhausted while the "
              "primary window above still looks healthy - that mismatch is exactly the "
@@ -1300,7 +1300,7 @@ def tab_limits():
     p.append(panel(
         "Time until window reset", [
             q(f'{prom("codexlb.rate_limit.reset_after")}{{{JOB}}}',
-              "{{codexlb_account_id}} ({{codexlb_plan_type}})"),
+              "{{codexlb_account_id}} ({{codexlb_plan_type}}, {{codexlb_rate_limit_window_minutes}}m)"),
         ], unit="s", opts=LEG,
         desc="Sawtooth is healthy - it should fall to zero and jump back. A flat line "
              "means the value has stopped being refreshed and everything above it is stale."))

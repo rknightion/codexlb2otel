@@ -180,9 +180,10 @@ func (s *Sink) recordTokens(ctx context.Context, t *turn.Turn, base []attr.KV) {
 // recordCost records codex-lb's own computed charge as the aggregation surface for
 // cost. It deliberately uses the same model/family/effort/thread/API-key shape as the
 // token instruments, minus gen_ai.token.type because a response cost is not split by
-// token bucket. Duration-only labels such as service tier and critical-path coverage
-// are dropped because they would multiply cost series without changing the accounting
-// question this counter answers.
+// token bucket. Requested service tier is retained on the token counter for cohort
+// cost analysis, but remains deliberately absent here: cost is already derivable from
+// those tiered token series, and adding it again would multiply this second accounting
+// surface. Critical-path coverage is likewise irrelevant to response cost.
 func (s *Sink) recordCost(ctx context.Context, t *turn.Turn, base []attr.KV) {
 	if t.CostUSD == nil || *t.CostUSD < 0 || math.IsNaN(*t.CostUSD) || math.IsInf(*t.CostUSD, 0) || !s.firstCostResponse(t.ResponseID) {
 		return
@@ -305,7 +306,8 @@ func (s *Sink) recordDurations(ctx context.Context, t *turn.Turn, base []attr.KV
 		s.inst.engineWall.Record(ctx, msToS(t.CriticalPath.EngineWallMs), otelmetric.WithAttributes(toOtel(cpAttrs)...))
 	}
 	if t.CriticalPath.HarnessUnblockedMs > 0 {
-		s.inst.harnessUnblocked.Record(ctx, msToS(t.CriticalPath.HarnessUnblockedMs), otelmetric.WithAttributes(toOtel(cpAttrs)...))
+		attrs := harnessUnblockedAttrs(base)
+		s.inst.harnessUnblocked.Record(ctx, msToS(t.CriticalPath.HarnessUnblockedMs), otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 	if t.CriticalPath.SamplingStreamMs > 0 {
 		s.inst.samplingStream.Record(ctx, msToS(t.CriticalPath.SamplingStreamMs), otelmetric.WithAttributes(toOtel(cpAttrs)...))
@@ -364,11 +366,16 @@ func (s *Sink) recordEngineTimingDeltas(ctx context.Context, t *turn.Turn, base 
 		{s.inst.responsesExclEngineAndTool, t.ResponsesExclEngineAndToolMsDelta},
 		{s.inst.responsesExclEngineWaitSampling, t.ResponsesExclEngineWaitSamplingMsDelta},
 		{s.inst.responsesExclEngineWaitSamplingIapi, t.ResponsesExclEngineWaitSamplingIapiMsDelta},
-		{s.inst.responsesAPIExclClientTools, t.ResponsesAPIExclClientToolsMsDelta},
 	} {
 		if d.ms > 0 {
 			d.inst.Record(ctx, msToS(d.ms), opt)
 		}
+	}
+	if t.ResponsesAPIExclClientToolsMsDelta > 0 {
+		attrs := responsesAPIExclClientToolsAttrs(base)
+		s.inst.responsesAPIExclClientTools.Record(ctx,
+			msToS(t.ResponsesAPIExclClientToolsMsDelta),
+			otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 
 	// EngineUncachedPromptTokensDelta deliberately does NOT join gen_ai.token.type as a
@@ -453,11 +460,14 @@ func (s *Sink) recordRateLimits(ctx context.Context, t *turn.Turn, base []attr.K
 	// reliable signal - it is a real plan configuration value the server would never
 	// send as literally zero - so it gates whether the window's own gauges fire.
 	if t.RateLimitWindowMin > 0 {
-		s.inst.rateLimitUsed.Record(ctx, t.RateLimitUsedPercent, otelmetric.WithAttributes(toOtel(accountAttrs)...))
-		s.inst.rateLimitReset.Record(ctx, t.RateLimitResetSeconds, otelmetric.WithAttributes(toOtel(accountAttrs)...))
+		attrs := rateLimitWindowAttrs(s.guard, accountAttrs, t.RateLimitWindowMin)
+		s.inst.rateLimitUsed.Record(ctx, t.RateLimitUsedPercent, otelmetric.WithAttributes(toOtel(attrs)...))
+		s.inst.rateLimitReset.Record(ctx, t.RateLimitResetSeconds, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 	if t.RateLimit2WindowMin > 0 {
-		s.inst.rateLimitUsed2.Record(ctx, t.RateLimit2UsedPercent, otelmetric.WithAttributes(toOtel(accountAttrs)...))
+		attrs := rateLimitWindowAttrs(s.guard, accountAttrs, t.RateLimit2WindowMin)
+		s.inst.rateLimitUsed2.Record(ctx, t.RateLimit2UsedPercent, otelmetric.WithAttributes(toOtel(attrs)...))
+		s.inst.rateLimitReset.Record(ctx, t.RateLimit2ResetSeconds, otelmetric.WithAttributes(toOtel(attrs)...))
 	}
 
 	// ExtraRateLimits is keyed by model name and, per turn.go's own doc comment,
@@ -466,12 +476,18 @@ func (s *Sink) recordRateLimits(ctx context.Context, t *turn.Turn, base []attr.K
 	// guarantee) this one genuinely needs no extra cap here. gen_ai.request.model is
 	// dropped from accountAttrs before adding it back from the map key, so each
 	// measurement carries exactly one value for that key rather than two.
-	for model, pct := range t.ExtraRateLimits {
+	for model, windows := range t.ExtraRateLimits {
 		if model == "" {
 			continue
 		}
-		attrs := s.guard.With(accountAttrs, attr.KV{Key: attr.GenAIRequestModel, Value: model})
-		s.inst.rateLimitPerModel.Record(ctx, pct, otelmetric.WithAttributes(toOtel(attrs)...))
+		modelAttrs := s.guard.With(accountAttrs, attr.KV{Key: attr.GenAIRequestModel, Value: model})
+		for _, window := range windows {
+			if window.WindowMin <= 0 {
+				continue
+			}
+			attrs := rateLimitWindowAttrs(s.guard, modelAttrs, window.WindowMin)
+			s.inst.rateLimitPerModel.Record(ctx, window.UsedPercent, otelmetric.WithAttributes(toOtel(attrs)...))
+		}
 	}
 
 	if !t.HasCredits && !t.CreditsUnlimited && t.CreditsBalance == "" {
@@ -573,7 +589,7 @@ func attributeSetsForTurn(t *turn.Turn, guard *attr.Guard, base []attr.KV) []Ins
 		add(attr.MetricEngineWall, cpAttrs)
 	}
 	if t.CriticalPath.HarnessUnblockedMs > 0 {
-		add(attr.MetricHarnessUnblocked, cpAttrs)
+		add(attr.MetricHarnessUnblocked, harnessUnblockedAttrs(base))
 	}
 	if t.CriticalPath.SamplingStreamMs > 0 {
 		add(attr.MetricSamplingStream, cpAttrs)
@@ -605,11 +621,13 @@ func attributeSetsForTurn(t *turn.Turn, guard *attr.Guard, base []attr.KV) []Ins
 		{attr.MetricResponsesExclEngineAndTool, t.ResponsesExclEngineAndToolMsDelta},
 		{attr.MetricResponsesExclEngineWaitSampling, t.ResponsesExclEngineWaitSamplingMsDelta},
 		{attr.MetricResponsesExclEngineWaitSamplingIapi, t.ResponsesExclEngineWaitSamplingIapiMsDelta},
-		{attr.MetricResponsesAPIExclClientTools, t.ResponsesAPIExclClientToolsMsDelta},
 	} {
 		if d.ms > 0 {
 			add(d.name, timingAttrs)
 		}
+	}
+	if t.ResponsesAPIExclClientToolsMsDelta > 0 {
+		add(attr.MetricResponsesAPIExclClientTools, responsesAPIExclClientToolsAttrs(base))
 	}
 	if t.EngineUncachedPromptTokensDelta > 0 {
 		add(attr.MetricEngineUncachedPromptTokens, engineUncachedPromptTokenAttrs(base))
@@ -629,17 +647,25 @@ func attributeSetsForTurn(t *turn.Turn, guard *attr.Guard, base []attr.KV) []Ins
 	if t.AccountID != "" {
 		accountAttrs := rateLimitAttrs(base)
 		if t.RateLimitWindowMin > 0 {
-			add(attr.MetricRateLimitUsed, accountAttrs)
-			add(attr.MetricRateLimitReset, accountAttrs)
+			windowAttrs := rateLimitWindowAttrs(guard, accountAttrs, t.RateLimitWindowMin)
+			add(attr.MetricRateLimitUsed, windowAttrs)
+			add(attr.MetricRateLimitReset, windowAttrs)
 		}
 		if t.RateLimit2WindowMin > 0 {
-			add(attr.MetricRateLimitUsed2, accountAttrs)
+			windowAttrs := rateLimitWindowAttrs(guard, accountAttrs, t.RateLimit2WindowMin)
+			add(attr.MetricRateLimitUsed2, windowAttrs)
+			add(attr.MetricRateLimitReset, windowAttrs)
 		}
-		for model := range t.ExtraRateLimits {
+		for model, windows := range t.ExtraRateLimits {
 			if model == "" {
 				continue
 			}
-			add(attr.MetricRateLimitPerModel, guard.With(accountAttrs, attr.KV{Key: attr.GenAIRequestModel, Value: model}))
+			modelAttrs := guard.With(accountAttrs, attr.KV{Key: attr.GenAIRequestModel, Value: model})
+			for _, window := range windows {
+				if window.WindowMin > 0 {
+					add(attr.MetricRateLimitPerModel, rateLimitWindowAttrs(guard, modelAttrs, window.WindowMin))
+				}
+			}
 		}
 		if t.HasCredits || t.CreditsUnlimited || t.CreditsBalance != "" {
 			add(attr.MetricCreditsUnlimited, accountAttrs)
@@ -673,7 +699,8 @@ func responseCounterAttrs(base []attr.KV) []attr.KV {
 func tokenCounterAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
 		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
-		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName)
+		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName,
+		attr.ServiceTierRequested)
 }
 
 // tokenUsageAttrs keeps the required family, effort and thread-source token shape.
@@ -723,7 +750,7 @@ func engineUncachedPromptTokenAttrs(base []attr.KV) []attr.KV {
 func operationDurationAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
 		attr.GenAIResponseModel, attr.Status, attr.ErrorType, attr.ErrorCategory,
-		attr.GenAIAgentName, attr.Family)
+		attr.GenAIAgentName, attr.ServiceTierRequested, attr.Family)
 }
 
 // turnDurationAttrs measures user-visible latency only. It carries family and the
@@ -743,7 +770,7 @@ func ttftAttrs(base []attr.KV) []attr.KV {
 		attr.ServiceTierRequested, attr.Family)
 }
 
-// criticalPathDurationAttrs is specific to critical-path measurements: coverage
+// criticalPathDurationAttrs is specific to most critical-path measurements: coverage
 // describes whether these duration values are trustworthy. Family is the only traffic
 // dimension retained so probes remain removable without multiplying every bucket by
 // model, account and request-kind churn. Model-specific user-facing latency remains on
@@ -752,12 +779,20 @@ func criticalPathDurationAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.CriticalPathCoverage, attr.Family)
 }
 
-// engineTimingDurationAttrs is for the eight cumulative engine timing deltas. It
+func harnessUnblockedAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.CriticalPathCoverage, attr.Family, attr.ServiceTierRequested)
+}
+
+// engineTimingDurationAttrs is for most cumulative engine timing deltas. It
 // retains only family: the instruments compare layers and derived durations rather
 // than cohorts, while model-specific latency remains available on the three primary
 // histograms. This keeps eight bucketed instruments inside the measured series budget.
 func engineTimingDurationAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.Family)
+}
+
+func responsesAPIExclClientToolsAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.Family, attr.ServiceTierRequested)
 }
 
 // tbtAttrs keeps only family for probe exclusion. TBT compares the service and IAPI
@@ -777,12 +812,11 @@ func webSearchAttrs(base []attr.KV) []attr.KV {
 		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind)
 }
 
-// errorCounterAttrs keeps the error runbook dimensions and deliberately drops family,
-// effort, thread source and API key because this counter is for rejection type, not
-// cost or latency attribution.
+// errorCounterAttrs keeps the error runbook dimensions plus requested tier for cohort
+// reliability, and deliberately drops family, effort, thread source and API key.
 func errorCounterAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-		attr.AccountID, attr.ErrorType, attr.ErrorCode, attr.Status)
+		attr.AccountID, attr.ErrorType, attr.ErrorCode, attr.Status, attr.ServiceTierRequested)
 }
 
 // transportEventAttrs is the websocket lifecycle shape. It carries family because
@@ -835,6 +869,10 @@ func toolCallsPerOperationAttrs(base []attr.KV) []attr.KV {
 // misaggregate and harder to read.
 func rateLimitAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.AccountID, attr.PlanType)
+}
+
+func rateLimitWindowAttrs(guard *attr.Guard, base []attr.KV, minutes int) []attr.KV {
+	return guard.With(base, attr.KV{Key: attr.RateLimitWindowMinutes, Value: strconv.Itoa(minutes)})
 }
 
 // msToS converts a millisecond field to the seconds every histogram in this sink is

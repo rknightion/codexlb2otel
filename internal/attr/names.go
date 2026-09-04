@@ -249,6 +249,10 @@ const (
 	// that wants to know whether priority is worth having has to be able to select on
 	// what was asked for, independently of what the server says it did.
 	ServiceTierRequested = "codexlb.service_tier_requested"
+	// RateLimitWindowMinutes identifies which bounded account quota window a gauge
+	// describes. It is caller-supplied per measurement because one Turn can carry
+	// primary and secondary windows simultaneously.
+	RateLimitWindowMinutes = "codexlb.rate_limit.window_minutes"
 	// ThreadSource is user | subagent.
 	ThreadSource = "codexlb.thread_source"
 	// SubagentKind describes how a subagent thread was created.

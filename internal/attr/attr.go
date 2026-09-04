@@ -162,6 +162,7 @@ var registry = []Field{
 	{Key: ServiceTierRequested, Class: Bounded, Cap: 8,
 		Observed: []string{"priority"},
 		Of:       func(t *turn.Turn) string { return t.ServiceTierRequested }},
+	{Key: RateLimitWindowMinutes, Class: Bounded, Cap: 16},
 	{Key: ThreadSource, Class: Bounded, Cap: 8,
 		Observed: []string{"user", "subagent"},
 		Of:       func(t *turn.Turn) string { return t.ThreadSource }},

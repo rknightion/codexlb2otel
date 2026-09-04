@@ -156,6 +156,48 @@ def parse_turn_json_tags(path):
 # ---------------------------------------------------------------------------
 
 TOKEN_RE = re.compile(r'\b(codexlb_[a-zA-Z0-9_]+|gen_ai_[a-zA-Z0-9_]+|error_type|service_name)\b')
+
+# Every traffic metric here carries codexlb.family and can include synthetic probe
+# traffic. A dashboard query that omits the selector silently mixes validation traffic
+# into product telemetry. Checking counters alone left the latency histograms open.
+PROBE_FILTERED_METRICS = {
+    "codexlb_tokens_total",
+    "codexlb_responses_total",
+    "codexlb_turns_total",
+    "gen_ai_client_operation_duration_seconds_bucket",
+    "codexlb_turn_duration_seconds_bucket",
+    "gen_ai_client_time_to_first_token_seconds_bucket",
+    "codexlb_engine_wall_seconds_bucket",
+    "codexlb_harness_unblocked_seconds_bucket",
+    "codexlb_pre_inference_seconds_bucket",
+    "codexlb_sampling_and_stream_seconds_bucket",
+    "codexlb_client_tool_pause_seconds_bucket",
+    "codexlb_engine_service_inference_seconds_bucket",
+    "codexlb_engine_iapi_inference_seconds_bucket",
+    "codexlb_engine_service_sampling_seconds_bucket",
+    "codexlb_engine_iapi_sampling_seconds_bucket",
+    "codexlb_responses_excl_engine_and_tool_seconds_bucket",
+    "codexlb_responses_excl_engine_wait_sampling_seconds_bucket",
+    "codexlb_responses_excl_engine_wait_sampling_iapi_seconds_bucket",
+    "codexlb_responsesapi_excl_client_tools_seconds_bucket",
+    "codexlb_engine_service_tbt_seconds_bucket",
+    "codexlb_engine_iapi_tbt_seconds_bucket",
+    "codexlb_engine_service_minus_iapi_tbt_seconds_bucket",
+}
+PROBE_METRIC_RE = re.compile(
+    r'(?<![A-Za-z0-9_:])(' +
+    '|'.join(re.escape(metric) for metric in sorted(PROBE_FILTERED_METRICS, key=len, reverse=True)) +
+    r')(?:\{([^{}]*)\})?'
+)
+
+
+def probe_family_findings(fname, expr):
+    findings = []
+    for match in PROBE_METRIC_RE.finditer(expr):
+        metric, selector = match.groups()
+        if selector is None or "codexlb_family" not in selector:
+            findings.append((fname, "traffic query missing probe-family selector", metric))
+    return findings
 JSON_EXTRACT_RE = re.compile(r'\b\w+\s*=\s*"([a-zA-Z0-9_.]+)"')
 
 # Tokens that are legitimately not attr/instrument names: PromQL/Loki structural
@@ -315,9 +357,7 @@ def main():
             # name actually used in this dashboard set was generated against the
             # table above, so treat anything left over as a genuine finding.
             findings.append((fname, "unknown identifier", tok))
-        for metric in ("codexlb_tokens_total", "codexlb_responses_total", "codexlb_turns_total"):
-            if metric in expr and "codexlb_family" not in expr:
-                findings.append((fname, "traffic query missing probe-family selector", metric))
+        findings.extend(probe_family_findings(fname, expr))
 
     for path in sorted(glob.glob(os.path.join(dash_dir, "**", "*.json"), recursive=True)):
         for expr in collect_dashboard_exprs(path):

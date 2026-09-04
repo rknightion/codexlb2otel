@@ -748,18 +748,27 @@ func (r *Reducer) applyRateLimits(t *Turn, ev frame.Event) {
 		if s := rl.Secondary; s != nil {
 			t.RateLimit2UsedPercent = s.UsedPercent
 			t.RateLimit2WindowMin = s.WindowMinutes
+			t.RateLimit2ResetSeconds = s.ResetAfterSeconds
 		}
 	}
 	// Keyed by model name and bounded by the models on the plan, so this is safe to
 	// fan out into per-model gauges.
 	for model, blk := range e.Additional {
-		if blk == nil || blk.Primary == nil {
+		if blk == nil {
 			continue
 		}
 		if t.ExtraRateLimits == nil {
-			t.ExtraRateLimits = map[string]float64{}
+			t.ExtraRateLimits = map[string][]RateLimitWindow{}
 		}
-		t.ExtraRateLimits[model] = blk.Primary.UsedPercent
+		for _, window := range []*rateLimitWindow{blk.Primary, blk.Secondary} {
+			if window == nil || window.WindowMinutes <= 0 {
+				continue
+			}
+			t.ExtraRateLimits[model] = append(t.ExtraRateLimits[model], RateLimitWindow{
+				UsedPercent: window.UsedPercent, WindowMin: window.WindowMinutes,
+				ResetSeconds: window.ResetAfterSeconds,
+			})
+		}
 	}
 }
 

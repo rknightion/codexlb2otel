@@ -65,6 +65,12 @@ func TestAgentNameMatchesCodexCodingAgentIdentity(t *testing.T) {
 	}
 }
 
+func TestRateLimitWindowPrometheusLabelMapping(t *testing.T) {
+	if got, want := LokiKey(RateLimitWindowMinutes), "codexlb_rate_limit_window_minutes"; got != want {
+		t.Fatalf("rate-limit window Prometheus label = %q, want %q", got, want)
+	}
+}
+
 func TestSpanUsageKeepsResponseTotalsSeparateFromAttribution(t *testing.T) {
 	tn := &turn.Turn{
 		InputTokens: 21, OutputTokens: 13, CachedTokens: 5, CacheWriteTokens: 7,
