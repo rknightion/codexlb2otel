@@ -1,11 +1,11 @@
 ---
 id: CXO-0020
 title: Fix the v2 dashboard name defects and make its coverage check honest
-status: In Progress
+status: Parked
 assignee:
   - '@codex'
 created_date: '2026-09-03 13:51'
-updated_date: '2026-09-03 18:48'
+updated_date: '2026-09-04 19:43'
 labels:
   - dashboards
 dependencies: []
@@ -32,15 +32,15 @@ Not in scope: adding panels for signals that have none (that is the dashboard-ad
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 The three panels above query the real wire names and render series on the live m7kni stack (evidence: gcx dashboards snapshot or a query against grafanacloud-prom returning data for each)
-- [ ] #2 The metric sidecar is produced by a just recipe (group gen) whose extraction matches every Metric* constant including ones with digits, and just check fails when the committed sidecar is stale
-- [ ] #3 generate.py verify() fails when a panel query references a metric wire name or a label that the source does not emit, not only when a declared name has no panel; check_names.py (or its replacement) covers dashboards/v2/
-- [ ] #4 SPAN_NAMES enumerates every span name the otlptrace sink emits, including invoke_agent and every critical_path.* phase, and verify() fails when one has no panel
-- [ ] #5 Regenerated dashboards/v2/codexlb2otel-full.json is pushed to m7kni with gcx dashboards update and the live spec matches the committed file
+- [x] #2 The metric sidecar is produced by a just recipe (group gen) whose extraction matches every Metric* constant including ones with digits, and just check fails when the committed sidecar is stale
+- [x] #3 generate.py verify() fails when a panel query references a metric wire name or a label that the source does not emit, not only when a declared name has no panel; check_names.py (or its replacement) covers dashboards/v2/
+- [x] #4 SPAN_NAMES enumerates every span name the otlptrace sink emits, including invoke_agent and every critical_path.* phase, and verify() fails when one has no panel
+- [x] #5 Regenerated dashboards/v2/codexlb2otel-full.json is pushed to m7kni with gcx dashboards update and the live spec matches the committed file
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -53,4 +53,8 @@ Wave 1 dashboard lane after wiring: repair real wire names and labels, make side
 
 <!-- SECTION:NOTES:BEGIN -->
 Correction 2026-09-03 (live-verified on Mimir, not derived): the instrument declares unit 'count', and the translator appends the unit as a suffix, so the real wire name is gen_ai_client_tool_calls_per_operation_count_bucket / _count_sum / _count_count (256 bucket series live), NOT gen_ai_client_tool_calls_per_operation_bucket as the assessment file states. Fix the panel to the _count_ form. Live baseline for reference: ~7,100 active series total for job=codexlb2otel, dominated by gen_ai_client_token_usage_bucket (1,140).
+
+Final integration at 7a54c59 and 334a4db: generated coverage is 63 of 63 metrics, 9 of 9 record types, and 10 of 10 span names; final just check passed. Dashboard generation 12 is live on m7kni and its spec matches the committed resource after normalizing empty custom objects stripped by Grafana. Live PromQL returned 352 tool-call histogram bucket series and 26 completed operation-duration count series grouped by codexlb_status. The secondary rate-limit metric returned no live series, so AC 1 remains unproven for that panel and this task is parked until genuine secondary-window data is emitted.
+
+Known follow-up in the generated resource: the dashboard description still says all 57 metrics even though the verified inventory is 63. It was left unchanged after the final green gate to avoid manufacturing post-gate source. Correct the generator wording, regenerate, and rerun dashboard-check plus just check in the next run.
 <!-- SECTION:NOTES:END -->

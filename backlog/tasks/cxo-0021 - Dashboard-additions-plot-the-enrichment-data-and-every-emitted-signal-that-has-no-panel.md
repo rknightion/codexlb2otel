@@ -3,11 +3,11 @@ id: CXO-0021
 title: >-
   Dashboard additions: plot the enrichment data and every emitted signal that
   has no panel
-status: In Progress
+status: Parked
 assignee:
   - '@codex'
 created_date: '2026-09-03 14:11'
-updated_date: '2026-09-03 18:48'
+updated_date: '2026-09-04 19:54'
 labels:
   - dashboards
 dependencies:
@@ -45,15 +45,15 @@ Deliberately NOT plotted, so nobody adds them later by mistake: gen_ai.provider.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every panel in sections A to D exists in generate.py, and generate.py verify() fails if any metric, record type or span name that the exporter emits has no panel
+- [x] #1 Every panel in sections A to D exists in generate.py, and generate.py verify() fails if any metric, record type or span name that the exporter emits has no panel
 - [ ] #2 Regenerated JSON pushed to m7kni; gcx dashboards snapshot of the Tokens & Cost and Pipeline Health tabs shows live data in the new cost and enrichment panels within one hour of the enrichment deploy
-- [ ] #3 A $family variable exists and every cost, token and latency panel excludes probe by default
-- [ ] #4 docs/dashboards.md and dashboards/README.md describe the new tabs and the deliberate omissions
+- [x] #3 A $family variable exists and every cost, token and latency panel excludes probe by default
+- [x] #4 docs/dashboards.md and dashboards/README.md describe the new tabs and the deliberate omissions
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -61,3 +61,11 @@ Deliberately NOT plotted, so nobody adds them later by mistake: gen_ai.provider.
 <!-- SECTION:PLAN:BEGIN -->
 Wave 1 dashboard lane after enrichment and metrics wiring: add all specified panels, family filtering and deliberate omissions, then root publishes and verifies live.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Dashboard implementation landed at 7a54c59 and final selector fixes at 334a4db. It covers 63 of 63 metrics, 9 of 9 records, and 10 of 10 spans; family defaults exclude probe; documentation names the tabs and omissions; final just check passed. Generation 12 is live and normalized-spec identical. Panel 132 rendered the enrichment-disabled state and panel 136 rendered two breaking drift findings. Cost is absent and enrichment reports only disabled because no read-only Postgres DSN exists, so AC 2 is not proven. Resume after CXO-0001 has genuine db_hit and cost data, then capture both live panels within one hour.
+
+Final 30 minute live sample still had only enrichment disabled=1,183 and no codexlb_cost_usd_total series. The cost and genuine enrichment half of AC 2 remains parked, not skipped or passed.
+<!-- SECTION:NOTES:END -->
