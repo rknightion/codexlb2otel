@@ -785,6 +785,57 @@ func TestReducer_InterleavedMemoryKeepsItsOwnBaseline(t *testing.T) {
 	}
 }
 
+func TestReducer_DecodesSeptemberWireFields(t *testing.T) {
+	r := New()
+	meta := `{"thread_id":"thread-september","root_turn_id":"root-turn","agent_name":"l8_wire_adoption","sandbox_mode":"workspace-write","window_number":7}`
+	events := []string{
+		`{"type":"response.create","model":"gpt-5.6-terra","client_metadata":{"thread_id":"thread-september","x-codex-turn-metadata":` + strconvQuote(meta) + `}}`,
+		`{"type":"response.created","response":{"id":"resp-september","prompt_cache_options":{"mode":"in_memory","ttl":3600}}}`,
+		`{"type":"response.in_progress","response":{"prompt_cache_diagnostics":{"type":"hit"}}}`,
+		`{"type":"response.output_text.delta","safety_buffering":{"retry_model":"gpt-5.4-mini","reasons":["policy"],"use_cases":["coding"]}}`,
+		`{"type":"response.completed","response":{"status":"completed","model":"gpt-5.6-terra","usage":{"input_tokens":21,"output_tokens":13,"attribution":{"items":{"at_first":{"input_tokens":3,"output_tokens":2,"cached_tokens":1,"cache_write_tokens":4},"ctc_second":{"input_tokens":5,"output_tokens":7,"cached_tokens":11,"cache_write_tokens":13}}}}}}`,
+	}
+
+	var got *Turn
+	base := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	for i, event := range events {
+		done, err := r.Add(&frame.Record{
+			RequestID: "req-september",
+			Headers:   frame.Headers{"thread-id": "thread-september", "originator": "codex-tui"},
+			Timestamp: base.Add(time.Duration(i) * time.Millisecond),
+			Payload:   frame.Payload{Text: event},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done != nil {
+			got = done
+		}
+	}
+	if got == nil {
+		t.Fatal("no completed turn")
+	}
+	if got.RootTurnID != "root-turn" || got.AgentName != "l8_wire_adoption" || got.SandboxMode != "workspace-write" || got.WindowNumber != 7 {
+		t.Errorf("turn metadata = %+v, want September fields", got)
+	}
+	if got.PromptCacheMode != "in_memory" || got.PromptCacheTTL != 3600 || got.PromptCacheDiagnostic != "hit" {
+		t.Errorf("prompt cache = mode %q ttl %v diagnostic %q", got.PromptCacheMode, got.PromptCacheTTL, got.PromptCacheDiagnostic)
+	}
+	if got.SafetyRetryModel != "gpt-5.4-mini" || !got.SafetyBuffering {
+		t.Errorf("safety buffering = retry %q enabled %t", got.SafetyRetryModel, got.SafetyBuffering)
+	}
+	if got.AttributionInputTokens != 8 || got.AttributionOutputTokens != 9 || got.AttributionCachedTokens != 12 || got.AttributionCacheWriteTokens != 17 {
+		t.Errorf("attribution sums = input %d output %d cached %d cache write %d", got.AttributionInputTokens, got.AttributionOutputTokens, got.AttributionCachedTokens, got.AttributionCacheWriteTokens)
+	}
+	body, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "at_first") || strings.Contains(string(body), "ctc_second") {
+		t.Errorf("attribution item identifiers leaked into turn body: %s", body)
+	}
+}
+
 // The per-tool-call duration array is cumulative across a logical turn and only
 // grows, so Turn.ToolCallDurationsMs must carry a SUFFIX DIFF - entries newly added
 // since the previous response of the same series - and never re-emit anything a

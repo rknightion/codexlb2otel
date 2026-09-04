@@ -54,6 +54,9 @@ type Turn struct {
 
 	ForkedFromThreadID string `json:"forked_from_thread_id,omitempty"`
 	PromptCacheKey     string `json:"prompt_cache_key,omitempty"`
+	RootTurnID         string `json:"root_turn_id,omitempty"`
+	AgentName          string `json:"agent_name,omitempty"`
+	WindowNumber       int    `json:"window_number,omitempty"`
 
 	// Postgres enrichment fields. CostUSD is a pointer because an explicitly computed
 	// zero cost is different from a lookup miss. The proxy fields are codex-lb's view
@@ -103,16 +106,20 @@ type Turn struct {
 	// RequestKind is turn | prewarm | compaction | memory, and is more than a label: it
 	// is half of the key the reducer diffs cumulative counters against, because the
 	// kinds run CONCURRENTLY on one thread with separate counter series. See seriesKey.
-	RequestKind    string `json:"request_kind,omitempty"`
-	ThreadSource   string `json:"thread_source,omitempty"`
-	SubagentKind   string `json:"subagent_kind,omitempty"`
-	Sandbox        string `json:"sandbox,omitempty"`
-	Originator     string `json:"originator,omitempty"`
-	ClientVersion  string `json:"client_version,omitempty"`
-	ReasoningCtx   string `json:"reasoning_context,omitempty"`
-	ReasoningMode  string `json:"reasoning_mode,omitempty"`
-	CacheRetention string `json:"prompt_cache_retention,omitempty"`
-	ParallelTools  bool   `json:"parallel_tool_calls,omitempty"`
+	RequestKind           string  `json:"request_kind,omitempty"`
+	ThreadSource          string  `json:"thread_source,omitempty"`
+	SubagentKind          string  `json:"subagent_kind,omitempty"`
+	Sandbox               string  `json:"sandbox,omitempty"`
+	SandboxMode           string  `json:"sandbox_mode,omitempty"`
+	Originator            string  `json:"originator,omitempty"`
+	ClientVersion         string  `json:"client_version,omitempty"`
+	ReasoningCtx          string  `json:"reasoning_context,omitempty"`
+	ReasoningMode         string  `json:"reasoning_mode,omitempty"`
+	CacheRetention        string  `json:"prompt_cache_retention,omitempty"`
+	PromptCacheMode       string  `json:"prompt_cache_mode,omitempty"`
+	PromptCacheTTL        float64 `json:"prompt_cache_ttl_seconds,omitempty"`
+	PromptCacheDiagnostic string  `json:"prompt_cache_diagnostic,omitempty"`
+	ParallelTools         bool    `json:"parallel_tool_calls,omitempty"`
 	// Lite marks the internal codex-responses-lite path.
 	Lite bool `json:"lite,omitempty"`
 
@@ -163,6 +170,12 @@ type Turn struct {
 	ReasoningTokens  int     `json:"reasoning_tokens"`
 	TotalTokens      int     `json:"total_tokens"`
 	CacheHitRatio    float64 `json:"cache_hit_ratio"`
+	// Attribution token counts are sums across response.usage.attribution.items,
+	// never keyed by the server's per-item identifiers.
+	AttributionInputTokens      int `json:"attribution_input_tokens,omitempty"`
+	AttributionCachedTokens     int `json:"attribution_cached_tokens,omitempty"`
+	AttributionCacheWriteTokens int `json:"attribution_cache_write_tokens,omitempty"`
+	AttributionOutputTokens     int `json:"attribution_output_tokens,omitempty"`
 
 	// BaselineReset marks a response whose deltas were computed with no prior
 	// cumulative baseline - a cold start, or the first sighting of a thread after a

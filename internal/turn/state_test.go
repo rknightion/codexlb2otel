@@ -25,6 +25,16 @@ func TestReducer_StateSnapshotPersistsSeriesTimestamps(t *testing.T) {
 	}
 }
 
+func TestReducer_SequenceFreshnessLivesOnReducer(t *testing.T) {
+	r := New()
+	base := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	completeTimedTurn(t, r, "seq-freshness", frame.KindTurn, "req-seq", 1, 10, base)
+
+	if got, want := r.seqSeen["seq-freshness"], base.Add(time.Millisecond); got != want {
+		t.Fatalf("reducer sequence freshness = %s, want newest sequence event %s", got, want)
+	}
+}
+
 func TestReducer_RestoreOldStateTimestampsDefaultToLoadTime(t *testing.T) {
 	loadedAt := time.Date(2026, 8, 10, 12, 30, 0, 0, time.UTC)
 	old := State{

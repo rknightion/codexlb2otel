@@ -3,7 +3,6 @@ package turn
 import (
 	"encoding/json"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -35,8 +34,6 @@ type State struct {
 // the wall clock. Without persisting that anchor, a restart would either evict every
 // restored baseline immediately or keep all of them forever.
 const stateVersion = 4
-
-var seqSeenByReducer sync.Map // *Reducer -> map[thread_id]newest archive event timestamp
 
 // cumulativeWire is the checkpoint's on-disk shape for cumulative. A named struct
 // rather than an inline literal in both Marshal and Unmarshal, because the inline
@@ -139,11 +136,9 @@ func (r *Reducer) Snapshot() State {
 			}
 		}
 	}
-	if stored, ok := seqSeenByReducer.Load(r); ok {
-		for thread, ts := range stored.(map[string]time.Time) {
-			if _, ok := r.seq[thread]; ok && ts.After(s.SeqSeen[thread]) {
-				s.SeqSeen[thread] = ts
-			}
+	for thread, ts := range r.seqSeen {
+		if _, ok := r.seq[thread]; ok && ts.After(s.SeqSeen[thread]) {
+			s.SeqSeen[thread] = ts
 		}
 	}
 	for k, v := range r.seq {
@@ -173,37 +168,34 @@ func (r *Reducer) RestoreAt(s State, loadedAt time.Time) {
 		r.seq = s.Seq
 	}
 	r.lastSeen = make(map[string]time.Time, len(r.prev))
+	r.seqSeen = make(map[string]time.Time, len(r.seq))
 	if s.Version == stateVersion {
 		for k, ts := range s.PrevSeen {
 			if _, ok := r.prev[k]; ok && !ts.IsZero() {
 				r.lastSeen[k] = ts
 			}
 		}
-		seqSeen := make(map[string]time.Time, len(s.SeqSeen))
 		for thread, ts := range s.SeqSeen {
 			if _, ok := r.seq[thread]; ok && !ts.IsZero() {
-				seqSeen[thread] = ts
+				r.seqSeen[thread] = ts
 			}
 		}
-		seqSeenByReducer.Store(r, seqSeen)
 		return
 	}
 
 	if loadedAt.IsZero() {
 		loadedAt = time.Now().UTC()
 	}
-	seqSeen := make(map[string]time.Time, len(r.seq))
 	for k := range r.prev {
 		r.lastSeen[k] = loadedAt
 		thread, _ := splitSeriesKey(k)
-		seqSeen[thread] = loadedAt
+		r.seqSeen[thread] = loadedAt
 	}
 	for thread := range r.seq {
-		if seqSeen[thread].IsZero() {
-			seqSeen[thread] = loadedAt
+		if r.seqSeen[thread].IsZero() {
+			r.seqSeen[thread] = loadedAt
 		}
 	}
-	seqSeenByReducer.Store(r, seqSeen)
 }
 
 // StateCounts reports the currently retained reducer state entries.
@@ -242,11 +234,9 @@ func (r *Reducer) EvictState(cutoff time.Time) (seriesRemoved, threadsRemoved in
 		seriesRemoved++
 	}
 
-	seqSeen := map[string]time.Time{}
-	if stored, ok := seqSeenByReducer.Load(r); ok {
-		for thread, ts := range stored.(map[string]time.Time) {
-			seqSeen[thread] = ts
-		}
+	seqSeen := make(map[string]time.Time, len(r.seqSeen))
+	for thread, ts := range r.seqSeen {
+		seqSeen[thread] = ts
 	}
 	for key, ts := range r.lastSeen {
 		thread, _ := splitSeriesKey(key)
@@ -265,7 +255,7 @@ func (r *Reducer) EvictState(cutoff time.Time) (seriesRemoved, threadsRemoved in
 			threadsRemoved++
 		}
 	}
-	seqSeenByReducer.Store(r, seqSeen)
+	r.seqSeen = seqSeen
 	return seriesRemoved, threadsRemoved
 }
 

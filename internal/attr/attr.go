@@ -245,6 +245,12 @@ var registry = []Field{
 			}
 			return ""
 		}},
+	{Key: SandboxMode, Class: Bounded, Cap: 8,
+		Of: func(t *turn.Turn) string { return t.SandboxMode }},
+	{Key: PromptCacheMode, Class: Bounded, Cap: 8,
+		Of: func(t *turn.Turn) string { return t.PromptCacheMode }},
+	{Key: PromptCacheDiagnostic, Class: Bounded, Cap: 8,
+		Of: func(t *turn.Turn) string { return t.PromptCacheDiagnostic }},
 
 	// --- caller-supplied: registered so Guard.With caps them, see Field.Of ---
 	// The full measured catalogue as of the 2026-08-07 corpus: nine names across
@@ -288,6 +294,15 @@ var registry = []Field{
 	{Key: WindowID, Class: Identity, Of: func(t *turn.Turn) string { return t.WindowID }},
 	{Key: InstallationID, Class: Identity, Of: func(t *turn.Turn) string { return t.InstallationID }},
 	{Key: PromptCacheKey, Class: Identity, Of: func(t *turn.Turn) string { return t.PromptCacheKey }},
+	{Key: RootTurnID, Class: Identity, Of: func(t *turn.Turn) string { return t.RootTurnID }},
+	{Key: TurnMetadataAgentName, Class: Identity, Of: func(t *turn.Turn) string { return t.AgentName }},
+	{Key: WindowNumber, Class: Identity, Of: func(t *turn.Turn) string {
+		if t.WindowNumber == 0 {
+			return ""
+		}
+		return strconv.Itoa(t.WindowNumber)
+	}},
+	{Key: PromptCacheTTL, Class: Identity, Of: func(t *turn.Turn) string { return positiveFloat(t.PromptCacheTTL) }},
 	{Key: APIKeyID, Class: Identity, Of: func(t *turn.Turn) string { return t.APIKeyID }},
 	{Key: CostUSD, Class: Identity, Of: func(t *turn.Turn) string {
 		if t.CostUSD == nil {
@@ -317,11 +332,17 @@ var registry = []Field{
 	// emitting "0", matching Field.Of's own contract that empty means "does not apply"
 	// (a turn with no cached tokens is not the same fact as a turn with a "0" recorded
 	// for cached tokens - the former never had a cache to hit).
-	{Key: GenAIUsageInputTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.InputTokens) }},
-	{Key: GenAIUsageOutputTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.OutputTokens) }},
+	{Key: GenAIUsageInputTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(firstPositive(t.AttributionInputTokens, t.InputTokens)) }},
+	{Key: GenAIUsageOutputTokens, Class: Identity, Of: func(t *turn.Turn) string {
+		return positiveItoa(firstPositive(t.AttributionOutputTokens, t.OutputTokens))
+	}},
 	{Key: GenAIUsageReasoningTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.ReasoningTokens) }},
-	{Key: GenAIUsageCacheReadTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.CachedTokens) }},
-	{Key: GenAIUsageCacheWriteTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.CacheWriteTokens) }},
+	{Key: GenAIUsageCacheReadTokens, Class: Identity, Of: func(t *turn.Turn) string {
+		return positiveItoa(firstPositive(t.AttributionCachedTokens, t.CachedTokens))
+	}},
+	{Key: GenAIUsageCacheWriteTokens, Class: Identity, Of: func(t *turn.Turn) string {
+		return positiveItoa(firstPositive(t.AttributionCacheWriteTokens, t.CacheWriteTokens))
+	}},
 
 	// --- caller-supplied identity: per tool call, not per Turn (see ToolType above
 	// for why the analogous per-call BOUNDED field lives in the earlier block) ---
@@ -393,6 +414,13 @@ func positiveItoa(n int) string {
 		return ""
 	}
 	return strconv.Itoa(n)
+}
+
+func firstPositive(preferred, fallback int) int {
+	if preferred > 0 {
+		return preferred
+	}
+	return fallback
 }
 
 func positiveFloat(n float64) string {

@@ -292,13 +292,20 @@ const (
 	// span this service classifies as invoke_agent. It held the standard
 	// gen_ai.agent.name key until issue #32; see GenAIAgentName above for why it was
 	// moved off it.
-	SubagentTask   = "codexlb.subagent_task"
-	TurnID         = "codexlb.turn_id"
-	ParentTurnID   = "codexlb.parent_turn_id"
-	LogicalTurnID  = "codexlb.logical_turn_id"
-	WindowID       = "codexlb.window_id"
-	InstallationID = "codexlb.installation_id"
-	PromptCacheKey = "codexlb.prompt_cache_key"
+	SubagentTask          = "codexlb.subagent_task"
+	TurnID                = "codexlb.turn_id"
+	ParentTurnID          = "codexlb.parent_turn_id"
+	LogicalTurnID         = "codexlb.logical_turn_id"
+	WindowID              = "codexlb.window_id"
+	InstallationID        = "codexlb.installation_id"
+	PromptCacheKey        = "codexlb.prompt_cache_key"
+	RootTurnID            = "codexlb.root_turn_id"
+	TurnMetadataAgentName = "codexlb.agent_name"
+	SandboxMode           = "codexlb.sandbox_mode"
+	WindowNumber          = "codexlb.window_number"
+	PromptCacheMode       = "codexlb.prompt_cache.mode"
+	PromptCacheTTL        = "codexlb.prompt_cache.ttl"
+	PromptCacheDiagnostic = "codexlb.prompt_cache.diagnostic"
 	// CostUSD and the proxy timings are measurements carried on response spans. They
 	// are registered as Identity-class values so they can never become metric labels;
 	// the dedicated cost counter is the aggregation surface.

@@ -23,6 +23,10 @@ type Reducer struct {
 	open map[string]*Turn      // request_id -> in-flight turn
 	prev map[string]cumulative // series key -> last cumulative snapshot
 	seq  map[string]int        // thread_id -> logical turn counter
+	// seqSeen is the newest archive event timestamp that advanced each thread's
+	// logical-turn sequence. It belongs to the Reducer so snapshot and eviction do
+	// not need process-global sidecars keyed by reducer pointers.
+	seqSeen map[string]time.Time
 	// lastSeen guards against diffing a new reading against a baseline old enough
 	// that unobserved traffic has advanced it. Keyed like prev. See applyTiming.
 	lastSeen map[string]time.Time
@@ -71,6 +75,7 @@ func NewWithOptions(o Options) *Reducer {
 		open:     map[string]*Turn{},
 		prev:     map[string]cumulative{},
 		seq:      map[string]int{},
+		seqSeen:  map[string]time.Time{},
 		lastSeen: map[string]time.Time{},
 		seen:     newSeenSet(o.SeenSetSize),
 		opts:     o,
@@ -126,6 +131,7 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 		switch ev.Type {
 		case frame.EvOutputTextDelta:
 			t.TextDeltas++
+			applyOutputTextDelta(t, ev)
 		default:
 			t.ToolDeltas++
 		}
@@ -139,6 +145,8 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 		r.applyRateLimits(t, ev)
 	case frame.EvResponseCreated:
 		r.applyCreated(t, ev)
+	case frame.EvResponseInProgress:
+		r.applyInProgress(t, ev)
 	case frame.EvOutputItemDone:
 		r.applyOutputItem(t, ev)
 	case frame.EvWebsocketTiming:
@@ -257,9 +265,16 @@ func (r *Reducer) ensureLogicalTurn(t *Turn) {
 	if t.LogicalTurnID != "" {
 		return
 	}
-	r.seq[t.ThreadID]++
+	r.nextLogicalTurn(t)
 	t.LogicalTurnSeq = r.seq[t.ThreadID]
 	t.LogicalTurnID = fmt.Sprintf("%s:%d", t.ThreadID, t.LogicalTurnSeq)
+}
+
+func (r *Reducer) nextLogicalTurn(t *Turn) {
+	r.seq[t.ThreadID]++
+	if ts := t.LastTS; !ts.IsZero() && ts.After(r.seqSeen[t.ThreadID]) {
+		r.seqSeen[t.ThreadID] = ts
+	}
 }
 
 type createEvent struct {
@@ -524,6 +539,26 @@ func (r *Reducer) applyClientMetadata(t *Turn, cm clientMetadata) {
 	if ts, ok := m.TurnStart(); ok {
 		t.TurnStart = ts
 	}
+	r.applyTurnMetadataExtensions(t, cm.TurnMetadata)
+}
+
+// applyTurnMetadataExtensions carries additions that are deliberately local to the
+// reducer until the frame package needs them for a second consumer. The metadata is
+// still taken only from response.create client_metadata, never from stale headers.
+func (r *Reducer) applyTurnMetadataExtensions(t *Turn, raw string) {
+	var m struct {
+		RootTurnID   string `json:"root_turn_id"`
+		AgentName    string `json:"agent_name"`
+		SandboxMode  string `json:"sandbox_mode"`
+		WindowNumber int    `json:"window_number"`
+	}
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return
+	}
+	t.RootTurnID = m.RootTurnID
+	t.AgentName = m.AgentName
+	t.SandboxMode = m.SandboxMode
+	t.WindowNumber = m.WindowNumber
 }
 
 // shortHash identifies a large near-static body without shipping it.
@@ -730,11 +765,36 @@ func (r *Reducer) applyRateLimits(t *Turn, ev frame.Event) {
 
 type createdEvent struct {
 	Response struct {
-		ID          string `json:"id"`
-		Model       string `json:"model"`
-		ServiceTier string `json:"service_tier"`
-		SafetyID    string `json:"safety_identifier"`
+		ID                     string                  `json:"id"`
+		Model                  string                  `json:"model"`
+		ServiceTier            string                  `json:"service_tier"`
+		SafetyID               string                  `json:"safety_identifier"`
+		PromptCacheOptions     *promptCacheOptions     `json:"prompt_cache_options"`
+		PromptCacheDiagnostics *promptCacheDiagnostics `json:"prompt_cache_diagnostics"`
 	} `json:"response"`
+}
+
+type promptCacheOptions struct {
+	Mode string  `json:"mode"`
+	TTL  float64 `json:"ttl"`
+}
+
+type promptCacheDiagnostics struct {
+	Type string `json:"type"`
+}
+
+func applyPromptCache(t *Turn, options *promptCacheOptions, diagnostics *promptCacheDiagnostics) {
+	if options != nil {
+		if options.Mode != "" {
+			t.PromptCacheMode = options.Mode
+		}
+		if options.TTL > 0 {
+			t.PromptCacheTTL = options.TTL
+		}
+	}
+	if diagnostics != nil && diagnostics.Type != "" {
+		t.PromptCacheDiagnostic = diagnostics.Type
+	}
 }
 
 func (r *Reducer) applyCreated(t *Turn, ev frame.Event) {
@@ -748,6 +808,22 @@ func (r *Reducer) applyCreated(t *Turn, ev frame.Event) {
 	if t.Model == "" {
 		t.Model = e.Response.Model
 	}
+	applyPromptCache(t, e.Response.PromptCacheOptions, e.Response.PromptCacheDiagnostics)
+}
+
+type inProgressEvent struct {
+	Response struct {
+		PromptCacheOptions     *promptCacheOptions     `json:"prompt_cache_options"`
+		PromptCacheDiagnostics *promptCacheDiagnostics `json:"prompt_cache_diagnostics"`
+	} `json:"response"`
+}
+
+func (r *Reducer) applyInProgress(t *Turn, ev frame.Event) {
+	var e inProgressEvent
+	if ev.Decode(&e) != nil {
+		return
+	}
+	applyPromptCache(t, e.Response.PromptCacheOptions, e.Response.PromptCacheDiagnostics)
 }
 
 type outputItemEvent struct {
@@ -1072,7 +1148,7 @@ func (r *Reducer) applyTiming(t *Turn, ev frame.Event) {
 	// A new logical turn begins whenever the cumulative engine-call counter fails to
 	// advance. Validated across live traffic: zero negative deltas.
 	if !seen || m.NumEngineCalls == nil || cur.engineCalls <= prev.engineCalls {
-		r.seq[t.ThreadID]++
+		r.nextLogicalTurn(t)
 		// Starting a turn with no prior baseline means this response absorbs all the
 		// work the turn had already done before we started watching. Deltas here are
 		// upper bounds, not measurements, so they are flagged: consumers can exclude
@@ -1146,14 +1222,16 @@ type completedEvent struct {
 	// `false` case and silently drop every usage figure with it.
 	SafetyBuffering json.RawMessage `json:"safety_buffering"`
 	Response        struct {
-		Status         string  `json:"status"`
-		Model          string  `json:"model"`
-		ServiceTier    string  `json:"service_tier"`
-		SafetyID       string  `json:"safety_identifier"`
-		CreatedAt      float64 `json:"created_at"`
-		CompletedAt    float64 `json:"completed_at"`
-		CacheRetention string  `json:"prompt_cache_retention"`
-		ParallelTools  bool    `json:"parallel_tool_calls"`
+		Status                 string                  `json:"status"`
+		Model                  string                  `json:"model"`
+		ServiceTier            string                  `json:"service_tier"`
+		SafetyID               string                  `json:"safety_identifier"`
+		CreatedAt              float64                 `json:"created_at"`
+		CompletedAt            float64                 `json:"completed_at"`
+		CacheRetention         string                  `json:"prompt_cache_retention"`
+		PromptCacheOptions     *promptCacheOptions     `json:"prompt_cache_options"`
+		PromptCacheDiagnostics *promptCacheDiagnostics `json:"prompt_cache_diagnostics"`
+		ParallelTools          bool                    `json:"parallel_tool_calls"`
 		// Temperature and TopP are pointers so a genuinely absent value (never observed
 		// in the 2026-08-07 corpus, but response.max_output_tokens shows the wire does
 		// send explicit nulls for request parameters) is not confused with a real 0.0 -
@@ -1185,6 +1263,14 @@ type completedEvent struct {
 			OutputTokensDetails struct {
 				ReasoningTokens int `json:"reasoning_tokens"`
 			} `json:"output_tokens_details"`
+			Attribution struct {
+				Items map[string]struct {
+					InputTokens      int `json:"input_tokens"`
+					OutputTokens     int `json:"output_tokens"`
+					CachedTokens     int `json:"cached_tokens"`
+					CacheWriteTokens int `json:"cache_write_tokens"`
+				} `json:"items"`
+			} `json:"attribution"`
 		} `json:"usage"`
 	} `json:"response"`
 }
@@ -1220,6 +1306,7 @@ func (r *Reducer) applyCompleted(t *Turn, ev frame.Event) error {
 	}
 	t.ServerCreatedAt = epoch(e.Response.CreatedAt)
 	t.ServerCompletedAt = epoch(e.Response.CompletedAt)
+	applyPromptCache(t, e.Response.PromptCacheOptions, e.Response.PromptCacheDiagnostics)
 	t.WebSearchRequests = e.Response.ToolUsage.WebSearch.NumRequests
 	t.ImageGenTokens = e.Response.ToolUsage.ImageGen.TotalTokens
 	applySafetyBuffering(t, e.SafetyBuffering)
@@ -1232,6 +1319,12 @@ func (r *Reducer) applyCompleted(t *Turn, ev frame.Event) error {
 		t.ReasoningTokens = u.OutputTokensDetails.ReasoningTokens
 		if u.InputTokens > 0 {
 			t.CacheHitRatio = float64(u.InputTokensDetails.CachedTokens) / float64(u.InputTokens)
+		}
+		for _, item := range u.Attribution.Items {
+			t.AttributionInputTokens += item.InputTokens
+			t.AttributionOutputTokens += item.OutputTokens
+			t.AttributionCachedTokens += item.CachedTokens
+			t.AttributionCacheWriteTokens += item.CacheWriteTokens
 		}
 	}
 	return nil
@@ -1254,7 +1347,9 @@ func applySafetyBuffering(t *Turn, raw json.RawMessage) {
 	}
 	var b bool
 	if json.Unmarshal(raw, &b) == nil {
-		t.SafetyBuffering = b
+		if b {
+			t.SafetyBuffering = true
+		}
 		return
 	}
 	var o struct {
@@ -1269,6 +1364,15 @@ func applySafetyBuffering(t *Turn, raw json.RawMessage) {
 	t.SafetyRetryModel = o.RetryModel
 	t.SafetyUseCases = o.UseCases
 	t.SafetyReasons = o.Reasons
+}
+
+func applyOutputTextDelta(t *Turn, ev frame.Event) {
+	var e struct {
+		SafetyBuffering json.RawMessage `json:"safety_buffering"`
+	}
+	if ev.Decode(&e) == nil {
+		applySafetyBuffering(t, e.SafetyBuffering)
+	}
 }
 
 // Open reports how many responses are still streaming. A steadily growing value
