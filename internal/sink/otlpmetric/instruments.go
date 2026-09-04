@@ -104,6 +104,34 @@ var agentO11yTokenBoundaries = []float64{
 	65536, 262144, 1048576, 4194304, 16777216, 67108864,
 }
 
+const defaultHistogramBoundaries = 15
+
+// PrometheusSeriesMultiplier returns the number of Prometheus wire series for one
+// OTel attribute set. Counters and gauges become one series. Explicit histograms
+// become every finite bucket plus +Inf, _sum and _count, so cardinality surveys do
+// not mistake an attribute combination for one active Prometheus series.
+func PrometheusSeriesMultiplier(instrument string) int {
+	switch instrument {
+	case attr.MetricTokenUsage:
+		return len(agentO11yTokenBoundaries) + 3
+	case attr.MetricOperationDuration, attr.MetricTTFT:
+		return len(agentO11yDurationBoundaries) + 3
+	case attr.MetricEngineServiceMinusIapiTBT:
+		return len(negativeCapableTBTBoundaries) + 3
+	case attr.MetricToolCallsPerOperation,
+		attr.MetricTurnDuration, attr.MetricEngineWall, attr.MetricHarnessUnblocked,
+		attr.MetricPreInference, attr.MetricSamplingStream, attr.MetricClientToolPause,
+		attr.MetricEngineServiceInference, attr.MetricEngineServiceSampling,
+		attr.MetricEngineIapiInference, attr.MetricEngineIapiSampling,
+		attr.MetricResponsesExclEngineAndTool, attr.MetricResponsesExclEngineWaitSampling,
+		attr.MetricResponsesExclEngineWaitSamplingIapi, attr.MetricResponsesAPIExclClientTools,
+		attr.MetricEngineServiceTBT, attr.MetricEngineIapiTBT:
+		return defaultHistogramBoundaries + 3
+	default:
+		return 1
+	}
+}
+
 // newInstruments creates every instrument up front, at Sink construction, rather than
 // lazily on first use. An instrument name typo would otherwise surface as a silent
 // no-op the first time a rare code path (say, safety buffering, 4 in 4000) finally

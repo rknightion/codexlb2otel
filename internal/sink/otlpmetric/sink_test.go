@@ -566,6 +566,35 @@ func TestFamilyEffortThreadSourceAndAPIKeyMetricScope(t *testing.T) {
 		}
 	}
 
+	lowLevelDurations := []string{
+		attr.MetricEngineWall,
+		attr.MetricHarnessUnblocked,
+		attr.MetricPreInference,
+		attr.MetricSamplingStream,
+		attr.MetricClientToolPause,
+		attr.MetricEngineServiceInference,
+		attr.MetricEngineServiceSampling,
+		attr.MetricEngineIapiInference,
+		attr.MetricEngineIapiSampling,
+		attr.MetricResponsesExclEngineAndTool,
+		attr.MetricResponsesExclEngineWaitSampling,
+		attr.MetricResponsesExclEngineWaitSamplingIapi,
+		attr.MetricResponsesAPIExclClientTools,
+		attr.MetricEngineServiceTBT,
+		attr.MetricEngineIapiTBT,
+		attr.MetricEngineServiceMinusIapiTBT,
+	}
+	for _, name := range lowLevelDurations {
+		m, _ := findMetric(rm, name)
+		for _, set := range attrSets(t, m) {
+			assertNoAttr(t, name, set, attr.GenAIProvider)
+			assertNoAttr(t, name, set, attr.GenAIOperation)
+			assertNoAttr(t, name, set, attr.GenAIRequestModel)
+			assertNoAttr(t, name, set, attr.AccountID)
+			assertNoAttr(t, name, set, attr.RequestKind)
+		}
+	}
+
 	for _, name := range []string{attr.MetricResponses, attr.MetricTurns} {
 		m, ok := findMetric(rm, name)
 		if !ok {
@@ -647,6 +676,26 @@ func TestCostUSDRecordedOnlyWhenPresent(t *testing.T) {
 	}
 	if _, ok := gotByKey["negative-key"]; ok {
 		t.Errorf("%s recorded a negative response cost", attr.MetricCostUSD)
+	}
+}
+
+func TestPrometheusSeriesMultiplier(t *testing.T) {
+	tests := []struct {
+		instrument string
+		want       int
+	}{
+		{instrument: attr.MetricResponses, want: 1},
+		{instrument: attr.MetricTurnDuration, want: 18},
+		{instrument: attr.MetricTokenUsage, want: 17},
+		{instrument: attr.MetricOperationDuration, want: 17},
+		{instrument: attr.MetricEngineServiceMinusIapiTBT, want: 28},
+	}
+	for _, tt := range tests {
+		t.Run(tt.instrument, func(t *testing.T) {
+			if got := PrometheusSeriesMultiplier(tt.instrument); got != tt.want {
+				t.Fatalf("PrometheusSeriesMultiplier(%q) = %d, want %d", tt.instrument, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -1125,7 +1174,7 @@ func reduceFixture(t *testing.T, r *turn.Reducer, path string) []*turn.Turn {
 // instrument - adding gen_ai.agent.version everywhere would multiply series on ~40
 // instruments to satisfy three - so a well-meaning "make it consistent" change should
 // fail here rather than land as a cardinality incident.
-func TestAgentO11yLabelsOnTheFourInstrumentsItReads(t *testing.T) {
+func TestAgentO11yLabelsWithoutVersionCardinality(t *testing.T) {
 	s, reader, _ := newTestSink(t)
 
 	tt := baseTurn("1")
@@ -1153,8 +1202,8 @@ func TestAgentO11yLabelsOnTheFourInstrumentsItReads(t *testing.T) {
 			if got, _ := attrString(t, set, attr.GenAIAgentName); got != "codex" {
 				t.Errorf("%s: gen_ai.agent.name = %q, want codex", name, got)
 			}
-			if got, _ := attrString(t, set, attr.GenAIAgentVersion); got != "3dcc72f5c56809d0" {
-				t.Errorf("%s: gen_ai.agent.version = %q, want the instructions hash", name, got)
+			if _, ok := attrString(t, set, attr.GenAIAgentVersion); ok {
+				t.Errorf("%s carries gen_ai.agent.version; prompt-hash churn must not multiply histogram buckets", name)
 			}
 		}
 	}
@@ -1188,10 +1237,7 @@ func TestAgentO11yLabelsOnTheFourInstrumentsItReads(t *testing.T) {
 		}
 	}
 
-	// Scope. Six instruments may carry gen_ai.agent.version and no others.
-	//
-	// The four above are there because agent observability reads them. The two
-	// counters are there because they take attr.MetricAttrs UNNARROWED - carrying the
+	// Scope. Only the two counters take attr.MetricAttrs UNNARROWED - carrying the
 	// complete bounded set is their documented job (see recordCounts), and the
 	// registry's own contract is that a bounded Turn-derived field lands on every
 	// instrument that does not narrow it away. Excluding these two would be the
@@ -1201,17 +1247,11 @@ func TestAgentO11yLabelsOnTheFourInstrumentsItReads(t *testing.T) {
 	// narrowed set grew - which is how gen_ai.agent.version's multiplier reaches an
 	// instrument with no consumer for it.
 	//
-	// Only the version is policed. gen_ai.agent.name takes three values, is the label
-	// this whole change exists to provide, and is free wherever codexlb.originator is
-	// already present - so its spread is not worth a guard. The version is the one that
-	// grows with every system prompt codex ships.
+	// Only the version is policed. gen_ai.agent.name remains on the four agent-facing
+	// histograms because it is bounded; the version grows with every system prompt.
 	mayCarryVersion := map[string]bool{
-		attr.MetricTokenUsage:            true,
-		attr.MetricOperationDuration:     true,
-		attr.MetricTTFT:                  true,
-		attr.MetricToolCallsPerOperation: true,
-		attr.MetricResponses:             true,
-		attr.MetricTurns:                 true,
+		attr.MetricResponses: true,
+		attr.MetricTurns:     true,
 	}
 	for _, sm := range rm.ScopeMetrics {
 		for _, m := range sm.Metrics {
@@ -1220,8 +1260,7 @@ func TestAgentO11yLabelsOnTheFourInstrumentsItReads(t *testing.T) {
 			}
 			for _, set := range attrSets(t, m) {
 				if _, ok := attrString(t, set, attr.GenAIAgentVersion); ok {
-					t.Errorf("%s carries gen_ai.agent.version; only the four instruments "+
-						"agent observability reads and the two unnarrowed counters may - "+
+					t.Errorf("%s carries gen_ai.agent.version; only the two unnarrowed counters may - "+
 						"see this test's doc comment", m.Name)
 				}
 			}

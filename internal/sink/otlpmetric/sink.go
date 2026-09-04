@@ -42,9 +42,8 @@ const costResponseLimit = 65536
 
 // Sink exports reduced Turns as OTLP metrics.
 //
-// Safe for concurrent use: every instrument method on the OTel API is required to be
-// (see the metric package's own doc comments), and Sink adds no state of its own on
-// top of them - there is nothing here to lock.
+// Safe for concurrent use: OTel instrument methods are concurrency-safe, and the
+// bounded response-cost replay guard protects its own state with costMu.
 type Sink struct {
 	guard *attr.Guard
 	mp    *sdkmetric.MeterProvider

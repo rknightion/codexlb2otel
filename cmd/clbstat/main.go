@@ -209,20 +209,6 @@ func (s *stats) linesLoose(data []byte, fn func(*frame.Record) error) error {
 }
 
 func (s *stats) decodeRecord(raw json.RawMessage) (*frame.Record, bool) {
-	var probe struct {
-		Payload struct {
-			Text json.RawMessage `json:"text"`
-		} `json:"payload"`
-	}
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, false
-	}
-	if len(probe.Payload.Text) > 0 && string(probe.Payload.Text) != "null" {
-		var text string
-		if err := json.Unmarshal(probe.Payload.Text, &text); err != nil {
-			return nil, false
-		}
-	}
 	var rec frame.Record
 	if err := json.Unmarshal(raw, &rec); err != nil {
 		return nil, false
@@ -328,14 +314,14 @@ func (s *stats) report() {
 }
 
 func (s *stats) dumpMetricSeries() {
-	fmt.Printf("\n-- metric attribute combinations by instrument (%d total) --\n", s.totalMetricSeries())
+	fmt.Printf("\n-- projected Prometheus series by instrument (%d total) --\n", s.totalMetricSeries())
 	type kv struct {
 		k string
 		n int
 	}
 	var xs []kv
 	for name, combos := range s.metricSeries {
-		xs = append(xs, kv{name, len(combos)})
+		xs = append(xs, kv{name, len(combos) * otlpmetric.PrometheusSeriesMultiplier(name)})
 	}
 	sort.Slice(xs, func(i, j int) bool {
 		if xs[i].n != xs[j].n {
@@ -353,8 +339,8 @@ func (s *stats) dumpMetricSeries() {
 
 func (s *stats) totalMetricSeries() int {
 	var total int
-	for _, combos := range s.metricSeries {
-		total += len(combos)
+	for name, combos := range s.metricSeries {
+		total += len(combos) * otlpmetric.PrometheusSeriesMultiplier(name)
 	}
 	return total
 }

@@ -86,33 +86,20 @@ structured-metadata map, unconditionally.
 
 Every panel here was built by reading `record.go`'s `recordX` functions one at a time - which
 `attr.Only(...)` / `attr.With(...)` call actually narrows each instrument's attribute set - never by
-assuming every metric carries every attribute. Two gaps this surfaced, both flagged in the affected
-panels' own descriptions rather than silently worked around:
+assuming every metric carries every attribute. The current boundaries are deliberate:
 
-- **No token/duration/tool-call instrument carries `codexlb.family`.** Only `codexlb.responses`,
-  `codexlb.turns`, `codexlb.baseline_resets` and `codexlb.transport_events` do (`recordCounts`'s own
-  `base`-derived attrs). So **probe-family traffic cannot be excluded from a Prometheus token-shape or
-  latency panel at all** - the dimension simply isn't on the wire for those instruments. Where this
-  mattered most (issue #14 names token/cost shape explicitly), `02-tokens-cost-shape.json`'s effort/
-  thread-source panels are built against **Loki** instead, which does have `codexlb_family` as a
-  stream label on every record type including `turn`.
-- **No token-carrying instrument carries `codexlb.request.reasoning.level` (effort) or
-  `codexlb.thread_source`.** `recordTokens`'s narrowed attribute set is exactly `(provider, operation,
-  request_model, response_model, account_id, request_kind, agent_name, agent_version, token_type,
-  token_semantics)` - the last four added by issue #32 - so effort and thread source are still absent.
-  Issue #14 asks for "token
-  and cost shape by model, effort and thread source", and effort/thread-source are not achievable via
-  PromQL against `codexlb_tokens_total` at all. Solved the same way as the family gap: LogQL `unwrap`
-  aggregation against the turn record's own JSON body, which does carry both alongside the token
-  counts.
-
-  **Read that as "no *token* instrument", not "effort is unavailable to PromQL".** `codexlb.responses`
-  and `codexlb.turns` both carry `gen_ai.request.reasoning.level` alongside `gen_ai.request.model` -
-  confirmed live against Mimir on 2026-08-17 (`/api/v1/series`, 3-day window: 731 and 616 series
-  respectively, both label sets including `gen_ai_request_reasoning_level`). So a *request-count* panel
-  by model and effort is plain PromQL and needs no Loki at all; that is what the **Model Usage** tab in
-  `v2/generate.py` is built on. Only token and cost by effort have to go to LogQL. Routing a count
-  panel through Loki because of the sentence above is the mistake this note exists to prevent.
+- **`codexlb.family` is the probe discriminator.** It is present on every token counter and duration
+  histogram, so PromQL panels can exclude `family="probe"` without falling back to Loki. The primary
+  user-facing latency histograms retain their cohort dimensions. The lower-level critical-path,
+  engine-timing, response-subtraction and TBT histograms retain only family, plus
+  `critical_path_coverage` where applicable, because multiplying model/account/request-kind cohorts
+  through every bucket exceeded the measured active-series budget.
+- **Token and cost shape is directly queryable.** `codexlb.tokens`,
+  `gen_ai.client.token.usage`, and `codexlb.cost_usd` carry reasoning level and thread source;
+  token instruments and cost also carry API-key name where present. The Agent Observability
+  histograms keep stable `gen_ai.agent.name`, while the instructions-hash
+  `gen_ai.agent.version` stays on response records and spans instead of multiplying histogram
+  buckets.
 - **`codexlb.baseline_reset` and `codexlb.critical_path.coverage` only apply to specific instruments** -
   see `03-turn-latency-critical-path.json`'s own top panel for the exact list. Applying either filter
   to an instrument that doesn't carry it wouldn't error; it would silently return zero data, which is

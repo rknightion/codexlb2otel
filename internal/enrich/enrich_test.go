@@ -56,9 +56,17 @@ func TestStoreEnricher_PointLookupThenCacheHit(t *testing.T) {
 	if store.lookupCount != 1 {
 		t.Fatalf("store lookups = %d, want 1", store.lookupCount)
 	}
+
+	archiveOnly := &turn.Turn{RequestID: "ws_1"}
+	if got := e.Enrich(context.Background(), archiveOnly); got.Found || got.Outcome != OutcomeMiss {
+		t.Fatalf("archive id seeded by point lookup: Enrich() = %+v, want miss", got)
+	}
+	if store.lookupCount != 1 {
+		t.Fatalf("archive-only lookup queried store: lookups = %d, want 1", store.lookupCount)
+	}
 	stats := e.Stats()
-	if stats.CacheHits != 1 || stats.CacheMisses != 1 || stats.LookupErrors != 0 {
-		t.Fatalf("Stats() = %+v, want one hit, one miss, zero errors", stats)
+	if stats.CacheHits != 1 || stats.CacheMisses != 2 || stats.LookupErrors != 0 {
+		t.Fatalf("Stats() = %+v, want one hit, two misses, zero errors", stats)
 	}
 }
 

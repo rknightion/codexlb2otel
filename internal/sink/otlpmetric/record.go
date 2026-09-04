@@ -676,15 +676,16 @@ func tokenCounterAttrs(base []attr.KV) []attr.KV {
 		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName)
 }
 
-// tokenUsageAttrs starts from tokenCounterAttrs and adds the two agent labels required
-// by Grafana agent observability. It still drops duration-only dimensions such as
-// service tier and critical-path coverage because this instrument measures token
-// distribution, not latency.
+// tokenUsageAttrs keeps the required family, effort and thread-source token shape.
+// Agent version is deliberately absent: an instructions hash rotates independently
+// of billing shape, and multiplying that unbounded churn through histogram buckets
+// would exceed the measured active-series budget. It remains available on response
+// records and spans for Agent Observability correlation.
 func tokenUsageAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
 		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
 		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName,
-		attr.GenAIAgentName, attr.GenAIAgentVersion)
+		attr.GenAIAgentName)
 }
 
 // costAttrs mirrors the token shape, minus gen_ai.token.type: cost is response-level,
@@ -714,14 +715,15 @@ func engineUncachedPromptTokenAttrs(base []attr.KV) []attr.KV {
 }
 
 // operationDurationAttrs is the agent-observability latency shape. It adds family for
-// probe exclusion and keeps error and agent labels for the SDK UI, while deliberately
-// dropping effort/thread source and API key name to keep duration histograms out of
-// token/cost-only dimensions.
+// probe exclusion and keeps error and stable agent-name labels for the SDK UI, while
+// deliberately dropping effort/thread source and API key name to keep duration
+// histograms out of token/cost-only dimensions. Agent version is an instructions hash
+// whose unbounded churn is too expensive once multiplied through histogram buckets;
+// response records and spans retain it for correlation.
 func operationDurationAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-		attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Status,
-		attr.ErrorType, attr.ErrorCategory, attr.GenAIAgentName, attr.GenAIAgentVersion,
-		attr.ServiceTierRequested, attr.Family)
+		attr.GenAIResponseModel, attr.Status, attr.ErrorType, attr.ErrorCategory,
+		attr.GenAIAgentName, attr.Family)
 }
 
 // turnDurationAttrs measures user-visible latency only. It carries family and the
@@ -729,7 +731,7 @@ func operationDurationAttrs(base []attr.KV) []attr.KV {
 // thread source, API key and agent version because they are not duration dimensions.
 func turnDurationAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-		attr.GenAIRequestModel, attr.AccountID, attr.ServiceTierRequested, attr.Family)
+		attr.GenAIRequestModel, attr.ServiceTierRequested, attr.Family)
 }
 
 // ttftAttrs follows the agent-observability duration shape for first-token latency,
@@ -737,35 +739,34 @@ func turnDurationAttrs(base []attr.KV) []attr.KV {
 // because CXO-0003 keeps those off duration histograms.
 func ttftAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind,
-		attr.GenAIAgentName, attr.GenAIAgentVersion, attr.ServiceTierRequested, attr.Family)
+		attr.GenAIRequestModel, attr.RequestKind, attr.GenAIAgentName,
+		attr.ServiceTierRequested, attr.Family)
 }
 
-// criticalPathDurationAttrs is specific to critical-path measurements: coverage and
-// baseline_reset describe whether these duration values are trustworthy. Family is
-// added for probe exclusion; effort/thread/API key are deliberately dropped.
+// criticalPathDurationAttrs is specific to critical-path measurements: coverage
+// describes whether these duration values are trustworthy. Family is the only traffic
+// dimension retained so probes remain removable without multiplying every bucket by
+// model, account and request-kind churn. Model-specific user-facing latency remains on
+// operation duration, turn duration and TTFT.
 func criticalPathDurationAttrs(base []attr.KV) []attr.KV {
-	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-		attr.AccountID, attr.RequestKind, attr.CriticalPathCoverage, attr.BaselineReset,
-		attr.Family)
+	return attr.Only(base, attr.CriticalPathCoverage, attr.Family)
 }
 
 // engineTimingDurationAttrs is for the eight cumulative engine timing deltas. It
-// matches the engine-call shape, adds family for probe exclusion, and drops
-// effort/thread/API key because these are duration histograms.
+// retains only family: the instruments compare layers and derived durations rather
+// than cohorts, while model-specific latency remains available on the three primary
+// histograms. This keeps eight bucketed instruments inside the measured series budget.
 func engineTimingDurationAttrs(base []attr.KV) []attr.KV {
-	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-		attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.BaselineReset,
-		attr.Family)
+	return attr.Only(base, attr.Family)
 }
 
-// tbtAttrs is the TBT duration shape: model/account/request kind plus family for
-// probe exclusion. It deliberately drops effort/thread/API key like the other duration
-// histograms, and drops baseline_reset because these TBT fields are per-response
-// running averages, not cumulative deltas.
+// tbtAttrs keeps only family for probe exclusion. TBT compares the service and IAPI
+// layers directly; retaining model/account/request-kind on three bucketed views would
+// spend series on a cohort breakdown already covered by TTFT and operation duration.
+// It also drops baseline_reset because these fields are per-response running averages,
+// not cumulative deltas.
 func tbtAttrs(base []attr.KV) []attr.KV {
-	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-		attr.AccountID, attr.RequestKind, attr.Family)
+	return attr.Only(base, attr.Family)
 }
 
 // webSearchAttrs is not a token or duration instrument, so CXO-0003 does not add
@@ -821,12 +822,12 @@ func toolCallAttrs(base []attr.KV) []attr.KV {
 		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind)
 }
 
-// toolCallsPerOperationAttrs is the agent-observability tool-use histogram. It keeps
-// agent labels for that UI, and deliberately drops family/effort/thread/API key
-// because it is neither a duration histogram nor a token/cost instrument.
+// toolCallsPerOperationAttrs keeps stable agent identity for the tool-use histogram
+// but drops version churn. Instructions hashes belong on response records and spans,
+// not on a bucketed distribution with no version-specific query contract.
 func toolCallsPerOperationAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIRequestModel,
-		attr.GenAIAgentName, attr.GenAIAgentVersion, attr.AccountID, attr.RequestKind)
+		attr.GenAIAgentName, attr.AccountID, attr.RequestKind)
 }
 
 // rateLimitAttrs is intentionally account-first. Plan type qualifies the quota; every

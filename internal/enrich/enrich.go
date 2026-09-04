@@ -114,8 +114,9 @@ type StoreEnricher struct {
 }
 
 type cacheEntry struct {
-	row Row
-	el  *list.Element
+	row          Row
+	el           *list.Element
+	archiveAlias string
 }
 
 // NewStoreEnricher creates an Enricher around store. A zero PrefetchInterval leaves
@@ -181,7 +182,7 @@ func (e *StoreEnricher) Enrich(ctx context.Context, t *turn.Turn) Result {
 		return Result{Outcome: OutcomeMiss, LookupDuration: duration}
 	}
 
-	e.cacheStore(row)
+	e.cacheStore(row, false)
 	attach(t, row)
 	return Result{Found: true, Row: row, Outcome: OutcomeDBHit, LookupDuration: duration}
 }
@@ -212,7 +213,7 @@ func (e *StoreEnricher) PrefetchOnce(ctx context.Context) error {
 		if row.ID > e.lastID {
 			e.lastID = row.ID
 		}
-		e.cacheStoreLocked(row)
+		e.cacheStoreLocked(row, true)
 		e.prefetchRows++
 	}
 	return nil
@@ -284,34 +285,40 @@ func (e *StoreEnricher) cacheLookup(t *turn.Turn) (Row, bool) {
 	return Row{}, false
 }
 
-func (e *StoreEnricher) cacheStore(row Row) {
+func (e *StoreEnricher) cacheStore(row Row, includeArchiveAlias bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.cacheStoreLocked(row)
+	e.cacheStoreLocked(row, includeArchiveAlias)
 }
 
-func (e *StoreEnricher) cacheStoreLocked(row Row) {
+func (e *StoreEnricher) cacheStoreLocked(row Row, includeArchiveAlias bool) {
 	if row.RequestID == "" {
 		return
 	}
 
 	if ent, ok := e.byResponse[row.RequestID]; ok {
-		if ent.row.ArchiveRequestID != "" && ent.row.ArchiveRequestID != row.ArchiveRequestID {
-			delete(e.byArchive, ent.row.ArchiveRequestID)
+		if includeArchiveAlias && ent.archiveAlias != row.ArchiveRequestID {
+			if ent.archiveAlias != "" {
+				delete(e.byArchive, ent.archiveAlias)
+			}
+			ent.archiveAlias = row.ArchiveRequestID
 		}
 		ent.row = row
 		e.lru.MoveToFront(ent.el)
-		if row.ArchiveRequestID != "" {
-			e.byArchive[row.ArchiveRequestID] = ent
+		if ent.archiveAlias != "" {
+			e.byArchive[ent.archiveAlias] = ent
 		}
 		return
 	}
 
 	ent := &cacheEntry{row: row}
+	if includeArchiveAlias {
+		ent.archiveAlias = row.ArchiveRequestID
+	}
 	ent.el = e.lru.PushFront(row.RequestID)
 	e.byResponse[row.RequestID] = ent
-	if row.ArchiveRequestID != "" {
-		e.byArchive[row.ArchiveRequestID] = ent
+	if ent.archiveAlias != "" {
+		e.byArchive[ent.archiveAlias] = ent
 	}
 
 	for len(e.byResponse) > e.opts.CacheEntries {
@@ -327,8 +334,8 @@ func (e *StoreEnricher) cacheStoreLocked(row Row) {
 		old := e.byResponse[responseID]
 		e.lru.Remove(back)
 		delete(e.byResponse, responseID)
-		if old != nil && old.row.ArchiveRequestID != "" {
-			delete(e.byArchive, old.row.ArchiveRequestID)
+		if old != nil && old.archiveAlias != "" {
+			delete(e.byArchive, old.archiveAlias)
 		}
 	}
 }

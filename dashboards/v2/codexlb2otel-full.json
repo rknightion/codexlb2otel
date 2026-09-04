@@ -1036,7 +1036,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "p50 {{gen_ai_request_model}}"
                       }
                     }
@@ -1055,7 +1055,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "p95 {{gen_ai_request_model}}"
                       }
                     }
@@ -1074,7 +1074,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "p99 {{gen_ai_request_model}}"
                       }
                     }
@@ -2844,7 +2844,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (gen_ai_request_model, gen_ai_response_model) (rate(gen_ai_client_operation_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval]))",
+                        "expr": "sum by (gen_ai_request_model, gen_ai_response_model) (rate(gen_ai_client_operation_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"}[$__rate_interval]))",
                         "legendFormat": "{{gen_ai_request_model}} -> {{gen_ai_response_model}}"
                       }
                     }
@@ -4527,7 +4527,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "round(sum by (gen_ai_request_model, codexlb_request_kind, codexlb_service_tier_requested) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__range])))",
+                        "expr": "round(sum by (gen_ai_request_model, codexlb_request_kind, codexlb_service_tier_requested) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "format": "table"
@@ -4611,7 +4611,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p50 asked={{codexlb_service_tier_requested}}"
                       }
                     }
@@ -4630,7 +4630,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p95 asked={{codexlb_service_tier_requested}}"
                       }
                     }
@@ -4649,7 +4649,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p99 asked={{codexlb_service_tier_requested}}"
                       }
                     }
@@ -4715,7 +4715,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "(100 * ((sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested!~\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested!~\"priority\"}[$__range])), 1)) - (sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested=\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested=\"priority\"}[$__range])), 1))) / clamp_min((sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested!~\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested!~\"priority\"}[$__range])), 1)), 0.001)) and on (gen_ai_request_model, codexlb_request_kind) (sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested=\"priority\"}[$__range])) > 0) and on (gen_ai_request_model, codexlb_request_kind) (sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested!~\"priority\"}[$__range])) > 0)",
+                        "expr": "(100 * ((sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested!~\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested!~\"priority\"}[$__range])), 1)) - (sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested=\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested=\"priority\"}[$__range])), 1))) / clamp_min((sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested!~\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested!~\"priority\"}[$__range])), 1)), 0.001)) and on (gen_ai_request_model, codexlb_request_kind) (sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested=\"priority\"}[$__range])) > 0) and on (gen_ai_request_model, codexlb_request_kind) (sum by (gen_ai_request_model, codexlb_request_kind) (increase(gen_ai_client_time_to_first_token_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\", codexlb_service_tier_requested!~\"priority\"}[$__range])) > 0)",
                         "legendFormat": "{{gen_ai_request_model}} / {{codexlb_request_kind}}",
                         "instant": true,
                         "range": false
@@ -4794,7 +4794,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "round(sum by (gen_ai_request_model, codexlb_service_tier_requested) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\"}[$__range])))",
+                        "expr": "round(sum by (gen_ai_request_model, codexlb_service_tier_requested) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "format": "table"
@@ -4877,7 +4877,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "(100 * ((sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_service_tier_requested!~\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_service_tier_requested!~\"priority\"}[$__range])), 1)) - (sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_service_tier_requested=\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_service_tier_requested=\"priority\"}[$__range])), 1))) / clamp_min((sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_service_tier_requested!~\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_service_tier_requested!~\"priority\"}[$__range])), 1)), 0.001)) and on (gen_ai_request_model) (sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_service_tier_requested=\"priority\"}[$__range])) > 0) and on (gen_ai_request_model) (sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_service_tier_requested!~\"priority\"}[$__range])) > 0)",
+                        "expr": "(100 * ((sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_service_tier_requested!~\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_service_tier_requested!~\"priority\"}[$__range])), 1)) - (sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_service_tier_requested=\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_service_tier_requested=\"priority\"}[$__range])), 1))) / clamp_min((sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_service_tier_requested!~\"priority\"}[$__range])) / clamp_min(sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_service_tier_requested!~\"priority\"}[$__range])), 1)), 0.001)) and on (gen_ai_request_model) (sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_service_tier_requested=\"priority\"}[$__range])) > 0) and on (gen_ai_request_model) (sum by (gen_ai_request_model) (increase(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_service_tier_requested!~\"priority\"}[$__range])) > 0)",
                         "legendFormat": "{{gen_ai_request_model}}",
                         "instant": true,
                         "range": false
@@ -4988,7 +4988,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_pre_inference_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_pre_inference_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "pre_inference"
                       }
                     }
@@ -5007,7 +5007,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_engine_wall_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_engine_wall_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "engine_wall"
                       }
                     }
@@ -5026,7 +5026,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_sampling_and_stream_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_sampling_and_stream_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "sampling_and_stream"
                       }
                     }
@@ -5045,7 +5045,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_harness_unblocked_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_harness_unblocked_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "harness_unblocked"
                       }
                     }
@@ -5119,7 +5119,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (codexlb_critical_path_coverage) (rate(codexlb_pre_inference_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])) / clamp_min(sum by (codexlb_critical_path_coverage) (rate(codexlb_pre_inference_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])), 0.001)",
+                        "expr": "sum by (codexlb_critical_path_coverage) (rate(codexlb_pre_inference_seconds_sum{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])) / clamp_min(sum by (codexlb_critical_path_coverage) (rate(codexlb_pre_inference_seconds_count{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])), 0.001)",
                         "legendFormat": "pre_inference {{codexlb_critical_path_coverage}}"
                       }
                     }
@@ -5138,7 +5138,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (codexlb_critical_path_coverage) (rate(codexlb_engine_wall_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])) / clamp_min(sum by (codexlb_critical_path_coverage) (rate(codexlb_engine_wall_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])), 0.001)",
+                        "expr": "sum by (codexlb_critical_path_coverage) (rate(codexlb_engine_wall_seconds_sum{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])) / clamp_min(sum by (codexlb_critical_path_coverage) (rate(codexlb_engine_wall_seconds_count{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])), 0.001)",
                         "legendFormat": "engine_wall {{codexlb_critical_path_coverage}}"
                       }
                     }
@@ -5157,7 +5157,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (codexlb_critical_path_coverage) (rate(codexlb_sampling_and_stream_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])) / clamp_min(sum by (codexlb_critical_path_coverage) (rate(codexlb_sampling_and_stream_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])), 0.001)",
+                        "expr": "sum by (codexlb_critical_path_coverage) (rate(codexlb_sampling_and_stream_seconds_sum{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])) / clamp_min(sum by (codexlb_critical_path_coverage) (rate(codexlb_sampling_and_stream_seconds_count{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])), 0.001)",
                         "legendFormat": "sampling_and_stream {{codexlb_critical_path_coverage}}"
                       }
                     }
@@ -5211,8 +5211,8 @@
         "kind": "Panel",
         "spec": {
           "id": 69,
-          "title": "Engine wall by model",
-          "description": "Time the upstream engine was working, as it reported it. This is the part no amount of local tuning changes.",
+          "title": "Engine wall by family",
+          "description": "Time the upstream engine was working, as it reported it. The low-level histogram retains family for probe exclusion but omits model to stay within the measured active-series budget; use operation duration for model cohorts.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -5231,8 +5231,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(codexlb_engine_wall_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p50 {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_family) (rate(codexlb_engine_wall_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p50 {{codexlb_family}}"
                       }
                     }
                   }
@@ -5250,8 +5250,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_engine_wall_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p95 {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_family) (rate(codexlb_engine_wall_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p95 {{codexlb_family}}"
                       }
                     }
                   }
@@ -5269,8 +5269,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_engine_wall_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p99 {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_family) (rate(codexlb_engine_wall_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p99 {{codexlb_family}}"
                       }
                     }
                   }
@@ -5335,8 +5335,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(codexlb_engine_service_inference_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p50 service {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_family) (rate(codexlb_engine_service_inference_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p50 service {{codexlb_family}}"
                       }
                     }
                   }
@@ -5354,8 +5354,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_engine_service_inference_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p95 service {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_family) (rate(codexlb_engine_service_inference_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p95 service {{codexlb_family}}"
                       }
                     }
                   }
@@ -5373,8 +5373,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_engine_service_inference_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p99 service {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_family) (rate(codexlb_engine_service_inference_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p99 service {{codexlb_family}}"
                       }
                     }
                   }
@@ -5392,8 +5392,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_engine_iapi_inference_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p95 iapi {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_family) (rate(codexlb_engine_iapi_inference_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p95 iapi {{codexlb_family}}"
                       }
                     }
                   }
@@ -5458,8 +5458,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(codexlb_engine_service_sampling_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p50 service {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_family) (rate(codexlb_engine_service_sampling_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p50 service {{codexlb_family}}"
                       }
                     }
                   }
@@ -5477,8 +5477,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_engine_service_sampling_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p95 service {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_family) (rate(codexlb_engine_service_sampling_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p95 service {{codexlb_family}}"
                       }
                     }
                   }
@@ -5496,8 +5496,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_engine_service_sampling_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p99 service {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_family) (rate(codexlb_engine_service_sampling_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p99 service {{codexlb_family}}"
                       }
                     }
                   }
@@ -5515,8 +5515,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_engine_iapi_sampling_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p95 iapi {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_family) (rate(codexlb_engine_iapi_sampling_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p95 iapi {{codexlb_family}}"
                       }
                     }
                   }
@@ -5581,8 +5581,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(codexlb_engine_service_tbt_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p50 service TBT {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_family) (rate(codexlb_engine_service_tbt_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p50 service TBT {{codexlb_family}}"
                       }
                     }
                   }
@@ -5600,8 +5600,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_engine_service_tbt_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p95 service TBT {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_family) (rate(codexlb_engine_service_tbt_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p95 service TBT {{codexlb_family}}"
                       }
                     }
                   }
@@ -5619,8 +5619,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_engine_service_tbt_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p99 service TBT {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_family) (rate(codexlb_engine_service_tbt_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p99 service TBT {{codexlb_family}}"
                       }
                     }
                   }
@@ -5638,8 +5638,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_engine_iapi_tbt_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p95 iapi TBT {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_family) (rate(codexlb_engine_iapi_tbt_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p95 iapi TBT {{codexlb_family}}"
                       }
                     }
                   }
@@ -5657,8 +5657,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_engine_service_minus_iapi_tbt_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p95 gap {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_family) (rate(codexlb_engine_service_minus_iapi_tbt_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p95 gap {{codexlb_family}}"
                       }
                     }
                   }
@@ -5723,7 +5723,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p50 {{gen_ai_request_model}}"
                       }
                     }
@@ -5742,7 +5742,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p95 {{gen_ai_request_model}}"
                       }
                     }
@@ -5761,7 +5761,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p99 {{gen_ai_request_model}}"
                       }
                     }
@@ -5827,7 +5827,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p50 asked={{codexlb_service_tier_requested}}"
                       }
                     }
@@ -5846,7 +5846,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p95 asked={{codexlb_service_tier_requested}}"
                       }
                     }
@@ -5865,7 +5865,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_service_tier_requested) (rate(gen_ai_client_time_to_first_token_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p99 asked={{codexlb_service_tier_requested}}"
                       }
                     }
@@ -5931,7 +5931,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (codexlb_service_tier_requested) (rate(codexlb_turn_duration_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])) / clamp_min(sum by (codexlb_service_tier_requested) (rate(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])), 0.001)",
+                        "expr": "sum by (codexlb_service_tier_requested) (rate(codexlb_turn_duration_seconds_sum{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"}[$__rate_interval])) / clamp_min(sum by (codexlb_service_tier_requested) (rate(codexlb_turn_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"}[$__rate_interval])), 0.001)",
                         "legendFormat": "asked={{codexlb_service_tier_requested}}"
                       }
                     }
@@ -5997,7 +5997,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_responses_excl_engine_and_tool_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_responses_excl_engine_and_tool_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "excl engine and tool"
                       }
                     }
@@ -6016,7 +6016,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_responses_excl_engine_wait_sampling_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_responses_excl_engine_wait_sampling_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "excl engine wait + sampling"
                       }
                     }
@@ -6035,7 +6035,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_responses_excl_engine_wait_sampling_iapi_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_responses_excl_engine_wait_sampling_iapi_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "excl engine wait + sampling (iapi)"
                       }
                     }
@@ -6054,7 +6054,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_responsesapi_excl_client_tools_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_responsesapi_excl_client_tools_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "responses API excl client tools"
                       }
                     }
@@ -6120,7 +6120,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "p50 {{codexlb_status}}"
                       }
                     }
@@ -6139,7 +6139,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "p95 {{codexlb_status}}"
                       }
                     }
@@ -6158,7 +6158,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "p99 {{codexlb_status}}"
                       }
                     }
@@ -6224,7 +6224,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (le) (rate(codexlb_engine_wall_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval]))",
+                        "expr": "sum by (le) (rate(codexlb_engine_wall_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval]))",
                         "legendFormat": "{{le}}"
                       }
                     }
@@ -6313,8 +6313,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_client_tool_pause_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p95 {{gen_ai_request_model}}"
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_family) (rate(codexlb_client_tool_pause_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p95 {{codexlb_family}}"
                       }
                     }
                   }

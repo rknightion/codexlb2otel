@@ -170,6 +170,9 @@ F_MODEL = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account"'
 F_ACCT = 'codexlb_account_id=~"$account"'
 F_FAMILY = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexlb_family=~"$family"'
 F_TOKEN = F_FULL + ', codexlb_family=~"$family"'
+F_DURATION = 'gen_ai_request_model=~"$model", codexlb_family=~"$family"'
+F_TTFT = F_DURATION + ', codexlb_request_kind=~"$kind"'
+F_FAMILY_ONLY = 'codexlb_family=~"$family"'
 
 # gen_ai.token.type is a NESTED taxonomy, not a flat enum: cache_read is a sub-bucket
 # of input and reasoning a sub-bucket of output. Only input+output may be summed or
@@ -487,7 +490,7 @@ of one another. Filtering to `turn` hides real spend.
     p.append(panel(
         "Turn duration percentiles",
         hist_quantiles("codexlb.turn.duration", "gen_ai_request_model", "{{gen_ai_request_model}}",
-                       filt=F_FAMILY),
+                       filt=F_DURATION),
         unit="s", opts=LEG,
         desc="End-to-end logical turn latency by model. Decomposed on the Latency tab."))
     p.append(panel(
@@ -727,7 +730,7 @@ def tab_turns():
     p.append(panel(
         "Operation duration by request and response model", [
             q(f'sum by (gen_ai_request_model, gen_ai_response_model) '
-              f'(rate({prom("gen_ai.client.operation.duration", "_count")}{sel(filt=F_FAMILY)}[$__rate_interval]))',
+              f'(rate({prom("gen_ai.client.operation.duration", "_count")}{sel(filt=F_DURATION)}[$__rate_interval]))',
               "{{gen_ai_request_model}} -> {{gen_ai_response_model}}"),
         ], unit="reqps", opts=LEG,
         desc="Duration histogram samples grouped by requested and response model. Compare unlike pairs to identify safety-buffering reruns; PromQL cannot compare two label values in a matcher."))
@@ -960,7 +963,7 @@ the selected window does not contain both fast and normal samples for the same c
             f'round(sum by (gen_ai_request_model, codexlb_request_kind, '
             f'codexlb_service_tier_requested) (increase('
             f'{prom("gen_ai.client.time_to_first_token", "_count")}'
-            f'{sel()}[$__range])))', "", instant=True)],
+            f'{sel(filt=F_TTFT)}[$__range])))', "", instant=True)],
         "table", opts=TABLE_OPTS,
         transforms=[organize({"Time": True, "job": True, "service_name": True,
                               "deployment_environment": True, "instance": True},
@@ -972,7 +975,7 @@ the selected window does not contain both fast and normal samples for the same c
     p.append(panel(
         "Time to first token by requested mode",
         hist_quantiles("gen_ai.client.time_to_first_token", "codexlb_service_tier_requested",
-                       "asked={{codexlb_service_tier_requested}}"),
+                       "asked={{codexlb_service_tier_requested}}", filt=F_TTFT),
         unit="s", opts=LEG,
         desc="Perceived responsiveness grouped by what Codex asked for. Blank is normal; priority "
              "is fast. This aggregate distribution shows shape; the cohort-normalized effect below "
@@ -980,16 +983,16 @@ the selected window does not contain both fast and normal samples for the same c
 
     fast_ttft = mean_over_range(
         "gen_ai.client.time_to_first_token", "gen_ai_request_model, codexlb_request_kind",
-        'codexlb_service_tier_requested="priority"')
+        'codexlb_service_tier_requested="priority"', F_TTFT)
     normal_ttft = mean_over_range(
         "gen_ai.client.time_to_first_token", "gen_ai_request_model, codexlb_request_kind",
-        'codexlb_service_tier_requested!~"priority"')
+        'codexlb_service_tier_requested!~"priority"', F_TTFT)
     fast_ttft_n = count_over_range(
         "gen_ai.client.time_to_first_token", "gen_ai_request_model, codexlb_request_kind",
-        'codexlb_service_tier_requested="priority"')
+        'codexlb_service_tier_requested="priority"', F_TTFT)
     normal_ttft_n = count_over_range(
         "gen_ai.client.time_to_first_token", "gen_ai_request_model, codexlb_request_kind",
-        'codexlb_service_tier_requested!~"priority"')
+        'codexlb_service_tier_requested!~"priority"', F_TTFT)
     p.append(panel(
         "Fast TTFT improvement by model and kind", [q(
             f'(100 * (({normal_ttft}) - ({fast_ttft})) / clamp_min(({normal_ttft}), 0.001)) '
@@ -1006,17 +1009,17 @@ the selected window does not contain both fast and normal samples for the same c
              "are absent, avoiding a misleading cross-model aggregate."))
 
     fast_turn = mean_over_range("codexlb.turn.duration", "gen_ai_request_model",
-                                'codexlb_service_tier_requested="priority"', F_MODEL)
+                                'codexlb_service_tier_requested="priority"', F_DURATION)
     normal_turn = mean_over_range("codexlb.turn.duration", "gen_ai_request_model",
-                                  'codexlb_service_tier_requested!~"priority"', F_MODEL)
+                                  'codexlb_service_tier_requested!~"priority"', F_DURATION)
     fast_turn_n = count_over_range("codexlb.turn.duration", "gen_ai_request_model",
-                                   'codexlb_service_tier_requested="priority"', F_MODEL)
+                                   'codexlb_service_tier_requested="priority"', F_DURATION)
     normal_turn_n = count_over_range("codexlb.turn.duration", "gen_ai_request_model",
-                                     'codexlb_service_tier_requested!~"priority"', F_MODEL)
+                                     'codexlb_service_tier_requested!~"priority"', F_DURATION)
     p.append(panel(
         "Turn-duration sample sizes by model", [q(
             f'round(sum by (gen_ai_request_model, codexlb_service_tier_requested) '
-            f'(increase({prom("codexlb.turn.duration", "_count")}{sel(None, F_MODEL)}[$__range])))',
+            f'(increase({prom("codexlb.turn.duration", "_count")}{sel(None, F_DURATION)}[$__range])))',
             "", instant=True)],
         "table", opts=TABLE_OPTS,
         transforms=[organize({"Time": True, "job": True, "service_name": True,
@@ -1063,13 +1066,13 @@ isolate what a stage costs by comparing two of them rather than trusting a singl
     p.append(panel(
         "Critical path stages (p95)", [
             q(f'histogram_quantile(0.95, sum by (le) (rate({prom("codexlb.pre_inference", "_bucket")}'
-              f'{sel()}[$__rate_interval])))', "pre_inference", "A"),
+              f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "pre_inference", "A"),
             q(f'histogram_quantile(0.95, sum by (le) (rate({prom("codexlb.engine_wall", "_bucket")}'
-              f'{sel()}[$__rate_interval])))', "engine_wall", "B"),
+              f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "engine_wall", "B"),
             q(f'histogram_quantile(0.95, sum by (le) (rate({prom("codexlb.sampling_and_stream", "_bucket")}'
-              f'{sel()}[$__rate_interval])))', "sampling_and_stream", "C"),
+              f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "sampling_and_stream", "C"),
             q(f'histogram_quantile(0.95, sum by (le) (rate({prom("codexlb.harness_unblocked", "_bucket")}'
-              f'{sel()}[$__rate_interval])))', "harness_unblocked", "D"),
+              f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "harness_unblocked", "D"),
         ], unit="s", opts=LEG, fieldcfg=STACK,
         desc="Stacked p95 by stage. Stacking quantiles is not arithmetically exact - "
              "p95s do not sum - but it is the fastest way to see WHICH stage moved, "
@@ -1077,51 +1080,52 @@ isolate what a stage costs by comparing two of them rather than trusting a singl
              "below when you need the sum to be honest."))
     p.append(panel(
         "Critical path stages (mean, additive)",
-        hist_avg("codexlb.pre_inference", "codexlb_critical_path_coverage", "pre_inference {{codexlb_critical_path_coverage}}")
-        + [hist_avg("codexlb.engine_wall", "codexlb_critical_path_coverage", "engine_wall {{codexlb_critical_path_coverage}}")[0]]
-        + [hist_avg("codexlb.sampling_and_stream", "codexlb_critical_path_coverage", "sampling_and_stream {{codexlb_critical_path_coverage}}")[0]],
+        hist_avg("codexlb.pre_inference", "codexlb_critical_path_coverage", "pre_inference {{codexlb_critical_path_coverage}}", F_FAMILY_ONLY)
+        + [hist_avg("codexlb.engine_wall", "codexlb_critical_path_coverage", "engine_wall {{codexlb_critical_path_coverage}}", F_FAMILY_ONLY)[0]]
+        + [hist_avg("codexlb.sampling_and_stream", "codexlb_critical_path_coverage", "sampling_and_stream {{codexlb_critical_path_coverage}}", F_FAMILY_ONLY)[0]],
         unit="s", opts=LEG, fieldcfg=STACK,
         desc="Means DO sum, so this stack is a true decomposition. Split by "
              "critical_path_coverage so a partial attribution cannot masquerade as a "
              "complete one."))
     p.append(panel(
-        "Engine wall by model",
-        hist_quantiles("codexlb.engine_wall", "gen_ai_request_model", "{{gen_ai_request_model}}"),
+        "Engine wall by family",
+        hist_quantiles("codexlb.engine_wall", "codexlb_family", "{{codexlb_family}}", filt=F_FAMILY_ONLY),
         unit="s", opts=LEG,
-        desc="Time the upstream engine was working, as it reported it. This is the part "
-             "no amount of local tuning changes."))
+        desc="Time the upstream engine was working, as it reported it. The low-level "
+             "histogram retains family for probe exclusion but omits model to stay within "
+             "the measured active-series budget; use operation duration for model cohorts."))
     p.append(panel(
         "Service vs IAPI inference",
-        hist_quantiles("codexlb.engine_service_inference", "gen_ai_request_model", "service {{gen_ai_request_model}}")
-        + [hist_quantiles("codexlb.engine_iapi_inference", "gen_ai_request_model", "iapi {{gen_ai_request_model}}")[1]],
+        hist_quantiles("codexlb.engine_service_inference", "codexlb_family", "service {{codexlb_family}}", filt=F_FAMILY_ONLY)
+        + [hist_quantiles("codexlb.engine_iapi_inference", "codexlb_family", "iapi {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]],
         unit="s", opts=LEG,
         desc="Two measurements of the same inference from different layers. A widening "
              "gap is overhead between them, not a slower model."))
     p.append(panel(
         "Service vs IAPI sampling",
-        hist_quantiles("codexlb.engine_service_sampling", "gen_ai_request_model", "service {{gen_ai_request_model}}")
-        + [hist_quantiles("codexlb.engine_iapi_sampling", "gen_ai_request_model", "iapi {{gen_ai_request_model}}")[1]],
+        hist_quantiles("codexlb.engine_service_sampling", "codexlb_family", "service {{codexlb_family}}", filt=F_FAMILY_ONLY)
+        + [hist_quantiles("codexlb.engine_iapi_sampling", "codexlb_family", "iapi {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]],
         unit="s", opts=LEG,
         desc="Same pairing for the sampling phase - generating tokens once the prompt is "
              "processed."))
     p.append(panel(
         "Time between tokens",
-        hist_quantiles("codexlb.engine_service_tbt", "gen_ai_request_model", "service TBT {{gen_ai_request_model}}")
-        + [hist_quantiles("codexlb.engine_iapi_tbt", "gen_ai_request_model", "iapi TBT {{gen_ai_request_model}}")[1]]
-        + [hist_quantiles("codexlb.engine_service_minus_iapi_tbt", "gen_ai_request_model", "gap {{gen_ai_request_model}}")[1]],
+        hist_quantiles("codexlb.engine_service_tbt", "codexlb_family", "service TBT {{codexlb_family}}", filt=F_FAMILY_ONLY)
+        + [hist_quantiles("codexlb.engine_iapi_tbt", "codexlb_family", "iapi TBT {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]]
+        + [hist_quantiles("codexlb.engine_service_minus_iapi_tbt", "codexlb_family", "gap {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]],
         unit="s", opts=LEG,
         desc="TBT is what streaming feels like. The service-minus-iapi gap is transport "
              "and queueing between the two layers - if that is what is large, the model "
              "is not the problem."))
     p.append(panel(
         "Time to first token (gen_ai semconv)",
-        hist_quantiles("gen_ai.client.time_to_first_token", "gen_ai_request_model", "{{gen_ai_request_model}}"),
+        hist_quantiles("gen_ai.client.time_to_first_token", "gen_ai_request_model", "{{gen_ai_request_model}}", filt=F_TTFT),
         unit="s", opts=LEG,
         desc="TTFT dominates perceived responsiveness far more than total duration does."))
     p.append(panel(
         "Time to first token by REQUESTED service tier",
         hist_quantiles("gen_ai.client.time_to_first_token", "codexlb_service_tier_requested",
-                       "asked={{codexlb_service_tier_requested}}"),
+                       "asked={{codexlb_service_tier_requested}}", filt=F_TTFT),
         unit="s", opts=LEG,
         desc="Whether priority processing is worth having. Grouped by what the client "
              "ASKED for, because what the server reports having served is not a usable "
@@ -1134,7 +1138,7 @@ isolate what a stage costs by comparing two of them rather than trusting a singl
     p.append(panel(
         "Turn duration mean by requested service tier",
         hist_avg("codexlb.turn.duration", "codexlb_service_tier_requested",
-                 "asked={{codexlb_service_tier_requested}}"),
+                 "asked={{codexlb_service_tier_requested}}", F_DURATION),
         unit="s", opts=LEG,
         desc="The mean, not a quantile, and end-to-end rather than to-first-token: a "
              "tier change should move the whole distribution, and comparing two p95s "
@@ -1144,26 +1148,26 @@ isolate what a stage costs by comparing two of them rather than trusting a singl
     p.append(panel(
         "Response duration, with stages excluded", [
             q(f'histogram_quantile(0.95, sum by (le) (rate({prom("codexlb.responses_excl_engine_and_tool", "_bucket")}'
-              f'{sel()}[$__rate_interval])))', "excl engine and tool", "A"),
+              f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "excl engine and tool", "A"),
             q(f'histogram_quantile(0.95, sum by (le) (rate({prom("codexlb.responses_excl_engine_wait_sampling", "_bucket")}'
-              f'{sel()}[$__rate_interval])))', "excl engine wait + sampling", "B"),
+              f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "excl engine wait + sampling", "B"),
             q(f'histogram_quantile(0.95, sum by (le) (rate({prom("codexlb.responses_excl_engine_wait_sampling_iapi", "_bucket")}'
-              f'{sel()}[$__rate_interval])))', "excl engine wait + sampling (iapi)", "C"),
+              f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "excl engine wait + sampling (iapi)", "C"),
             q(f'histogram_quantile(0.95, sum by (le) (rate({prom("codexlb.responsesapi_excl_client_tools", "_bucket")}'
-              f'{sel()}[$__rate_interval])))', "responses API excl client tools", "D"),
+              f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "responses API excl client tools", "D"),
         ], unit="s", opts=LEG,
         desc="The same response with different components subtracted. Differences between "
              "these lines ARE the components - this is how you attribute latency without "
              "trusting a single computed breakdown."))
     p.append(panel(
         "gen_ai client operation duration (by status)",
-        hist_quantiles("gen_ai.client.operation.duration", "codexlb_status", "{{codexlb_status}}", filt=F_FAMILY),
+        hist_quantiles("gen_ai.client.operation.duration", "codexlb_status", "{{codexlb_status}}", filt=F_DURATION),
         unit="s", opts=LEG,
         desc="The OTel GenAI standard latency histogram, split by outcome. Errors that "
              "are FAST and errors that are SLOW are different failures."))
     p.append(panel(
         "Engine wall heatmap", [
-            q(f'sum by (le) (rate({prom("codexlb.engine_wall", "_bucket")}{sel()}[$__rate_interval]))',
+            q(f'sum by (le) (rate({prom("codexlb.engine_wall", "_bucket")}{sel(filt=F_FAMILY_ONLY)}[$__rate_interval]))',
               "{{le}}"),
         ], "heatmap", opts=HEAT_OPTS, unit="s",
         fieldcfg={"custom": {"scaleDistribution": {"type": "linear"}, "hideFrom": {
@@ -1175,9 +1179,9 @@ isolate what a stage costs by comparing two of them rather than trusting a singl
              "pass."))
     p.append(panel(
         "Client tool pause", [
-            q(f'histogram_quantile(0.95, sum by (le, gen_ai_request_model) '
-              f'(rate({prom("codexlb.client_tool_pause", "_bucket")}{sel()}[$__rate_interval])))',
-              "p95 {{gen_ai_request_model}}"),
+            q(f'histogram_quantile(0.95, sum by (le, codexlb_family) '
+              f'(rate({prom("codexlb.client_tool_pause", "_bucket")}{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))',
+              "p95 {{codexlb_family}}"),
         ], unit="s", opts=LEG,
         desc="Time the model spent waiting on a CLIENT-side tool - the harness, not the "
              "provider. Expected empty on this capture. When it is not empty, this is "

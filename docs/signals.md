@@ -38,6 +38,13 @@ suffixes. Query the backend's translated series names, not the dotted OTel names
 histogram. Filter `codexlb.family = "probe"` when measuring user traffic. This is separate from the
 record transport field, which is not a reliable way to identify synthetic health traffic.
 
+The primary operation, turn, and TTFT histograms retain model and their contract-specific cohort
+labels. Lower-level critical-path, engine-timing, response-subtraction, and TBT histograms retain
+only family, plus critical-path coverage where applicable. This keeps their bucket expansion inside
+the measured active-series budget. Agent Observability histograms retain stable
+`gen_ai.agent.name`; the instructions-hash `gen_ai.agent.version` remains on response records and
+spans rather than multiplying histogram buckets.
+
 The token counters and `gen_ai.client.token.usage` carry `gen_ai.request.reasoning.level`,
 `codexlb.thread_source`, and `codexlb.api_key_name` where present. `codexlb.cost_usd` is a
 Float64Counter in USD with the token-like dimensions, and is emitted only when enrichment supplied a
