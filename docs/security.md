@@ -46,12 +46,18 @@ your environment.
 
 ## Secrets
 
-Use `${ENV_VAR}` or `file:` indirection for Loki, OTLP, generation, live-view, and OpenRouter tokens.
-Do not place literal credentials in configuration. The config dump masks secret fields, and missing
-indirections fail at startup.
+Use `${ENV_VAR}` or `file:` indirection for Postgres, Loki, OTLP, generation, live-view, and
+OpenRouter tokens. Do not place a DSN or any credential inline in the example configuration. The
+config dump masks secret fields. Missing indirections for an enabled sink fail at startup; an
+unavailable optional Postgres DSN disables enrichment and leaves the archive path running.
 
 Scope backend tokens to the signals they write. Agent Observability needs its generation-write
 permission in addition to ordinary telemetry scopes.
+
+Postgres enrichment is read-only and optional. Use an existing role with `SELECT` on `request_logs`,
+`api_keys`, and `accounts`; the service does not create roles, alter grants, or write request data.
+Keep `postgres.enabled` false when no such DSN is available. A database outage must affect only
+enrichment, not archive ingestion or another enabled sink.
 
 ## Archive and checkpoint storage
 
@@ -61,6 +67,17 @@ safe metadata; `clbprofile` output is not and is ignored.
 
 The checkpoint contains identifiers and cumulative state but no message bodies. Protect it from
 unauthorized reads and keep its directory writable only by the service identity.
+
+Archive file retention and reducer state retention are separate controls. Enabling archive deletion
+turns the raw capture into a disposable buffer, so confirm that no recovery requirement depends on
+it. State eviction is anchored to archive event time and keeps open responses; a returning series is
+marked `BaselineReset` and its first cumulative value is only an upper bound. Deleted-file tombstones
+are retained until their UTC filename day is more than three days old, then pruned.
+
+The optional in-process drift probe reads the archive and an embedded content-free baseline. It does
+not export conversation bodies as part of its findings, and sampled scans cannot prove that a rare
+shape is absent. Treat `info` disappearance findings as diagnostic rather than as evidence that data
+was safely removed.
 
 ## Encrypted reasoning
 

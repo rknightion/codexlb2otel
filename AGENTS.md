@@ -23,6 +23,8 @@ This repo's task surface is a `justfile`. Discover it, don't guess it:
   runs `just test-short` instead, matching CI's non-corpus path. A green `just test-short` (or `just
   check`) is not proof the corpus-backed tests pass; that only happens locally with `just test` against
   a synced corpus.
+- `just check` also requires Python 3 for dashboard artifact and coverage validation. Make sure
+  `python3` is on `PATH` before running the gate.
 
 ## The archives are personal data
 

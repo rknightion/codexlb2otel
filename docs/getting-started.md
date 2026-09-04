@@ -19,7 +19,8 @@ The Go version is declared in `go.mod`:
 ```sh
 git clone https://github.com/rknightion/codexlb2otel.git
 cd codexlb2otel
-GOEXPERIMENT=nojsonv2 go build -o bin/codexlb2otel ./cmd/codexlb2otel
+just setup
+just build
 ```
 
 Copy the example configuration and change the archive paths:
@@ -71,3 +72,7 @@ loosening the archive's permissions.
 
 See [Configuration](configuration.md) for secret indirection and [Troubleshooting](troubleshooting.md)
 for empty-output and delivery failures.
+
+For the host-specific Compose layout, optional Postgres join, drift probe, and post-deploy Grafana
+verification, follow the [Camden deployment contract](operations.md#camden-deployment). The published
+configuration does not imply that Camden has traces or Agent Observability enabled.

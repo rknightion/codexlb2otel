@@ -43,6 +43,14 @@ auth username for that endpoint.
 Use sink pending, rejection, and export-failure metrics plus process logs. A blank backend dashboard
 does not distinguish disabled export from rejected delivery.
 
+If only enrichment data is absent, inspect `codexlb.selfobs.enrich_lookups` and its
+`codexlb.selfobs.result` values. `disabled` means the feature has no usable DSN or was not enabled;
+`miss` means no matching request row; `error` means a point lookup failed or timed out. Cache hits
+do not produce a lookup-duration sample. These conditions do not stop archive ingestion or the other
+sinks. Confirm that the existing database role has `SELECT` on `request_logs`, `api_keys`, and
+`accounts`, and that the response id matches `request_logs.request_id`; `archive_request_id` is only
+used as a prefetch cache alias.
+
 ## Loki accepts pushes but records are missing
 
 Check `loki.record_types`, `max_line_age`, and the backend's query time range. Old lines can be dropped
@@ -58,6 +66,10 @@ The generation endpoint is separate from the generic OTLP gateway and needs a to
 generation-write permission. Verify the full `.../api/v1/generations:export` URL, instance username,
 and token scope.
 
+Camden keeps this sink disabled until its token scope is proven. The same rule applies to OTLP
+traces there. Do not interpret a healthy container as proof that either signal is enabled or
+accepted.
+
 ## The live view is unreachable
 
 The live and health servers use different ports. Confirm `live.enabled`, `live.listen`, and any
@@ -70,3 +82,29 @@ the `token` query parameter. Validation refuses an unauthenticated non-loopback 
 Do not update the baseline from a sampled run. Reproduce with a full scan, inspect the decoder and
 reducer impact, then update `corpus.sig.json` only after the new shape is supported or deliberately
 accepted.
+
+The in-process probe runs immediately when enabled and then at its configured interval. It compares
+with the embedded baseline and never updates it. On a scan error, the last successful finding counts
+remain visible while the run error is recorded. `info` findings describe possible disappearance and
+are not proof of absence from a sampled scan. Check `codexlb.archive_drift_findings` with
+`codexlb.selfobs.severity` to separate `breaking`, `new`, and `info` findings.
+
+## State has been evicted or totals look high after a gap
+
+`archive.state_retain` ages completed reducer baselines using archive event timestamps. Open
+responses are exempt, but a series that returns after eviction is marked `BaselineReset`; its
+cumulative reading is an upper bound because earlier activity may be missing. Exclude reset samples
+from exact aggregate totals and let the series establish a new baseline.
+
+If a reclaimed filename appears to be new, check the checkpoint's deleted-file tombstones. Tombstones
+are intentionally pruned once their UTC filename day is more than three days old; replay after that
+boundary cannot use the old path identity.
+
+## Camden deployment is healthy but Grafana is empty
+
+The release pipeline publishes the GHCR image, while Camden runs the separate project at
+`/opt/compose/codexlb2otel/compose.yml` with `/opt/codexlb2otel/config.yaml` and `/opt/compose/codexlb2otel/.env`.
+Verify those mounted files, the archive path, and the binary `/healthz` healthcheck first. Then
+verify each enabled Grafana signal separately. If Postgres is enabled, an archive-only deployment
+can still be healthy when enrichment is disabled; if the DSN uses the host database, confirm the
+Compose service has `host.docker.internal:host-gateway` in `extra_hosts`.

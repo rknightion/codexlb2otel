@@ -75,17 +75,23 @@ archive:
   delete_after: 0s
 
 postgres:
-  # Enrichment ships disabled. Enable only with a SELECT-only role scoped to
-  # request_logs, api_keys and accounts.
+  # Optional enrichment ships disabled. Enable only when an existing read-only DSN is
+  # available; the role must have SELECT only on request_logs, api_keys and accounts.
+  # A database fault disables enrichment and leaves archive ingestion and the other
+  # sinks running. Do not create a role or put database credentials in this example.
   enabled: false
   dsn: "${CODEXLB2OTEL_POSTGRES_DSN}"
+  # Point lookups use request_logs.request_id. The background prefetch follows the
+  # monotonically increasing request_logs.id tail and may cache archive_request_id as
+  # an alias; archive_request_id is never used as a point-query key.
   lookup_timeout: 2s
   prefetch_interval: 5s
   cache_entries: 50000
 
 probe:
   # The in-process drift scan ships disabled; deployments with the live archive turn
-  # it on deliberately. Sampled scans detect common drift but never accept a baseline.
+  # it on deliberately. One scan runs immediately, then at interval. Sampled scans
+  # detect common drift but never prove absence or update the baseline.
   enabled: false
   interval: 24h
   sampled: true
@@ -136,6 +142,8 @@ otlp:
     # interval is the metric export period.
     interval: 30s
   traces:
+    # This example shows the trace shape. Camden keeps traces disabled until the
+    # deployed token's trace scope is proven; set this false in its config meanwhile.
     enabled: true
     # sample_ratio is the head-sampling ratio in [0,1]. 1 means every trace.
     sample_ratio: 1

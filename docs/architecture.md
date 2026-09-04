@@ -15,7 +15,7 @@ tags:
 codex-lb websocket archive
           │
           ▼
- gzip member reader ──► frame decoder ──► turn reducer
+ gzip member reader ──► frame decoder ──► turn reducer ──► optional DB enrichment
                                               │
                         ┌─────────────────────┼────────────────────┐
                         ▼                     ▼                    ▼
@@ -25,6 +25,10 @@ codex-lb websocket archive
                                               │
                                    live view / generations
 ```
+
+The drift runner is a separate in-process reader of the same archive directory. It compares each
+scan with the embedded content-free baseline and feeds finding counts into self-observability; it
+does not alter the baseline or the tailer's checkpoint.
 
 ## Archive reader
 
@@ -46,6 +50,20 @@ message bodies, but its map keys include conversation identifiers. Atomic writes
 save keep it recoverable; the configured checkpoint interval bounds duplicate replay after a hard
 crash.
 
+Reducer state has its own `archive.state_retain` policy. Completed series are aged by the newest
+archive event timestamp, while a series with an open response is retained wholesale. A series that
+returns after eviction is flagged `BaselineReset`; its current cumulative value is an upper bound,
+not an exact delta. Deleted-file tombstones prevent a reclaimed path from being treated as the same
+generation forever and are pruned after their UTC filename day is more than three days old.
+
+## Enrichment boundary
+
+When enabled, the Postgres source is read-only and additive. The response id drives an indexed
+`request_logs.request_id` point lookup. A bounded background prefetch tails `request_logs.id` and
+indexes the returned rows by both request id and `archive_request_id`; the latter is only a cache
+alias and is never sent to the point query. Each lookup has its own timeout, and a database fault
+cannot hold the archive checkpoint or stop another sink.
+
 ## Sink isolation
 
 Each sink has its own queue, timeout, batching, and rejection counters. Permanent input or delivery
@@ -60,4 +78,7 @@ Observability generations use their product-specific export endpoint.
 
 `clbprobe` compares archives with `corpus.sig.json`, a content-free schema signature. A sampled pass
 is fast and detects common new shapes; only a full pass can establish that a rare shape disappeared
-or safely update the baseline.
+or safely update the baseline. The daemon's optional drift runner performs one immediate scan and
+then repeats it at its configured interval. It keeps the last successful finding counts when a scan
+fails and reports the run error separately. Its `codexlb.archive_drift_findings` gauge is labeled
+by `codexlb.selfobs.severity`; `info` means disappearance and is not a page-worthy failure.

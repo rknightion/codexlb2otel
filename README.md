@@ -2,18 +2,20 @@
 
 Tails [codex-lb](https://github.com/rknightion/codex-lb)'s conversation-archive files, derives
 model and agent telemetry from the raw Codex websocket traffic, and emits it to Grafana Cloud as
-**OTLP metrics** and **Loki logs**.
+**OTLP metrics** and **Loki logs**. When an existing read-only Postgres DSN is configured, it also
+joins request-log data onto the matching response without writing to the database.
 
 codex-lb captures every frame of the Codex CLI's `wss://chatgpt.com/backend-api/codex/responses`
 session. That capture carries telemetry available nowhere else — OpenAI's internal engine ids, queue
-wait, per-engine-call cache hit ratios, the sub-agent spawn tree, and the full conversation — none of
-which appears in codex-lb's own metrics or its Postgres request log.
+wait, per-engine-call cache hit ratios, the sub-agent spawn tree, and the full conversation. The
+optional request-log join adds the proxy-side cost, API-key, status, and timing context that the wire
+capture cannot provide by itself.
 
 ## What it deliberately does not do
 
-- **No duplication.** codex-lb already exports 60 Prometheus metric families (proxy internals) and
-  logs cost/latency/tokens to Postgres, already dashboarded. This adds only what the wire capture
-  uniquely knows.
+- **No proxy replacement.** codex-lb remains the source for proxy internals and its request log.
+  The optional join annotates wire-derived turns with that context; this service still adds the
+  response and conversation telemetry that exists only in the archive.
 - **No decryption.** `reasoning.encrypted_content` is encrypted by OpenAI with OpenAI's key.
   Reasoning traces are permanently opaque; only token counts survive.
 
@@ -83,6 +85,11 @@ Every tool prints its own `-h`. Common tasks have `just` recipes:
 | `just ci` | run `check` plus the Docker image and cross-compile snapshot legs |
 
 `just corpus=some/other/dir probe` overrides the directory.
+
+The daemon's optional `postgres` enrichment and in-process `probe` are both disabled by default.
+Enrichment uses an indexed `request_logs.request_id` lookup plus a bounded prefetch cache. The probe
+runs immediately and then on its configured interval; sampled scans detect common drift but cannot
+prove that a rare shape is absent or update `corpus.sig.json`.
 
 ## Tools
 
@@ -262,6 +269,65 @@ Tool `parameters` and `format` subtrees are recorded opaquely. They are JSON Sch
 writes to describe its own tool config, and walking them buried two real findings under 217 noise
 items the first time a capture contained a tool the baseline lacked. Tool identity is still tracked
 at `tools[].name`, so a genuinely new tool still surfaces.
+
+## Optional Postgres enrichment
+
+Enrichment is off unless an existing read-only database connection is available:
+
+```yaml
+postgres:
+  enabled: true
+  dsn: "${CODEXLB2OTEL_POSTGRES_DSN}"
+  lookup_timeout: 2s
+  prefetch_interval: 5s
+  cache_entries: 50000
+```
+
+The response id is looked up through the indexed `request_logs.request_id` column. A background
+prefetch follows the monotonically increasing `request_logs.id` tail and caches rows by both
+`request_id` and `archive_request_id`; the latter is a cache alias, never a point-query key. The
+bounded LRU adds cost, API-key, proxy status, proxy error, failure phase, and proxy timing context
+to response metadata and spans. A missing DSN, unavailable database, timeout, or query error affects
+enrichment only, so archive ingestion and other sinks continue.
+
+The read-only role must already have `SELECT` on `request_logs`, `api_keys`, and `accounts`. The
+service never creates roles or changes grants. Enrichment outcomes are visible as `cache_hit`,
+`db_hit`, `miss`, `error`, or `disabled`; lookup duration is recorded only for database attempts.
+
+## Retention and in-process drift
+
+`archive.state_retain` defaults to `168h` and is separate from archive file deletion. It ages
+completed reducer baselines by archive event time, keeps open responses wholesale, and uses load time
+for old snapshots that have no persisted timestamp. A series returning after eviction is marked
+`BaselineReset`; its current cumulative reading is an upper bound. Deleted-file tombstones whose UTC
+filename day is more than three days old are pruned.
+
+When `probe.enabled` is true, the daemon compares the archive with its embedded content-free
+baseline once immediately and then at `probe.interval`. A failed scan retains the last successful
+finding counts and records the error. Findings are exposed as
+`codexlb.archive_drift_findings` by `codexlb.selfobs.severity`: `breaking`, `new`, and `info`.
+Informational disappearance is not proof of absence and should not page by itself.
+
+## Camden deployment
+
+Release automation publishes the runtime image to GHCR. Camden runs it from its own Compose project,
+`/opt/compose/codexlb2otel/compose.yml`, with `/opt/codexlb2otel/config.yaml` mounted from the
+service configuration and `/opt/compose/codexlb2otel/.env` supplying secrets. The healthcheck invokes the service binary and checks `/healthz`
+using the mounted config.
+
+Keep Postgres disabled unless the `.env` can provide an existing read-only DSN. If that DSN reaches a
+database on the host, the Compose service needs:
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+```
+
+The probe may be enabled against the real archive. Camden keeps Agent Observability and traces
+disabled while their token scopes remain unproven. After a rollout, verify container health and then
+verify each enabled Grafana signal separately: self-observability, metrics, Loki, and any deliberately
+enabled Tempo or generation data. A healthy container or HTTP success is not proof that downstream
+telemetry arrived.
 
 ## Live view
 
