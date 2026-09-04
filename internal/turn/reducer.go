@@ -775,8 +775,8 @@ type createdEvent struct {
 }
 
 type promptCacheOptions struct {
-	Mode string  `json:"mode"`
-	TTL  float64 `json:"ttl"`
+	Mode string          `json:"mode"`
+	TTL  json.RawMessage `json:"ttl"`
 }
 
 type promptCacheDiagnostics struct {
@@ -788,13 +788,31 @@ func applyPromptCache(t *Turn, options *promptCacheOptions, diagnostics *promptC
 		if options.Mode != "" {
 			t.PromptCacheMode = options.Mode
 		}
-		if options.TTL > 0 {
-			t.PromptCacheTTL = options.TTL
+		if ttl := promptCacheTTLSeconds(options.TTL); ttl > 0 {
+			t.PromptCacheTTL = ttl
 		}
 	}
 	if diagnostics != nil && diagnostics.Type != "" {
 		t.PromptCacheDiagnostic = diagnostics.Type
 	}
+}
+
+// promptCacheTTLSeconds accepts the duration-string wire form observed in the
+// archive. Numeric seconds remain accepted for backwards compatibility with
+// earlier fixtures and to keep an optional cache field from dropping a turn.
+func promptCacheTTLSeconds(raw json.RawMessage) float64 {
+	var duration string
+	if err := json.Unmarshal(raw, &duration); err == nil {
+		if parsed, err := time.ParseDuration(duration); err == nil && parsed > 0 {
+			return parsed.Seconds()
+		}
+	}
+
+	var seconds float64
+	if err := json.Unmarshal(raw, &seconds); err == nil && seconds > 0 {
+		return seconds
+	}
+	return 0
 }
 
 func (r *Reducer) applyCreated(t *Turn, ev frame.Event) {

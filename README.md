@@ -78,7 +78,7 @@ Every tool prints its own `-h`. Common tasks have `just` recipes:
 | `just probe` | full drift check against the baseline (exit 1 on breaking drift) |
 | `just probe-sampled` | faster sampled drift check; cannot prove a shape is absent |
 | `just baseline` | accept the current shape as the baseline (always from a full scan; asks to confirm) |
-| `just check` | the toolchain-only gate: fmt-check, lint, build, test-short, probe-ci |
+| `just check` | the toolchain-only gate: fmt-check, lint, build, test-short, probe-ci, dashboard-check |
 | `just test` | full race-test suite (uses the local corpus if synced) |
 | `just test-short` | race-tests without the corpus, the fast inner loop |
 | `just vuln` | scan the module graph for known vulnerabilities |

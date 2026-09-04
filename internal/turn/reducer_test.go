@@ -790,10 +790,10 @@ func TestReducer_DecodesSeptemberWireFields(t *testing.T) {
 	meta := `{"thread_id":"thread-september","root_turn_id":"root-turn","agent_name":"l8_wire_adoption","sandbox_mode":"workspace-write","window_number":7}`
 	events := []string{
 		`{"type":"response.create","model":"gpt-5.6-terra","client_metadata":{"thread_id":"thread-september","x-codex-turn-metadata":` + strconvQuote(meta) + `}}`,
-		`{"type":"response.created","response":{"id":"resp-september","prompt_cache_options":{"mode":"in_memory","ttl":3600}}}`,
+		`{"type":"response.created","response":{"id":"resp-september","prompt_cache_options":{"mode":"in_memory","ttl":"30m"}}}`,
 		`{"type":"response.in_progress","response":{"prompt_cache_diagnostics":{"type":"hit"}}}`,
 		`{"type":"response.output_text.delta","safety_buffering":{"retry_model":"gpt-5.4-mini","reasons":["policy"],"use_cases":["coding"]}}`,
-		`{"type":"response.completed","response":{"status":"completed","model":"gpt-5.6-terra","usage":{"input_tokens":21,"output_tokens":13,"attribution":{"items":{"at_first":{"input_tokens":3,"output_tokens":2,"cached_tokens":1,"cache_write_tokens":4},"ctc_second":{"input_tokens":5,"output_tokens":7,"cached_tokens":11,"cache_write_tokens":13}}}}}}`,
+		`{"type":"response.completed","response":{"status":"completed","model":"gpt-5.6-terra","prompt_cache_options":{"mode":"in_memory","ttl":"30m"},"usage":{"input_tokens":21,"output_tokens":13,"attribution":{"items":{"at_first":{"input_tokens":3,"output_tokens":2,"cached_tokens":1,"cache_write_tokens":4},"ctc_second":{"input_tokens":5,"output_tokens":7,"cached_tokens":11,"cache_write_tokens":13}}}}}}`,
 	}
 
 	var got *Turn
@@ -818,7 +818,7 @@ func TestReducer_DecodesSeptemberWireFields(t *testing.T) {
 	if got.RootTurnID != "root-turn" || got.AgentName != "l8_wire_adoption" || got.SandboxMode != "workspace-write" || got.WindowNumber != 7 {
 		t.Errorf("turn metadata = %+v, want September fields", got)
 	}
-	if got.PromptCacheMode != "in_memory" || got.PromptCacheTTL != 3600 || got.PromptCacheDiagnostic != "hit" {
+	if got.PromptCacheMode != "in_memory" || got.PromptCacheTTL != 1800 || got.PromptCacheDiagnostic != "hit" {
 		t.Errorf("prompt cache = mode %q ttl %v diagnostic %q", got.PromptCacheMode, got.PromptCacheTTL, got.PromptCacheDiagnostic)
 	}
 	if got.SafetyRetryModel != "gpt-5.4-mini" || !got.SafetyBuffering {
@@ -833,6 +833,27 @@ func TestReducer_DecodesSeptemberWireFields(t *testing.T) {
 	}
 	if strings.Contains(string(body), "at_first") || strings.Contains(string(body), "ctc_second") {
 		t.Errorf("attribution item identifiers leaked into turn body: %s", body)
+	}
+}
+
+func TestPromptCacheTTLSeconds(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want float64
+	}{
+		{name: "duration string", raw: `"30m"`, want: 1800},
+		{name: "numeric seconds", raw: `3600`, want: 3600},
+		{name: "invalid duration", raw: `"forever"`, want: 0},
+		{name: "null", raw: `null`, want: 0},
+		{name: "negative", raw: `-1`, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := promptCacheTTLSeconds(json.RawMessage(tt.raw)); got != tt.want {
+				t.Fatalf("promptCacheTTLSeconds(%s) = %v, want %v", tt.raw, got, tt.want)
+			}
+		})
 	}
 }
 
