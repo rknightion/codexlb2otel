@@ -1,9 +1,11 @@
 ---
 id: CXO-0025
 title: Publish and deploy the final Wave 1 local commits
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-04 19:37'
+updated_date: '2026-09-04 22:01'
 labels: []
 dependencies: []
 priority: high
@@ -29,3 +31,9 @@ Wave 1 exhausted its sole authorised push at 20dafa64dc3d7c73c05dcef166c196826ac
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Verify repository ownership, exact local head, clean worktree, and the already-green routine gate. 2. Push main without rewriting history and record the exact remote SHA. 3. Follow the exact-SHA CI and publish workflows to terminal conclusions, retaining failed or cancelled attempts separately. 4. Deploy only the digest built from that SHA using the repository runbook, then prove Camden health and restart count. 5. Recheck the live metric and dashboard surfaces, marking absent data unproven, and finalize the remaining parked tasks only where this evidence actually satisfies their prerequisites.
+<!-- SECTION:PLAN:END -->
