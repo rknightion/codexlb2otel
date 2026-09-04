@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-09-04 19:37'
-updated_date: '2026-09-04 22:05'
+updated_date: '2026-09-04 22:09'
 labels: []
 dependencies: []
 priority: high
@@ -42,4 +42,6 @@ Wave 1 exhausted its sole authorised push at 20dafa64dc3d7c73c05dcef166c196826ac
 
 <!-- SECTION:NOTES:BEGIN -->
 Pushed exact SHA 2f6c0cf972ece15c3d653c43efcb4cd618a74bc7. CI run 33923698394 failed after every Go test and four other jobs passed because dashboard-check invoked rg, which is absent on the GitHub-hosted runner. This is failed diagnostic history, not proof. Replaced the checker dependency with grep -E and revalidated locally with just check in 7.4s; publish and deployment evidence must use the successor SHA.
+
+Successor SHA 13a12a51e0492dea5e4877205aca8b5b97b667a7 CI run 33924036739 also failed after all Go tests passed: the first portability edit corrected dashboard-sidecar, but dashboard-check had a second identical rg invocation. Local PATH masked it. Corrected the exact remaining line, verified no rg invocation remains in the justfile, and reran dashboard-check successfully. This run remains failed diagnostic history.
 <!-- SECTION:NOTES:END -->

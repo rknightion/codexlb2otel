@@ -185,7 +185,7 @@ dashboard-check:
     set -euo pipefail
     tmp=$(mktemp)
     trap 'rm -f "$tmp"' EXIT
-    rg 'Metric[A-Za-z0-9]+\s*=\s*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > "$tmp"
+    grep -E 'Metric[A-Za-z0-9]+[[:space:]]*=[[:space:]]*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > "$tmp"
     cmp -s "$tmp" dashboards/v2/.metrics_from_code.txt || { diff -u dashboards/v2/.metrics_from_code.txt "$tmp"; exit 1; }
     python3 dashboards/v2/generate.py > "$tmp"
     cmp -s "$tmp" dashboards/v2/codexlb2otel-full.json || { diff -u dashboards/v2/codexlb2otel-full.json "$tmp"; exit 1; }
