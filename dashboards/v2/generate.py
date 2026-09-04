@@ -169,10 +169,18 @@ F_FULL = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexl
 F_MODEL = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account"'
 F_ACCT = 'codexlb_account_id=~"$account"'
 F_FAMILY = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexlb_family=~"$family"'
-F_TOKEN = F_FULL + ', codexlb_family=~"$family"'
+F_RESPONSE = F_FULL + ', codexlb_family=~"$family"'
+F_MODEL_FAMILY = F_MODEL + ', codexlb_family=~"$family"'
+F_TOKEN = F_RESPONSE
+F_USER_TURN = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexlb_request_kind="turn", codexlb_family=~"$family"'
 F_DURATION = 'gen_ai_request_model=~"$model", codexlb_family=~"$family"'
 F_TTFT = F_DURATION + ', codexlb_request_kind=~"$kind"'
 F_FAMILY_ONLY = 'codexlb_family=~"$family"'
+
+# RE2 has no negative lookahead. This is the complement of the exact string
+# "probe", so the default All option admits future families without admitting
+# synthetic health traffic. Selecting probe explicitly still works.
+NOT_PROBE_RE = r'([^p].*|p([^r].*)?|pr([^o].*)?|pro([^b].*)?|prob([^e].*)?|probe.+)'
 
 # gen_ai.token.type is a NESTED taxonomy, not a flat enum: cache_read is a sub-bucket
 # of input and reasoning a sub-bucket of output. Only input+output may be summed or
@@ -438,12 +446,12 @@ of one another. Filtering to `turn` hides real spend.
              "wall-clock subtraction anywhere in the pipeline - everything else is "
              "measured against the archive's own clock."))
     p.append(panel(
-        "Turns", [q(f'round(sum(increase({prom("codexlb.turns")}{sel()}[$__range])))', "turns", instant=True)],
+        "Turns", [q(f'round(sum(increase({prom("codexlb.turns")}{sel(filt=F_RESPONSE)}[$__range])))', "turns", instant=True)],
         "stat", opts=stat_opts("none", "lastNotNull", 42), unit="short",
         desc="Logical turns completed in the selected range. A turn is the whole "
              "user-visible exchange; a response is one model call within it."))
     p.append(panel(
-        "Responses", [q(f'round(sum(increase({prom("codexlb.responses")}{sel()}[$__range])))', "responses", instant=True)],
+        "Responses", [q(f'round(sum(increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__range])))', "responses", instant=True)],
         "stat", opts=stat_opts("none", "lastNotNull", 42), unit="short",
         desc="Model responses in range. Responses per turn above ~1 means the harness "
              "is looping - tool calls, retries, or continuation."))
@@ -480,8 +488,8 @@ of one another. Filtering to `turn` hides real spend.
 
     p.append(panel(
         "Turn and response rate", [
-            q(f'sum(rate({prom("codexlb.turns")}{sel()}[$__rate_interval]))', "turns/s", "A"),
-            q(f'sum(rate({prom("codexlb.responses")}{sel()}[$__rate_interval]))', "responses/s", "B"),
+            q(f'sum(rate({prom("codexlb.turns")}{sel(filt=F_RESPONSE)}[$__rate_interval]))', "turns/s", "A"),
+            q(f'sum(rate({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__rate_interval]))', "responses/s", "B"),
             q(f'sum(rate({prom("codexlb.engine_calls")}{sel()}[$__rate_interval]))', "engine calls/s", "C"),
         ], unit="reqps", opts=LEG,
         desc="Three levels of the same traffic: turns (user-visible), responses (model "
@@ -505,7 +513,7 @@ of one another. Filtering to `turn` hides real spend.
     p.append(panel(
         "Traffic by model", [
             q(f'sum by (gen_ai_request_model) (increase({prom("codexlb.responses")}'
-              f'{sel(HAS_MODEL)}[$__range]))',
+              f'{sel(HAS_MODEL, F_RESPONSE)}[$__range]))',
               "{{gen_ai_request_model}}", instant=True),
         ], "piechart", opts={"legend": {"displayMode": "table", "placement": "right",
                                         "showLegend": True, "values": ["value", "percent"]},
@@ -556,14 +564,14 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
     p.append(panel(
         "Response rate by model", [
             q(f'sum by (gen_ai_request_model) (rate({prom("codexlb.responses")}'
-              f'{sel(HAS_MODEL)}[$__rate_interval]))', "{{gen_ai_request_model}}"),
+              f'{sel(HAS_MODEL, F_RESPONSE)}[$__rate_interval]))', "{{gen_ai_request_model}}"),
         ], unit="reqps", opts=LEG, fieldcfg=STACK,
         desc="Model usage over time, NOT split by effort. Stacked, so the top of the "
              "stack is total response rate."))
     p.append(panel(
         "Turn rate by model", [
             q(f'sum by (gen_ai_request_model) (rate({prom("codexlb.turns")}'
-              f'{sel(HAS_MODEL)}[$__rate_interval]))', "{{gen_ai_request_model}}"),
+              f'{sel(HAS_MODEL, F_RESPONSE)}[$__rate_interval]))', "{{gen_ai_request_model}}"),
         ], unit="reqps", opts=LEG, fieldcfg=STACK,
         desc="The same shape with prewarm and compaction excluded - real work only. A "
              "model whose turn rate sits far below its response rate is being prewarmed "
@@ -571,7 +579,7 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
     p.append(panel(
         "Response rate by model and reasoning effort", [
             q(f'sum by (gen_ai_request_model, gen_ai_request_reasoning_level) '
-              f'(rate({prom("codexlb.responses")}{sel(HAS_MODEL)}[$__rate_interval]))',
+              f'(rate({prom("codexlb.responses")}{sel(HAS_MODEL, F_RESPONSE)}[$__rate_interval]))',
               "{{gen_ai_request_model}} / {{gen_ai_request_reasoning_level}}"),
         ], unit="reqps", opts=LEG, fieldcfg=STACK,
         desc="The grouped view, and the reason this tab exists. It shows an effort shift "
@@ -580,7 +588,7 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
     p.append(panel(
         "Model mix over time (% of responses)", [
             q(f'sum by (gen_ai_request_model) (rate({prom("codexlb.responses")}'
-              f'{sel(HAS_MODEL)}[$__rate_interval]))', "{{gen_ai_request_model}}"),
+              f'{sel(HAS_MODEL, F_RESPONSE)}[$__rate_interval]))', "{{gen_ai_request_model}}"),
         ], unit="percentunit", opts=LEG_R, fieldcfg=PCT,
         desc="The same series normalised to 100%, so a change in the mix stays readable "
              "while total volume moves. Normalisation is the panel's percent stacking, "
@@ -588,14 +596,14 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
     p.append(panel(
         "Reasoning effort mix over time (%)", [
             q(f'sum by (gen_ai_request_reasoning_level) (rate({prom("codexlb.responses")}'
-              f'{sel()}[$__rate_interval]))', "{{gen_ai_request_reasoning_level}}"),
+              f'{sel(filt=F_RESPONSE)}[$__rate_interval]))', "{{gen_ai_request_reasoning_level}}"),
         ], unit="percentunit", opts=LEG_R, fieldcfg=PCT,
         desc="Effort mix with the model collapsed. Read it against the panel to its left: "
              "the model split can hold steady while the effort mix drifts upward."))
     p.append(panel(
         "Responses by model", [
             q(f'sum by (gen_ai_request_model) (increase({prom("codexlb.responses")}'
-              f'{sel(HAS_MODEL)}[$__range]))', "{{gen_ai_request_model}}", instant=True),
+              f'{sel(HAS_MODEL, F_RESPONSE)}[$__range]))', "{{gen_ai_request_model}}", instant=True),
         ], "piechart", opts={"legend": {"displayMode": "table", "placement": "right",
                                         "showLegend": True, "values": ["value", "percent"]},
                              "pieType": "donut", "reduceOptions": {
@@ -604,7 +612,7 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
     p.append(panel(
         "Responses by reasoning effort", [
             q(f'sum by (gen_ai_request_reasoning_level) '
-              f'(increase({prom("codexlb.responses")}{sel()}[$__range]))',
+              f'(increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__range]))',
               "{{gen_ai_request_reasoning_level}}", instant=True),
         ], "piechart", opts={"legend": {"displayMode": "table", "placement": "right",
                                         "showLegend": True, "values": ["value", "percent"]},
@@ -614,7 +622,7 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
     p.append(panel(
         "Responses by model and effort", [
             q(f'sum by (gen_ai_request_model, gen_ai_request_reasoning_level) '
-              f'(increase({prom("codexlb.responses")}{sel(HAS_MODEL)}[$__range]))',
+              f'(increase({prom("codexlb.responses")}{sel(HAS_MODEL, F_RESPONSE)}[$__range]))',
               "{{gen_ai_request_model}} / {{gen_ai_request_reasoning_level}}", instant=True),
         ], "bargauge", opts={"displayMode": "gradient", "orientation": "horizontal",
                              "reduceOptions": {"calcs": ["lastNotNull"], "fields": "",
@@ -625,7 +633,7 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
         "Model x effort totals", [
             q(f'sum by (gen_ai_request_model, gen_ai_request_reasoning_level, '
               f'codexlb_request_kind) (increase({prom("codexlb.responses")}'
-              f'{sel(HAS_MODEL)}[$__range]))', "", instant=True),
+              f'{sel(HAS_MODEL, F_RESPONSE)}[$__range]))', "", instant=True),
         ], "table", opts=TABLE_OPTS,
         transforms=[organize({"Time": True, "job": True, "service_name": True,
                               "deployment_environment": True, "instance": True},
@@ -637,24 +645,24 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
     p.append(panel(
         "Response rate by reasoning effort", [
             q(f'sum by (gen_ai_request_reasoning_level) (rate({prom("codexlb.responses")}'
-              f'{sel()}[$__rate_interval]))', "{{gen_ai_request_reasoning_level}}"),
+              f'{sel(filt=F_RESPONSE)}[$__rate_interval]))', "{{gen_ai_request_reasoning_level}}"),
         ], unit="reqps", opts=LEG, fieldcfg=BARS,
         desc="Absolute effort volume over time, drawn as bars so each bucket reads as a "
              "discrete count rather than a smoothed area."))
     p.append(panel(
         "Token rate by model", [
             q(f'sum by (gen_ai_request_model) (rate({prom("codexlb.tokens")}'
-              f'{sel(ADDITIVE_TOKENS, F_MODEL)}[$__rate_interval]))',
+              f'{sel(ADDITIVE_TOKENS, F_MODEL_FAMILY)}[$__rate_interval]))',
               "{{gen_ai_request_model}}"),
         ], unit="short", opts=LEG, fieldcfg=STACK,
-        desc="What the model mix costs in tokens. BY MODEL ONLY - codexlb.tokens does not "
-             "carry reasoning effort, so there is no effort split to be had here at any "
-             "price. Input + output only; cache_read and reasoning are sub-buckets nested "
-             "inside those two and stacking them on their own parents double-counts."))
+        desc="What the model mix costs in tokens, grouped by model only. codexlb.tokens "
+             "also carries reasoning effort; the Tokens & Cost tab exposes that split. "
+             "Input + output only; cache_read and reasoning are sub-buckets nested inside "
+             "those two and stacking them on their own parents double-counts."))
     p.append(panel(
         "Distinct agent versions by model", [
             q(f'count by (gen_ai_request_model) (count by (gen_ai_request_model, gen_ai_agent_version) '
-              f'(increase({prom("codexlb.responses")}{sel(filt=F_MODEL)}[$__rate_interval]) > 0))',
+              f'(increase({prom("codexlb.responses")}{sel(filt=F_MODEL_FAMILY)}[$__rate_interval]) > 0))',
               "{{gen_ai_request_model}}"),
         ], unit="short", opts=LEG,
         desc="Distinct instructions-hash versions observed per model. A sudden increase means agent instructions changed or diverged."))
@@ -668,13 +676,13 @@ def tab_turns():
     p = []
     p.append(panel(
         "Responses by status", [
-            q(f'sum by (codexlb_status) (rate({prom("codexlb.responses")}{sel()}[$__rate_interval]))',
+            q(f'sum by (codexlb_status) (rate({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__rate_interval]))',
               "{{codexlb_status}}"),
         ], unit="reqps", opts=LEG, fieldcfg=STACK,
         desc="completed is the happy path. Anything else is worth a look on the Errors tab."))
     p.append(panel(
         "Responses by request kind", [
-            q(f'sum by (codexlb_request_kind) (rate({prom("codexlb.responses")}{sel()}[$__rate_interval]))',
+            q(f'sum by (codexlb_request_kind) (rate({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__rate_interval]))',
               "{{codexlb_request_kind}}"),
         ], unit="reqps", opts=LEG, fieldcfg=STACK,
         desc="turn, prewarm, compaction and memory run CONCURRENTLY on the same thread - "
@@ -683,7 +691,7 @@ def tab_turns():
     p.append(panel(
         "Turns by originator and thread source", [
             q(f'sum by (codexlb_originator, codexlb_thread_source) '
-              f'(increase({prom("codexlb.turns")}{sel()}[$__range]))',
+              f'(increase({prom("codexlb.turns")}{sel(filt=F_RESPONSE)}[$__range]))',
               "{{codexlb_originator}} / {{codexlb_thread_source}}", instant=True),
         ], "barchart", opts={"orientation": "horizontal", "xTickLabelRotation": 0,
                              "showValue": "auto", "stacking": "none",
@@ -692,7 +700,7 @@ def tab_turns():
     p.append(panel(
         "Response outcome matrix", [
             q(f'sum by (gen_ai_request_model, codexlb_status, codexlb_request_kind) '
-              f'(increase({prom("codexlb.responses")}{sel()}[$__range]))', "", instant=True),
+              f'(increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__range]))', "", instant=True),
         ], "table", opts=TABLE_OPTS,
         transforms=[organize({"Time": True, "job": True, "service_name": True,
                               "deployment_environment": True, "instance": True},
@@ -703,9 +711,9 @@ def tab_turns():
              "ended how."))
     p.append(panel(
         "Reasoning level and service tier", [
-            q(f'sum by (gen_ai_request_reasoning_level) (increase({prom("codexlb.responses")}{sel()}[$__range]))',
+            q(f'sum by (gen_ai_request_reasoning_level) (increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__range]))',
               "reasoning={{gen_ai_request_reasoning_level}}", "A", instant=True),
-            q(f'sum by (codexlb_service_tier) (increase({prom("codexlb.responses")}{sel()}[$__range]))',
+            q(f'sum by (codexlb_service_tier) (increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__range]))',
               "tier={{codexlb_service_tier}}", "B", instant=True),
         ], "bargauge", opts={"displayMode": "gradient", "orientation": "horizontal",
                              "reduceOptions": {"calcs": ["lastNotNull"], "fields": "",
@@ -715,7 +723,7 @@ def tab_turns():
     p.append(panel(
         "Request vs response model (substitution)", [
             q(f'sum by (gen_ai_request_model, gen_ai_response_model) '
-              f'(increase({prom("codexlb.responses")}{sel()}[$__range]))', "", instant=True),
+              f'(increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__range]))', "", instant=True),
         ], "table", opts=TABLE_OPTS,
         desc="These differ when the service substitutes a model. A row where they do not "
              "match is not an error, but it changes what you are actually paying for and "
@@ -848,10 +856,10 @@ it on the same axis would double-count against `input` for anyone who did not kn
         desc="Compaction and memory spend are visible here even when the proxy request log does not show them."))
     p.append(panel(
         "Cost per turn", [
-            q(f'sum(increase({cost}{sel(filt=F_TOKEN)}[$__range])) / '
-              f'clamp_min(sum(increase({prom("codexlb.turns")}{sel(filt=F_TOKEN)}[$__range])), 1)', "USD/turn", instant=True),
+            q(f'sum(increase({cost}{sel(filt=F_USER_TURN)}[$__range])) / '
+              f'clamp_min(sum(increase({prom("codexlb.turns")}{sel(filt=F_USER_TURN)}[$__range])), 1)', "USD/turn", instant=True),
         ], "stat", unit="currencyUSD", opts=stat_opts("none"),
-        desc="Selected enriched cost divided by completed logical turns."))
+        desc="Enriched user-turn cost divided by completed logical turns. Background prewarm, compaction, and memory costs are excluded from both operands."))
     p.append(panel(
         "Cost per 1M tokens by model", [
             q(f'1e6 * sum by (gen_ai_request_model) (increase({cost}{sel(filt=F_TOKEN)}[$__range])) / '
@@ -923,15 +931,15 @@ the selected window does not contain both fast and normal samples for the same c
     p.append(panel(
         "Fast requests", [q(
             f'round(sum(increase({prom("codexlb.responses")}'
-            f'{sel("codexlb_service_tier_requested=\"priority\"")}[$__range])))',
+            f'{sel("codexlb_service_tier_requested=\"priority\"", F_RESPONSE)}[$__range])))',
             "fast responses", instant=True)],
         "stat", unit="short", opts=stat_opts("none", "lastNotNull", 42),
         desc="Responses whose request explicitly asked for priority processing in the selected range."))
     p.append(panel(
         "Fast share", [q(
             f'100 * (sum(increase({prom("codexlb.responses")}'
-            f'{sel("codexlb_service_tier_requested=\"priority\"")}[$__range])) or vector(0)) / '
-            f'clamp_min(sum(increase({prom("codexlb.responses")}{sel()}[$__range])), 1)',
+            f'{sel("codexlb_service_tier_requested=\"priority\"", F_RESPONSE)}[$__range])) or vector(0)) / '
+            f'clamp_min(sum(increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__range])), 1)',
             "fast share", instant=True)],
         "stat", unit="percent", minv=0, maxv=100, decimals=1,
         opts=stat_opts("none", "lastNotNull", 42),
@@ -940,10 +948,10 @@ the selected window does not contain both fast and normal samples for the same c
     p.append(panel(
         "Reported priority rate", [q(
             f'100 * (sum(increase({prom("codexlb.responses")}'
-            f'{sel("codexlb_service_tier_requested=\"priority\", codexlb_service_tier=\"priority\"")}[$__range])) '
+            f'{sel("codexlb_service_tier_requested=\"priority\", codexlb_service_tier=\"priority\"", F_RESPONSE)}[$__range])) '
             f'or vector(0)) / '
             f'clamp_min(sum(increase({prom("codexlb.responses")}'
-            f'{sel("codexlb_service_tier_requested=\"priority\"")}[$__range])), 1)',
+            f'{sel("codexlb_service_tier_requested=\"priority\"", F_RESPONSE)}[$__range])), 1)',
             "reported priority", instant=True)],
         "stat", unit="percent", minv=0, maxv=100, decimals=1,
         opts=stat_opts("none", "lastNotNull", 42),
@@ -953,7 +961,7 @@ the selected window does not contain both fast and normal samples for the same c
     p.append(panel(
         "Requested fast traffic by reported tier", [q(
             f'sum by (codexlb_service_tier) (rate({prom("codexlb.responses")}'
-            f'{sel("codexlb_service_tier_requested=\"priority\"")}[$__rate_interval]))',
+            f'{sel("codexlb_service_tier_requested=\"priority\"", F_RESPONSE)}[$__rate_interval]))',
             "reported={{codexlb_service_tier}}")],
         unit="reqps", opts=LEG, fieldcfg=STACK,
         desc="Only requests that asked for priority, split by the tier reported in each response. "
@@ -1096,21 +1104,21 @@ isolate what a stage costs by comparing two of them rather than trusting a singl
              "the measured active-series budget; use operation duration for model cohorts."))
     p.append(panel(
         "Service vs IAPI inference",
-        hist_quantiles("codexlb.engine_service_inference", "codexlb_family", "service {{codexlb_family}}", filt=F_FAMILY_ONLY)
+        [hist_quantiles("codexlb.engine_service_inference", "codexlb_family", "service {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]]
         + [hist_quantiles("codexlb.engine_iapi_inference", "codexlb_family", "iapi {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]],
         unit="s", opts=LEG,
         desc="Two measurements of the same inference from different layers. A widening "
              "gap is overhead between them, not a slower model."))
     p.append(panel(
         "Service vs IAPI sampling",
-        hist_quantiles("codexlb.engine_service_sampling", "codexlb_family", "service {{codexlb_family}}", filt=F_FAMILY_ONLY)
+        [hist_quantiles("codexlb.engine_service_sampling", "codexlb_family", "service {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]]
         + [hist_quantiles("codexlb.engine_iapi_sampling", "codexlb_family", "iapi {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]],
         unit="s", opts=LEG,
         desc="Same pairing for the sampling phase - generating tokens once the prompt is "
              "processed."))
     p.append(panel(
         "Time between tokens",
-        hist_quantiles("codexlb.engine_service_tbt", "codexlb_family", "service TBT {{codexlb_family}}", filt=F_FAMILY_ONLY)
+        [hist_quantiles("codexlb.engine_service_tbt", "codexlb_family", "service TBT {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]]
         + [hist_quantiles("codexlb.engine_iapi_tbt", "codexlb_family", "iapi TBT {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]]
         + [hist_quantiles("codexlb.engine_service_minus_iapi_tbt", "codexlb_family", "gap {{codexlb_family}}", filt=F_FAMILY_ONLY)[1]],
         unit="s", opts=LEG,
@@ -1227,7 +1235,7 @@ def tab_tools():
         desc="What came back. Paired with the call above by turn and thread id."))
     p.append(panel(
         "Subagent activity", [
-            q(f'sum by (codexlb_subagent_kind) (increase({prom("codexlb.turns")}{sel()}[$__range]))',
+            q(f'sum by (codexlb_subagent_kind) (increase({prom("codexlb.turns")}{sel(filt=F_RESPONSE)}[$__range]))',
               "{{codexlb_subagent_kind}}", instant=True),
         ], "piechart", opts={"legend": {"displayMode": "table", "placement": "right",
                                         "showLegend": True, "values": ["value", "percent"]},
@@ -1307,14 +1315,14 @@ def tab_limits():
     p.append(panel(
         "Traffic by plan type and service tier", [
             q(f'sum by (codexlb_plan_type, codexlb_service_tier) '
-              f'(increase({prom("codexlb.responses")}{sel()}[$__range]))', "", instant=True),
+              f'(increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__range]))', "", instant=True),
         ], "table", opts=TABLE_OPTS,
         desc="Plan governs the limits; tier governs the queue. Both change what a given "
              "latency number means."))
     p.append(panel(
         "Requested vs served service tier", [
             q(f'sum by (codexlb_service_tier_requested, codexlb_service_tier) '
-              f'(increase({prom("codexlb.responses")}{sel()}[$__range]))', "", instant=True),
+              f'(increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__range]))', "", instant=True),
         ], "table", opts=TABLE_OPTS,
         desc="What was asked for against what the platform says it served. These do NOT "
              "agree and are not expected to: measured over the 332 responses following "
@@ -1446,7 +1454,9 @@ to Loki to discard silently behind a 204. Catching up on a backlog therefore pro
         "Lookup by request, response, or thread ID", [
             logq('{service_name="codexlb2otel", codexlb_record_type=~"$record_type"} '
                  '| json request_id="request_id", response_id="response_id", thread_id="thread_id" '
-                 '| request_id="$id" or response_id="$id" or thread_id="$id"'),
+                 '| (request_id!="" and request_id="$id") or '
+                 '(response_id!="" and response_id="$id") or '
+                 '(thread_id!="" and thread_id="$id")'),
         ], "logs", opts=LOGS_OPTS,
         desc="Exact lookup across every record kind by request_id, response_id, or thread_id. Leave $id blank until an identifier is pasted."))
     return p
@@ -1618,17 +1628,16 @@ One trap worth stating: `files_reclaimed` staying flat while retention is enable
              "unauthorized or bad_request is a config fault that will NOT fix itself and "
              "holds the checkpoint until someone intervenes."))
     p.append(panel(
-        "Sink rejections in range (cumulative)", [
+        "Sink rejections in range", [
             q(f'sum by (codexlb_selfobs_sink, codexlb_selfobs_reason) '
-              f'(max_over_time({rej}{{{JOB}}}[$__range]))', rej_by, instant=True),
+              f'(increase({rej}{{{JOB}}}[$__range]))', rej_by, instant=True),
         ], "bargauge", unit="short",
         opts={"displayMode": "gradient", "orientation": "horizontal", "showUnfilled": True,
               "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}},
         thresholds=ZERO_OK,
-        desc="The rate panel goes flat once rejections STOP, which reads identically to "
-             "never having had any. This one keeps the count visible after the fact, "
-             "which is what you actually want when asking 'did we lose anything today?'. "
-             "A cumulative counter, so read it as a total rather than a rate."))
+        desc="The rate panel goes flat once rejections stop. This panel counts only "
+             "rejections that occurred inside the selected range and handles process "
+             "counter resets."))
     lookups = prom("codexlb.selfobs.enrich_lookups")
     p.append(panel(
         "Enrichment lookups by result", [
@@ -1722,9 +1731,8 @@ def logvar(name, label, tag, desc):
 
 def family_var():
     v = qvar("family", "Transport family", "codexlb_responses_total", "codexlb_family",
-             "Metric family selector. websocket, http, and unknown are selected by default; probe remains available for cost analysis.")
-    v["spec"]["current"] = {"text": ["websocket", "http", "unknown"],
-                              "value": ["websocket", "http", "unknown"]}
+             "Metric family selector. All non-probe families are selected by default; probe remains available for cost analysis.",
+             allv=NOT_PROBE_RE)
     return v
 
 
@@ -1778,7 +1786,7 @@ def build():
     spec = {
         "title": "codexlb2otel - Full Telemetry",
         "description": (
-            "Every signal codexlb2otel emits: all 57 metrics, all 9 Loki record types, and "
+            "Every signal codexlb2otel emits: all 63 metrics, all 9 Loki record types, and "
             "the trace tree. Twelve tabs, from agent behaviour through to the exporter's "
             "own health. Generated by dashboards/v2/generate.py, which fails the build if "
             "any declared metric or record type loses its last panel."),
@@ -1871,6 +1879,26 @@ def verify(spec):
         os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")), spec)
     if wire_findings:
         problems.append(f"panel query names not emitted by source: {wire_findings}")
+
+    exprs = []
+    check_names.extract_expr_strings(spec, exprs)
+    for metric in (PROM_NAME["codexlb.responses"], PROM_NAME["codexlb.turns"]):
+        missing_family = [expr for expr in exprs
+                          if metric in expr and 'codexlb_family=~"$family"' not in expr]
+        if missing_family:
+            problems.append(f"{len(missing_family)} {metric} query or queries omit the family selector")
+
+    id_lookups = [expr for expr in exprs if 'request_id="$id"' in expr]
+    for expr in id_lookups:
+        required = ('request_id!=""', 'response_id!=""', 'thread_id!=""')
+        if any(term not in expr for term in required):
+            problems.append("ID lookup can match an absent identifier when $id is empty")
+
+    cost_per_turn = [expr for expr in exprs
+                     if PROM_NAME["codexlb.cost_usd"] in expr
+                     and PROM_NAME["codexlb.turns"] in expr]
+    if len(cost_per_turn) != 1 or cost_per_turn[0].count('codexlb_request_kind="turn"') != 2:
+        problems.append("cost per turn must restrict both cost and turn count to user turns")
 
     # Every element must be reachable from a tab, or it renders nowhere.
     referenced = set()

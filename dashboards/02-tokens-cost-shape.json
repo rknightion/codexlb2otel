@@ -92,14 +92,14 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "Token and cost shape by model, effort and thread source. Complements `codex-lb-overview` (the proxy's own Postgres-derived view); every panel here is built from the wire-capture telemetry only codexlb2otel emits. **Gap found while building this**: `codexlb.tokens` / `gen_ai.client.token.usage` (record.go's `recordTokens`) narrow to exactly `(gen_ai.provider.name, gen_ai.operation.name, gen_ai.request.model, gen_ai.response.model, codexlb.account_id, codexlb.request_kind, gen_ai.token.type)` - **no reasoning-effort and no thread-source label on the token metric itself.** The 'by effort' and 'by thread source' panels below are LogQL metric queries against the turn-record JSON body instead (Effort and ThreadSource ARE both present there, alongside the token counts, per-turn), not PromQL. **codexlb.family is also absent from every token/duration/tool-call instrument** - see record.go: only `responses`, `turns`, `baseline_resets` and `transport_events` carry Family. So probe-family cannot be excluded from a Prometheus token-by-model panel at all; the Loki panel below can (it has `codexlb_family` as a stream label), and is the recommended one for an accurate per-model view."
+        "content": "Token and cost shape by model, effort and thread source. Complements `codex-lb-overview` (the proxy's own Postgres-derived view); every panel here is built from the wire-capture telemetry only codexlb2otel emits. `codexlb.tokens` carries model, reasoning effort, thread source, family, and API-key dimensions. The panels use that counter directly and exclude `codexlb_family=\"probe\"`, so synthetic health traffic does not inflate user-token views. Input and output are additive parents; cache_read, cache_write, and reasoning are nested breakdowns and must not be added on top."
       }
     },
     {
       "id": 2,
       "type": "timeseries",
-      "title": "Token volume by type",
-      "description": "codexlb.tokens counter, by gen_ai.token.type (input/output/reasoning/cached/cache_write). cached and reasoning are sub-buckets of input/output respectively - do not sum all five as a total.",
+      "title": "Additive token volume by type",
+      "description": "codexlb.tokens counter, restricted to additive input and output values. Probe traffic is excluded.",
       "gridPos": {
         "x": 0,
         "y": 5,
@@ -146,7 +146,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", codexlb_family!=\"probe\", gen_ai_token_type=~\"input|output\"}[$__rate_interval]))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -206,7 +206,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=~\"input|output\", gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
+          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=~\"input|output\", gen_ai_request_model=~\"$model\", codexlb_family!=\"probe\"}[$__rate_interval]))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -263,7 +263,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"cache_read\", gen_ai_request_model=~\"$model\"}[$__rate_interval])) / sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"input\", gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
+          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"cache_read\", gen_ai_request_model=~\"$model\", codexlb_family!=\"probe\"}[$__rate_interval])) / sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"input\", gen_ai_request_model=~\"$model\", codexlb_family!=\"probe\"}[$__rate_interval]))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -320,7 +320,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"reasoning\", gen_ai_request_model=~\"$model\"}[$__rate_interval])) / sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"output\", gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
+          "expr": "sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"reasoning\", gen_ai_request_model=~\"$model\", codexlb_family!=\"probe\"}[$__rate_interval])) / sum by (gen_ai_request_model) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_token_type=\"output\", gen_ai_request_model=~\"$model\", codexlb_family!=\"probe\"}[$__rate_interval]))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -332,8 +332,8 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "[Loki] Output tokens by reasoning effort",
-      "description": "LogQL, not PromQL - the metric contract has no reasoning-effort label on token counters. Reads reasoning_effort and output_tokens straight off the turn-record JSON body (turn.go: Effort json:\"reasoning_effort\", OutputTokens json:\"output_tokens\"). Probe family excluded via the codexlb_family stream label, which Loki has and Prometheus doesn't for this measurement.",
+      "title": "Output tokens by reasoning effort",
+      "description": "Counter-native token totals by reasoning effort. Probe traffic is excluded through codexlb.family.",
       "gridPos": {
         "x": 0,
         "y": 21,
@@ -373,21 +373,23 @@
       "targets": [
         {
           "datasource": {
-            "type": "loki",
-            "uid": "grafanacloud-logs"
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
           },
-          "expr": "sum by (reasoning_effort) (sum_over_time({service_name=\"$service_name\", codexlb_record_type=\"turn\", codexlb_family!=\"probe\"} | json reasoning_effort=\"reasoning_effort\", output_tokens=\"output_tokens\" | unwrap output_tokens [$__interval]))",
+          "expr": "sum by (gen_ai_request_reasoning_level) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", gen_ai_token_type=\"output\", codexlb_family!=\"probe\"}[$__rate_interval]))",
           "refId": "A",
-          "queryType": "range",
-          "legendFormat": "{{reasoning_effort}}"
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "{{gen_ai_request_reasoning_level}}"
         }
       ]
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "[Loki] Output tokens by thread source (user vs subagent)",
-      "description": "LogQL, same reasoning as the effort panel - codexlb.thread_source is not on the token metric.",
+      "title": "Output tokens by thread source (user vs subagent)",
+      "description": "Counter-native output-token totals split by user and subagent thread source, excluding probes.",
       "gridPos": {
         "x": 12,
         "y": 21,
@@ -427,13 +429,15 @@
       "targets": [
         {
           "datasource": {
-            "type": "loki",
-            "uid": "grafanacloud-logs"
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
           },
-          "expr": "sum by (thread_source) (sum_over_time({service_name=\"$service_name\", codexlb_record_type=\"turn\", codexlb_family!=\"probe\"} | json thread_source=\"thread_source\", output_tokens=\"output_tokens\" | unwrap output_tokens [$__interval]))",
+          "expr": "sum by (codexlb_thread_source) (rate(codexlb_tokens_total{service_name=~\"$service_name\", gen_ai_request_model=~\"$model\", gen_ai_token_type=\"output\", codexlb_family!=\"probe\"}[$__rate_interval]))",
           "refId": "A",
-          "queryType": "range",
-          "legendFormat": "{{thread_source}}"
+          "range": true,
+          "instant": false,
+          "editorMode": "code",
+          "legendFormat": "{{codexlb_thread_source}}"
         }
       ]
     }

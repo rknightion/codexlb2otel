@@ -52,10 +52,12 @@ fingerprint is stable as a file grows and changes when it is recreated, which se
 cases that matter: **new**, **grown** (the hour codex-lb is still writing, refetched cheaply by
 rsync), and **replaced** (kept alongside its predecessor as `NAME.gen2.jsonl.gz`, never overwritten).
 
-Tests discover the corpus rather than naming files (`CLB_CORPUS` overrides the location). A missing
-corpus **fails**; CI sets `CLB_NO_CORPUS=1` to opt out explicitly. Two guards back this up:
+The opt-in corpus suite discovers archives rather than naming files (`CLB_CORPUS` overrides the
+location). A missing corpus **fails** there. Routine `just test` and `just check` explicitly opt out
+and never read `corpus/processed`; CI uses the same path. Two privacy guards run routinely:
 `TestNoArchivesAreTracked` fails if git is tracking anything capture-shaped, and
-`TestCorpusDirectoryIsIgnored` fails if the drop zone stops being ignored.
+`TestCorpusDirectoryIsIgnored` fails if the drop zone stops being ignored. The signature tests also
+prove that the reusable `corpus.sig.json` shape cannot retain conversation content.
 
 `corpus/` is ignored, so **`git clean -xdf` will delete it.** Keep the originals elsewhere.
 
@@ -79,8 +81,9 @@ Every tool prints its own `-h`. Common tasks have `just` recipes:
 | `just probe-sampled` | faster sampled drift check; cannot prove a shape is absent |
 | `just baseline` | accept the current shape as the baseline (always from a full scan; asks to confirm) |
 | `just check` | the toolchain-only gate: fmt-check, lint, build, test-short, probe-ci, dashboard-check |
-| `just test` | full race-test suite (uses the local corpus if synced) |
+| `just test` | complete race-test suite without the local corpus |
 | `just test-short` | race-tests without the corpus, the fast inner loop |
+| `just test-corpus` | opt-in full-corpus race suite plus exhaustive drift coverage report; potentially multi-hour |
 | `just vuln` | scan the module graph for known vulnerabilities |
 | `just ci` | run `check` plus the Docker image and cross-compile snapshot legs |
 

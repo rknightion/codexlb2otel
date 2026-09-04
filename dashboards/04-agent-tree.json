@@ -181,7 +181,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum by (codexlb_thread_source) (rate(codexlb_turns_total{service_name=~\"$service_name\"}[$__rate_interval]))",
+          "expr": "sum by (codexlb_thread_source) (rate(codexlb_turns_total{service_name=~\"$service_name\", codexlb_family!=\"probe\"}[$__rate_interval]))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -241,7 +241,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum by (codexlb_subagent_kind) (rate(codexlb_turns_total{service_name=~\"$service_name\", codexlb_thread_source=\"subagent\"}[$__rate_interval]))",
+          "expr": "sum by (codexlb_subagent_kind) (rate(codexlb_turns_total{service_name=~\"$service_name\", codexlb_thread_source=\"subagent\", codexlb_family!=\"probe\"}[$__rate_interval]))",
           "refId": "A",
           "range": true,
           "instant": false,

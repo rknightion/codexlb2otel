@@ -43,17 +43,27 @@ lint: _golangci-lint
     go vet ./...
     '{{ tools }}/golangci-lint' run
 
-# run the full Go test suite with the race detector; set filter="Name" for a subset
+# run the complete corpus-free Go test suite with the race detector; set filter="Name" for a subset
 [group('check')]
 [no-exit-message]
 test filter="":
-    go test -p 1 -race -timeout 4h -run '{{ filter }}' ./...
+    CLB_CORPUS=/nonexistent CLB_NO_CORPUS=1 go test -p 1 -race -timeout 30m -run '{{ filter }}' ./...
 
 # fast inner loop: race-test without the local corpus, exactly as CI does
 [group('check')]
 [no-exit-message]
 test-short:
     CLB_CORPUS=/nonexistent CLB_NO_CORPUS=1 go test -race ./...
+
+# opt-in full-corpus race suite and exhaustive drift scan; reports coverage separately
+[group('check')]
+[no-exit-message]
+test-corpus filter="":
+    @echo "full-corpus: exhaustive drift scan against {{ corpus }}"
+    just corpus='{{ corpus }}' probe
+    @echo "full-corpus: race suite against {{ corpus }}"
+    CLB_CORPUS="$(cd '{{ corpus }}' && pwd)" env -u CLB_NO_CORPUS go test -p 1 -race -timeout 4h -run '{{ filter }}' ./...
+    @echo "full-corpus: passed"
 
 # build all seven CLI tools into bin/ (gitignored)
 [group('build')]
@@ -122,14 +132,17 @@ baseline:
     go build -o bin/clbprobe ./cmd/clbprobe
     ./bin/clbprobe -update internal/profile/baseline/corpus.sig.json '{{ corpus }}'
 
-# CI's drift probe: scan corpus/ and pass only clean or intentionally absent data.
+# CI's drift probe: prove the intentionally absent-corpus path without reading local archives
 [group('check')]
 [script('bash')]
 probe-ci:
     set -euo pipefail
-    go build -o /tmp/clbprobe ./cmd/clbprobe
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    mkdir "$tmp/empty-corpus"
+    go build -o "$tmp/clbprobe" ./cmd/clbprobe
     set +e
-    /tmp/clbprobe -fail-on breaking corpus
+    "$tmp/clbprobe" -fail-on breaking "$tmp/empty-corpus"
     status=$?
     set -e
     case "$status" in
@@ -141,13 +154,29 @@ probe-ci:
 
 # regenerate the v2 metric inventory from every Metric constant
 [group('gen')]
+[script('bash')]
 dashboard-sidecar:
-    rg 'Metric[A-Za-z0-9]+\s*=\s*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > dashboards/v2/.metrics_from_code.txt
+    set -euo pipefail
+    target=dashboards/v2/.metrics_from_code.txt
+    tmp=$(mktemp "${target}.XXXXXX")
+    trap 'rm -f "$tmp"' EXIT
+    rg 'Metric[A-Za-z0-9]+\s*=\s*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > "$tmp"
+    test -s "$tmp"
+    chmod 0644 "$tmp"
+    mv "$tmp" "$target"
 
 # regenerate the generated v2 dashboard
 [group('gen')]
+[script('bash')]
 dashboard:
-    python3 dashboards/v2/generate.py > dashboards/v2/codexlb2otel-full.json
+    set -euo pipefail
+    target=dashboards/v2/codexlb2otel-full.json
+    tmp=$(mktemp "${target}.XXXXXX")
+    trap 'rm -f "$tmp"' EXIT
+    python3 dashboards/v2/generate.py > "$tmp"
+    test -s "$tmp"
+    chmod 0644 "$tmp"
+    mv "$tmp" "$target"
 
 # verify dashboard artifacts and source-name coverage without rewriting them
 [group('check')]

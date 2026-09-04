@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-14 16:59'
-updated_date: '2026-09-04 19:54'
+updated_date: '2026-09-04 20:49'
 labels:
   - from-gh-issue
 dependencies: []
@@ -61,8 +61,7 @@ user-vs-subagent" is not answerable in PromQL either. Both are bounded and small
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
-- [x] #2 go build ./... succeeds
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -81,6 +80,12 @@ L2 complete at commit 3897b83. Cardinality arithmetic: budget is 3 times 7,100 =
 Final correction at 334a4db measured projected Prometheus wire series, including histogram bucket, sum, and count multipliers and object-shaped payload records. The first corrected projection was 29,301, above the 21,300 budget. Narrowing high-fanout low-level histograms and removing unbounded instructions-hash versions from Agent Observability histograms reduced the final projection to 11,201 while retaining family on every required token and duration instrument and stable agent names. Live active series on the deployed partial SHA measured 13,787, also below budget. Final just check passed. The full corpus just test was cancelled as disproportionate and is not a pass.
 
 Final 30 minute instant query counted 8,614 active series for job=codexlb2otel. An earlier post-restart sample counted 13,787. Both are below 21,300; neither covers the unpushed final source, whose corpus projection is 11,201.
+
+A later full-branch CodeRabbit review found that 25 response and 5 turn queries still omitted the dashboard family variable even though the metrics carried it. Added the family selector to every response and turn PromQL query and a generator regression that fails on any future omission. The pre-fix dashboard-check failed with exact counts 25 and 5; the corrected dashboard-check passed.
+
+The next completed review found a numerator/denominator mismatch in the Cost per turn panel. A fail-first generator regression proved the query did not restrict either side to user turns. Both the enriched cost numerator and completed-turn denominator now share a selector with request_kind=turn, excluding prewarm, compaction, and memory costs. Dashboard generation and dashboard-check pass.
+
+Reconciled the remaining legacy dashboards after review. Converted both token-by-effort and token-by-thread-source panels in dashboards/02-tokens-cost-shape.json from LogQL workarounds to codexlb_tokens_total PromQL, corrected stale contract prose, made all six token queries exclude probe traffic, and added probe exclusion to both turn queries in dashboards/04-agent-tree.json. A new dashboard-check regression scans every dashboard and fails any codexlb_tokens_total, codexlb_responses_total, or codexlb_turns_total query lacking a family selector; it failed first on the two agent-tree queries and now passes.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

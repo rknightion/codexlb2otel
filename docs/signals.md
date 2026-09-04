@@ -35,8 +35,10 @@ suffixes. Query the backend's translated series names, not the dotted OTel names
 ### Metric attribute boundaries
 
 `codexlb.family` is present on response and turn shapes and on every token counter and duration
-histogram. Filter `codexlb.family = "probe"` when measuring user traffic. This is separate from the
-record transport field, which is not a reliable way to identify synthetic health traffic.
+histogram. Exclude `codexlb.family = "probe"`, for example with `codexlb.family != "probe"`, when
+measuring user traffic. Dashboard user-traffic queries apply the family selector, whose default is
+all non-probe values. This is separate from the record transport field, which is not a reliable way
+to identify synthetic health traffic.
 
 The primary operation, turn, and TTFT histograms retain model and their contract-specific cohort
 labels. Lower-level critical-path, engine-timing, response-subtraction, and TBT histograms retain
@@ -45,12 +47,21 @@ the measured active-series budget. Agent Observability histograms retain stable
 `gen_ai.agent.name`; the instructions-hash `gen_ai.agent.version` remains on response records and
 spans rather than multiplying histogram buckets.
 
-The token counters and `gen_ai.client.token.usage` carry `gen_ai.request.reasoning.level`,
+`gen_ai.client.token.usage` is a `{token}` histogram with `gen_ai.provider.name`,
+`gen_ai.operation.name`, and `gen_ai.token.type` dimensions. The operation is `streamText` when the
+response delivered text deltas and `generateText` otherwise. Its five token types are `input`,
+`output`, `reasoning`, `cache_read`, and `cache_write`; the last three are breakdowns, so they must
+not be added to their `input` or `output` parents. The histogram also carries the stable Agent
+Observability name and inclusive-token semantics that its consumer requires.
+
+`codexlb.tokens` is the project-defined `{token}` counter for summing totals, not a second histogram.
+It records the same five values by token type but deliberately omits the Agent Observability labels.
+Both token instruments carry `codexlb.family`, `gen_ai.request.reasoning.level`,
 `codexlb.thread_source`, and `codexlb.api_key_name` where present. `codexlb.cost_usd` is a
 Float64Counter in USD with the token-like dimensions, and is emitted only when enrichment supplied a
 non-nil cost. An explicit zero cost is still a real value and is recorded. API-key names also appear
 on response and turn counters. Response and turn metrics deliberately omit proxy status, proxy error
-code, and proxy failure phase so those diagnostics do not multiply the response series.
+code, and proxy failure phase, so those diagnostics do not multiply the response series.
 
 The enrichment-related self-observability instruments are:
 

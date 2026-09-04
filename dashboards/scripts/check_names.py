@@ -198,7 +198,8 @@ def source_contract(repo_root):
     attr_consts, metric_idents = parse_names_go(names_go)
     instrument_info = parse_instruments_go(instruments_go)
     if os.path.exists(selfobs_go):
-        selfobs_attr_consts, _ = parse_names_go(selfobs_go)
+        selfobs_attr_consts, selfobs_metric_idents = parse_names_go(selfobs_go)
+        metric_idents.update(selfobs_metric_idents)
         for ident, value in selfobs_attr_consts.items():
             if not ident.startswith("Metric"):
                 attr_consts[ident] = value
@@ -251,7 +252,8 @@ def main():
     # selfobs.go, not instruments.go, and use the *ObservableGauge/*ObservableCounter
     # constructors instruments.go's own metrics never do - merge both in.
     if os.path.exists(selfobs_go):
-        selfobs_attr_consts, _ = parse_names_go(selfobs_go)
+        selfobs_attr_consts, selfobs_metric_idents = parse_names_go(selfobs_go)
+        metric_idents.update(selfobs_metric_idents)
         for ident, value in selfobs_attr_consts.items():
             if not ident.startswith("Metric"):
                 attr_consts[ident] = value
@@ -313,6 +315,9 @@ def main():
             # name actually used in this dashboard set was generated against the
             # table above, so treat anything left over as a genuine finding.
             findings.append((fname, "unknown identifier", tok))
+        for metric in ("codexlb_tokens_total", "codexlb_responses_total", "codexlb_turns_total"):
+            if metric in expr and "codexlb_family" not in expr:
+                findings.append((fname, "traffic query missing probe-family selector", metric))
 
     for path in sorted(glob.glob(os.path.join(dash_dir, "**", "*.json"), recursive=True)):
         for expr in collect_dashboard_exprs(path):

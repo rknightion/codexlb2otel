@@ -5,7 +5,7 @@ status: Parked
 assignee:
   - '@codex'
 created_date: '2026-09-03 13:51'
-updated_date: '2026-09-04 19:43'
+updated_date: '2026-09-04 20:40'
 labels:
   - dashboards
 dependencies: []
@@ -57,4 +57,10 @@ Correction 2026-09-03 (live-verified on Mimir, not derived): the instrument decl
 Final integration at 7a54c59 and 334a4db: generated coverage is 63 of 63 metrics, 9 of 9 record types, and 10 of 10 span names; final just check passed. Dashboard generation 12 is live on m7kni and its spec matches the committed resource after normalizing empty custom objects stripped by Grafana. Live PromQL returned 352 tool-call histogram bucket series and 26 completed operation-duration count series grouped by codexlb_status. The secondary rate-limit metric returned no live series, so AC 1 remains unproven for that panel and this task is parked until genuine secondary-window data is emitted.
 
 Known follow-up in the generated resource: the dashboard description still says all 57 metrics even though the verified inventory is 63. It was left unchanged after the final green gate to avoid manufacturing post-gate source. Correct the generator wording, regenerate, and rerun dashboard-check plus just check in the next run.
+
+Corrected the generated v2 dashboard description from 57 to the verified 63 metrics after CodeRabbit identified the stale label; regenerated output and dashboard-check passed with 63/63 metrics, 9/9 record types, 10/10 span names, and 137 panels. The task remains parked because genuine secondary-window live data is still absent.
+
+The final full-branch review also found an empty-ID Loki lookup match and non-atomic generated artifact recipes. The lookup now requires each extracted request, response, or thread ID to be non-empty before equality with the text variable, with a generator regression. Dashboard and sidecar recipes now generate to same-directory temporary files and move only after successful non-empty output. Forced failures returned 1 and 127 respectively while both tracked artifact digests remained unchanged and no temporary files remained.
+
+A further review found the family variable default hard-coded three known values and stale explanatory text. The default All value now uses a RE2-compatible regex that excludes only exact probe while admitting future family values; probe remains manually selectable. Representative regex cases passed. Signal docs now state the explicit non-probe user-traffic contract. The tool-call histogram mapping finding was rejected: unit count is translated into the observed gen_ai_client_tool_calls_per_operation_count_bucket series, and the live Wave 1 query returned 352 such bucket series.
 <!-- SECTION:NOTES:END -->
