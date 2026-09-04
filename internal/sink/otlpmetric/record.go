@@ -2,6 +2,7 @@ package otlpmetric
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"strings"
 
@@ -183,7 +184,7 @@ func (s *Sink) recordTokens(ctx context.Context, t *turn.Turn, base []attr.KV) {
 // are dropped because they would multiply cost series without changing the accounting
 // question this counter answers.
 func (s *Sink) recordCost(ctx context.Context, t *turn.Turn, base []attr.KV) {
-	if t.CostUSD == nil {
+	if t.CostUSD == nil || *t.CostUSD < 0 || math.IsNaN(*t.CostUSD) || math.IsInf(*t.CostUSD, 0) || !s.firstCostResponse(t.ResponseID) {
 		return
 	}
 	s.inst.costUSD.Add(ctx, *t.CostUSD, otelmetric.WithAttributes(toOtel(costAttrs(base))...))

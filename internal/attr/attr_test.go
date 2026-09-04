@@ -65,6 +65,25 @@ func TestAgentNameMatchesCodexCodingAgentIdentity(t *testing.T) {
 	}
 }
 
+func TestSpanUsageKeepsResponseTotalsSeparateFromAttribution(t *testing.T) {
+	tn := &turn.Turn{
+		InputTokens: 21, OutputTokens: 13, CachedTokens: 5, CacheWriteTokens: 7,
+		AttributionInputTokens: 8, AttributionOutputTokens: 9,
+		AttributionCachedTokens: 2, AttributionCacheWriteTokens: 3,
+	}
+	got := NewGuard().SpanAttrs(tn)
+	for key, want := range map[string]string{
+		GenAIUsageInputTokens: "21", GenAIUsageOutputTokens: "13",
+		GenAIUsageCacheReadTokens: "5", GenAIUsageCacheWriteTokens: "7",
+		UsageAttributionInputTokens: "8", UsageAttributionOutputTokens: "9",
+		UsageAttributionCacheReadTokens: "2", UsageAttributionCacheWriteTokens: "3",
+	} {
+		if value, ok := find(got, key); !ok || value != want {
+			t.Errorf("%s = %q, present=%t; want %q", key, value, ok, want)
+		}
+	}
+}
+
 // safety_identifier maps 1:1 to a human. #3 puts it in structured metadata and nowhere
 // else, and this is the assertion that keeps it there - including out of span
 // attributes, because Tempo indexes those for search in a way metadata is not.

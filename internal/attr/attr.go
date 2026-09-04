@@ -332,17 +332,15 @@ var registry = []Field{
 	// emitting "0", matching Field.Of's own contract that empty means "does not apply"
 	// (a turn with no cached tokens is not the same fact as a turn with a "0" recorded
 	// for cached tokens - the former never had a cache to hit).
-	{Key: GenAIUsageInputTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(firstPositive(t.AttributionInputTokens, t.InputTokens)) }},
-	{Key: GenAIUsageOutputTokens, Class: Identity, Of: func(t *turn.Turn) string {
-		return positiveItoa(firstPositive(t.AttributionOutputTokens, t.OutputTokens))
-	}},
+	{Key: GenAIUsageInputTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.InputTokens) }},
+	{Key: GenAIUsageOutputTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.OutputTokens) }},
 	{Key: GenAIUsageReasoningTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.ReasoningTokens) }},
-	{Key: GenAIUsageCacheReadTokens, Class: Identity, Of: func(t *turn.Turn) string {
-		return positiveItoa(firstPositive(t.AttributionCachedTokens, t.CachedTokens))
-	}},
-	{Key: GenAIUsageCacheWriteTokens, Class: Identity, Of: func(t *turn.Turn) string {
-		return positiveItoa(firstPositive(t.AttributionCacheWriteTokens, t.CacheWriteTokens))
-	}},
+	{Key: GenAIUsageCacheReadTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.CachedTokens) }},
+	{Key: GenAIUsageCacheWriteTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.CacheWriteTokens) }},
+	{Key: UsageAttributionInputTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.AttributionInputTokens) }},
+	{Key: UsageAttributionOutputTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.AttributionOutputTokens) }},
+	{Key: UsageAttributionCacheReadTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.AttributionCachedTokens) }},
+	{Key: UsageAttributionCacheWriteTokens, Class: Identity, Of: func(t *turn.Turn) string { return positiveItoa(t.AttributionCacheWriteTokens) }},
 
 	// --- caller-supplied identity: per tool call, not per Turn (see ToolType above
 	// for why the analogous per-call BOUNDED field lives in the earlier block) ---
@@ -414,13 +412,6 @@ func positiveItoa(n int) string {
 		return ""
 	}
 	return strconv.Itoa(n)
-}
-
-func firstPositive(preferred, fallback int) int {
-	if preferred > 0 {
-		return preferred
-	}
-	return fallback
 }
 
 func positiveFloat(n float64) string {

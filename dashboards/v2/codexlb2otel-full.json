@@ -2824,8 +2824,8 @@
         "kind": "Panel",
         "spec": {
           "id": 36,
-          "title": "Operation duration model divergence",
-          "description": "Duration histogram samples where the response model differs from the requested model, such as safety-buffering reruns.",
+          "title": "Operation duration by request and response model",
+          "description": "Duration histogram samples grouped by requested and response model. Compare unlike pairs to identify safety-buffering reruns; PromQL cannot compare two label values in a matcher.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -2844,7 +2844,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (gen_ai_request_model, gen_ai_response_model) (rate(gen_ai_client_operation_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\", gen_ai_response_model!=gen_ai_request_model}[$__rate_interval]))",
+                        "expr": "sum by (gen_ai_request_model, gen_ai_response_model) (rate(gen_ai_client_operation_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval]))",
                         "legendFormat": "{{gen_ai_request_model}} -> {{gen_ai_response_model}}"
                       }
                     }
@@ -3730,7 +3730,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum(increase(codexlb_cost_usd_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\"}[$__range])) / clamp_min(sum(increase(codexlb_turns_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__range])), 1)",
+                        "expr": "sum(increase(codexlb_cost_usd_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\"}[$__range])) / clamp_min(sum(increase(codexlb_turns_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\"}[$__range])), 1)",
                         "legendFormat": "USD/turn",
                         "instant": true,
                         "range": false
@@ -10027,16 +10027,16 @@
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
+                        "color": "red",
                         "value": null
                       },
                       {
                         "color": "orange",
-                        "value": 70
+                        "value": 40
                       },
                       {
-                        "color": "red",
-                        "value": 90
+                        "color": "green",
+                        "value": 70
                       }
                     ]
                   },

@@ -725,12 +725,12 @@ def tab_turns():
         ], "logs", opts=LOGS_OPTS,
         desc="Per-turn proxy verdict beside the status inferred from the captured wire response. Disagreement is diagnostic, not silently collapsed."))
     p.append(panel(
-        "Operation duration model divergence", [
+        "Operation duration by request and response model", [
             q(f'sum by (gen_ai_request_model, gen_ai_response_model) '
-              f'(rate({prom("gen_ai.client.operation.duration", "_count")}{sel("gen_ai_response_model!=gen_ai_request_model", F_FAMILY)}[$__rate_interval]))',
+              f'(rate({prom("gen_ai.client.operation.duration", "_count")}{sel(filt=F_FAMILY)}[$__rate_interval]))',
               "{{gen_ai_request_model}} -> {{gen_ai_response_model}}"),
         ], unit="reqps", opts=LEG,
-        desc="Duration histogram samples where the response model differs from the requested model, such as safety-buffering reruns."))
+        desc="Duration histogram samples grouped by requested and response model. Compare unlike pairs to identify safety-buffering reruns; PromQL cannot compare two label values in a matcher."))
     p.append(panel(
         "Baseline resets", [
             q(f'sum by (codexlb_family, codexlb_request_kind) '
@@ -846,7 +846,7 @@ it on the same axis would double-count against `input` for anyone who did not kn
     p.append(panel(
         "Cost per turn", [
             q(f'sum(increase({cost}{sel(filt=F_TOKEN)}[$__range])) / '
-              f'clamp_min(sum(increase({prom("codexlb.turns")}{sel(filt=F_FAMILY)}[$__range])), 1)', "USD/turn", instant=True),
+              f'clamp_min(sum(increase({prom("codexlb.turns")}{sel(filt=F_TOKEN)}[$__range])), 1)', "USD/turn", instant=True),
         ], "stat", unit="currencyUSD", opts=stat_opts("none"),
         desc="Selected enriched cost divided by completed logical turns."))
     p.append(panel(
@@ -1636,7 +1636,9 @@ One trap worth stating: `files_reclaimed` staying flat while retention is enable
         "Enrichment cache hit rate", [
             q(f'100 * sum(rate({lookups}{{{JOB}, codexlb_selfobs_result="cache_hit"}}[$__rate_interval])) / '
               f'clamp_min(sum(rate({lookups}{{{JOB}}}[$__rate_interval])), 0.001)', "cache hit %"),
-        ], "gauge", unit="percent", maxv=100, minv=0, thresholds=GREEN_RED,
+        ], "gauge", unit="percent", maxv=100, minv=0,
+        thresholds=[{"color": "red", "value": None}, {"color": "orange", "value": 40},
+                    {"color": "green", "value": 70}],
         desc="Cache hits as a share of every enrichment attempt. Disabled enrichment is included so a configuration change remains visible."))
     p.append(panel(
         "Enrichment lookup latency", [

@@ -16,6 +16,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"sync"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -32,6 +33,13 @@ import (
 // series" apart from "which deployment did".
 const meterScope = "github.com/rknightion/codexlb2otel/internal/sink/otlpmetric"
 
+// costResponseLimit bounds the in-process replay guard. A completed response is
+// normally emitted once, but a successful export followed by a checkpoint-save
+// failure replays the same archive bytes on the next poll. Keeping recent response
+// IDs prevents that retry from adding a DB-derived response cost twice without
+// putting a response ID on the metric or growing state without bound.
+const costResponseLimit = 65536
+
 // Sink exports reduced Turns as OTLP metrics.
 //
 // Safe for concurrent use: every instrument method on the OTel API is required to be
@@ -47,6 +55,10 @@ type Sink struct {
 	// self-observability instrument.
 	selfObsRegistered bool
 	selfInst          selfInstruments
+
+	costMu        sync.Mutex
+	costResponses map[string]struct{}
+	costOrder     []string
 }
 
 // New builds a Sink that exports over real OTLP HTTP to cfg.Endpoint, authenticating
@@ -110,7 +122,28 @@ func newSink(reader sdkmetric.Reader, svc config.Service, guard *attr.Guard) (*S
 		return nil, fmt.Errorf("otlpmetric: building instruments: %w", err)
 	}
 
-	return &Sink{guard: guard, mp: mp, inst: inst}, nil
+	return &Sink{guard: guard, mp: mp, inst: inst, costResponses: make(map[string]struct{})}, nil
+}
+
+// firstCostResponse reports whether responseID has not been charged in this
+// process. An empty ID is retained as an explicitly non-deduplicable fallback for
+// hand-built or malformed turns; normal reducer output always has a response ID.
+func (s *Sink) firstCostResponse(responseID string) bool {
+	if responseID == "" {
+		return true
+	}
+	s.costMu.Lock()
+	defer s.costMu.Unlock()
+	if _, seen := s.costResponses[responseID]; seen {
+		return false
+	}
+	s.costResponses[responseID] = struct{}{}
+	s.costOrder = append(s.costOrder, responseID)
+	if len(s.costOrder) > costResponseLimit {
+		delete(s.costResponses, s.costOrder[0])
+		s.costOrder = s.costOrder[1:]
+	}
+	return true
 }
 
 // Name identifies the sink in logs and self-observability.

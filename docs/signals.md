@@ -73,13 +73,14 @@ registered attribute key are also available on the relevant spans:
 | `response.prompt_cache_options` | `codexlb.prompt_cache.mode`, `codexlb.prompt_cache.ttl` (seconds; the turn JSON field is `prompt_cache_ttl_seconds`) |
 | `response.prompt_cache_diagnostics` | `codexlb.prompt_cache.diagnostic` |
 | `response.safety_buffering` | `safety_retry_model`, `safety_use_cases`, `safety_reasons`, and the `safety_buffering` marker |
-| `response.usage.attribution.items.<id>` | `attribution_input_tokens`, `attribution_output_tokens`, `attribution_cached_tokens`, and `attribution_cache_write_tokens`; item identifiers are not emitted |
+| `response.usage.attribution.items.<id>` | Turn JSON totals `attribution_input_tokens`, `attribution_output_tokens`, `attribution_cached_tokens`, and `attribution_cache_write_tokens`; span attributes `codexlb.usage.attribution.input_tokens`, `codexlb.usage.attribution.output_tokens`, `codexlb.usage.attribution.cache_read_tokens`, and `codexlb.usage.attribution.cache_write_tokens`; item identifiers are not emitted |
 
 No September wire addition is a metric dimension. The bounded metric shape remains within its
 cardinality budget: the current corpus has 4,014 observed combinations against a 21,300-series
 budget. The bounded candidates (`sandbox_mode`, prompt-cache mode, and prompt-cache diagnostic) were
 considered and deliberately left out of metric dimensions; identity fields such as root turn,
-turn-metadata agent, window number, cache TTL, and attribution item ids remain metadata by contract.
+turn-metadata agent, window number, cache TTL, and the identifier-free attribution totals remain
+metadata by contract. Attribution item identifiers are discarded.
 Use Loki metadata or span attributes for these per-turn details.
 
 ## Loki records

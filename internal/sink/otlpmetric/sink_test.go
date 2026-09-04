@@ -596,11 +596,21 @@ func TestCostUSDRecordedOnlyWhenPresent(t *testing.T) {
 	zeroCost := 0.0
 	zero.CostUSD = &zeroCost
 	charged := baseTurn("charged")
+	charged.ResponseID = "resp-charged"
 	charged.APIKeyName = "charged-key"
 	chargedCost := 2.75
 	charged.CostUSD = &chargedCost
+	duplicate := baseTurn("charged")
+	duplicate.ResponseID = "resp-charged"
+	duplicate.APIKeyName = "charged-key"
+	duplicate.CostUSD = &chargedCost
+	negative := baseTurn("negative")
+	negative.ResponseID = "resp-negative"
+	negative.APIKeyName = "negative-key"
+	negativeCost := -1.0
+	negative.CostUSD = &negativeCost
 
-	if err := s.Emit(context.Background(), []*turn.Turn{missing, zero, charged}); err != nil {
+	if err := s.Emit(context.Background(), []*turn.Turn{missing, zero, charged, duplicate, negative}); err != nil {
 		t.Fatalf("Emit: %v", err)
 	}
 	rm := collect(t, reader)
@@ -634,6 +644,9 @@ func TestCostUSDRecordedOnlyWhenPresent(t *testing.T) {
 	if _, ok := gotByKey[""]; ok {
 		t.Errorf("%s emitted the nil-cost turn's empty API-key series; nil cost must be skipped",
 			attr.MetricCostUSD)
+	}
+	if _, ok := gotByKey["negative-key"]; ok {
+		t.Errorf("%s recorded a negative response cost", attr.MetricCostUSD)
 	}
 }
 

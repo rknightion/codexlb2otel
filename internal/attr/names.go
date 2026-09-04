@@ -171,6 +171,12 @@ const (
 	GenAIUsageCacheReadTokens  = "gen_ai.usage.cache_read.input_tokens"
 	GenAIUsageCacheWriteTokens = "gen_ai.usage.cache_creation.input_tokens"
 	GenAIUsageReasoningTokens  = "gen_ai.usage.reasoning.output_tokens"
+	// Attribution values are a partial accounting breakdown within one response.
+	// They deliberately stay distinct from the response-level GenAI usage keys.
+	UsageAttributionInputTokens      = "codexlb.usage.attribution.input_tokens"
+	UsageAttributionOutputTokens     = "codexlb.usage.attribution.output_tokens"
+	UsageAttributionCacheReadTokens  = "codexlb.usage.attribution.cache_read_tokens"
+	UsageAttributionCacheWriteTokens = "codexlb.usage.attribution.cache_write_tokens"
 
 	// --- agento11y.* : Grafana agent-observability's own span markers (issue #32) ---
 	//

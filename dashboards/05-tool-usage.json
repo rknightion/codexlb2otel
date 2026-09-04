@@ -138,7 +138,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "Tool calls per response, p50/p90",
-      "description": "gen_ai.client.tool_calls_per_operation, recorded once per response including the zero case, so this reflects every operation, not only tool-using ones.",
+      "description": "Project-defined Agent Observability SDK extension gen_ai.client.tool_calls_per_operation, not a current OpenTelemetry GenAI semantic-convention metric. It is recorded once per response including the zero case, so this reflects every operation, not only tool-using ones.",
       "gridPos": {
         "x": 0,
         "y": 11,
