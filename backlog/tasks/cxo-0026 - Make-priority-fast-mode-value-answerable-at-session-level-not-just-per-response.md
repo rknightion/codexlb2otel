@@ -7,7 +7,7 @@ status: Parked
 assignee:
   - '@codex'
 created_date: '2026-09-04 17:38'
-updated_date: '2026-09-04 22:00'
+updated_date: '2026-09-04 22:30'
 labels: []
 dependencies: []
 references:
@@ -132,6 +132,8 @@ Verification: focused race tests passed; just check passed in 14.8s, including f
 CodeRabbit pass 1 completed with one major finding: the dashboard name checker guarded probe exclusion on counters but not latency histograms. Fixed it by covering every family-bearing latency histogram, adding a regression test for an unfiltered turn-duration query, and adding explicit non-probe selectors to the legacy latency dashboard. The post-fix just check passed in 10.3s.
 
 CodeRabbit pass 2 completed with three major findings, all verified and fixed: per-term probe-selector validation with a mixed-expression regression; archive retention documented as independent OR rules; and Postgres documentation aligned with lazy-pool behavior for a syntactically valid but unreachable DSN. Two-pass review ceiling reached; no third pass run. Final just check passed in 5.7s. AC 5 remains unproven and is the sole park.
+
+Final v0.4.0 deployment recheck: rate-limit window labeling is live with distinct 300-minute and 10080-minute per-model windows. Requested-tier labels were absent from the immediate response and turn-duration series, so no live priority cohort is claimed. AC 5 remains parked because sessions span multiple thread-derived traces, traces are disabled, and no authoritative cross-trace distinct-turn session aggregate exists.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

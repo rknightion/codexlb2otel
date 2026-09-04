@@ -3,10 +3,10 @@ id: CXO-0004
 title: >-
   Publish runs are red at the last step: build-provenance attestation needs a
   public repo
-status: Parked
+status: Done
 assignee: []
 created_date: '2026-08-14 16:59'
-updated_date: '2026-09-03 13:44'
+updated_date: '2026-09-04 22:30'
 labels:
   - from-gh-issue
   - blocked-on-human
@@ -54,14 +54,14 @@ stay parked indefinitely.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Publish runs are green, by whichever route
-- [ ] #2 Multi-arch :main and the semver release tags keep working
+- [x] #2 Multi-arch :main and the semver release tags keep working
 - [x] #3 cosign signing and SBOM generation keep working
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
-- [ ] #2 go build ./... succeeds
+- [x] #2 go build ./... succeeds
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -78,4 +78,12 @@ Nothing in this repo can move it in the meantime; the attestation step is uncond
 Do not re-litigate the two rejected fixes - the reasons are in the description.
 
 Pre-flight 2026-09-03: resume boundary (1) has occurred - the repo is PUBLIC (gh repo view: visibility PUBLIC, isFork false). Publish run 33759794468 at 9a481da (2026-09-03) is fully green including the 'merge + sign + sbom' job, which is where attest-build-provenance runs, so AC #1 and AC #3 are proven for the :main path. AC #2's semver half is NOT yet proven: no tag-triggered publish has run since the repo went public (last release v0.3.0 was 2026-08-23; publish.yml triggers on push tags). Stays Parked with a narrower boundary: close when the next release-please tag publishes green. Nothing for an agent to build here. The single red run since (33622188619, 2026-09-02) was a stepsecurity/trivy network timeout, unrelated.
+
+Release boundary completed on 2026-09-04. Release Please PR 45 merged as 8df1abbc5941b98d8803306d83e7212348e0a51a and created v0.4.0. Release workflow 33925438925 completed successfully, including both architecture builds, multi-arch manifest publication, cosign signing, build-provenance attestation, SPDX and CycloneDX SBOM generation, and release-asset attachment. GHCR tag 0.4.0 resolves to sha256:e62782f6062a20febb2a464a8802d4a03e5454de5ec932ed845ad378906ac1c7, identical to main. Exact-head CI 33925438082 also succeeded. The stale make-check DoD remains unchecked because CXO-0018 retired Makefile; the current just check gate passed and includes the build.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed after public-repository publication was proven on both moving-main and semver paths. v0.4.0 targets 8df1abbc5941b98d8803306d83e7212348e0a51a; workflow 33925438925 published multi-arch tag 0.4.0 at digest sha256:e62782f6062a20febb2a464a8802d4a03e5454de5ec932ed845ad378906ac1c7, signed it, generated provenance, and attached both SBOM formats. Exact-head CI 33925438082 passed.
+<!-- SECTION:FINAL_SUMMARY:END -->

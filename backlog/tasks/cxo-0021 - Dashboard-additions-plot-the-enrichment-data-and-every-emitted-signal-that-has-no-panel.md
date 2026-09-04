@@ -7,7 +7,7 @@ status: Parked
 assignee:
   - '@codex'
 created_date: '2026-09-03 14:11'
-updated_date: '2026-09-04 19:54'
+updated_date: '2026-09-04 22:30'
 labels:
   - dashboards
 dependencies:
@@ -68,4 +68,6 @@ Wave 1 dashboard lane after enrichment and metrics wiring: add all specified pan
 Dashboard implementation landed at 7a54c59 and final selector fixes at 334a4db. It covers 63 of 63 metrics, 9 of 9 records, and 10 of 10 spans; family defaults exclude probe; documentation names the tabs and omissions; final just check passed. Generation 12 is live and normalized-spec identical. Panel 132 rendered the enrichment-disabled state and panel 136 rendered two breaking drift findings. Cost is absent and enrichment reports only disabled because no read-only Postgres DSN exists, so AC 2 is not proven. Resume after CXO-0001 has genuine db_hit and cost data, then capture both live panels within one hour.
 
 Final 30 minute live sample still had only enrichment disabled=1,183 and no codexlb_cost_usd_total series. The cost and genuine enrichment half of AC 2 remains parked, not skipped or passed.
+
+Final v0.4.0 deployment recheck: the live dashboard exactly matches the committed spec and the enrichment-disabled state renders, but Postgres has no DSN, enrichment emits disabled only, and codexlb_cost_usd_total returns no series. AC 2 remains parked until genuine db_hit and cost data arrive within the required observation window; dashboard presence alone is not a pass.
 <!-- SECTION:NOTES:END -->

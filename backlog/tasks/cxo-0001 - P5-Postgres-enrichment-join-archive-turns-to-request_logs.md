@@ -5,7 +5,7 @@ status: Parked
 assignee:
   - '@codex'
 created_date: '2026-08-14 16:58'
-updated_date: '2026-09-04 20:27'
+updated_date: '2026-09-04 22:30'
 labels:
   - enhancement
   - from-gh-issue
@@ -66,4 +66,6 @@ L3 complete at commit 83063d0: implemented the frozen Enricher API, Disabled no-
 Root wiring landed at 6a54f61 and final replay-safe cost handling at 05c53ed and 334a4db. Final just check passed. The deployed partial SHA contains the enrichment implementation but Camden remains configured with Postgres disabled because the goal left D2 blank, no read-only DSN was available, and SELECT-only authority forbade creating a role. Live enrich outcomes were disabled=38 and codexlb_cost_usd_total was absent. Parked resume boundary: provide an existing read-only codexlb2otel_ro DSN with SELECT on request_logs, api_keys, and accounts, restore push authority for the final local SHA, add only the documented env and compose host mapping, deploy, and prove db_hit plus increasing cost without stopping the pipeline.
 
 Final 30 minute live sample at 2026-09-04T19:53Z: enrichment outcomes were disabled=1,183, with no cache_hit, db_hit, miss, or error series; codexlb_cost_usd_total remained absent. This confirms graceful disabled behavior only, not Postgres compatibility or enrichment success.
+
+Final v0.4.0 deployment recheck: Camden runs release SHA 8df1abbc and digest sha256:e62782f6062a20febb2a464a8802d4a03e5454de5ec932ed845ad378906ac1c7, but CODEXLB2OTEL_POSTGRES_DSN is still absent and Postgres remains disabled. m7kni returned only codexlb_selfobs_result=disabled for enrichment and no codexlb_cost_usd_total series. The source implementation is deployed and healthy; live Postgres compatibility, db_hit, and cost remain unproven. Resume boundary remains an existing least-privilege DSN with SELECT on request_logs, api_keys, and accounts; no credential or role was invented.
 <!-- SECTION:NOTES:END -->

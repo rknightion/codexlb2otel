@@ -5,7 +5,7 @@ status: Parked
 assignee:
   - '@codex'
 created_date: '2026-09-03 13:51'
-updated_date: '2026-09-04 20:40'
+updated_date: '2026-09-04 22:30'
 labels:
   - dashboards
 dependencies: []
@@ -63,4 +63,6 @@ Corrected the generated v2 dashboard description from 57 to the verified 63 metr
 The final full-branch review also found an empty-ID Loki lookup match and non-atomic generated artifact recipes. The lookup now requires each extracted request, response, or thread ID to be non-empty before equality with the text variable, with a generator regression. Dashboard and sidecar recipes now generate to same-directory temporary files and move only after successful non-empty output. Forced failures returned 1 and 127 respectively while both tracked artifact digests remained unchanged and no temporary files remained.
 
 A further review found the family variable default hard-coded three known values and stale explanatory text. The default All value now uses a RE2-compatible regex that excludes only exact probe while admitting future family values; probe remains manually selectable. Representative regex cases passed. Signal docs now state the explicit non-probe user-traffic contract. The tool-call histogram mapping finding was rejected: unit count is translated into the observed gen_ai_client_tool_calls_per_operation_count_bucket series, and the live Wave 1 query returned 352 such bucket series.
+
+Final v0.4.0 deployment recheck: dashboard generation 13 remains exact-spec identical to the committed resource. The resourceVersion-safe identical update was accepted without changing generation. Primary and per-model rate-limit panels now have live codexlb_rate_limit_window_minutes values at 300 and 10080 minutes, but codexlb_rate_limit_secondary_used_percent still returns no series. AC 1 therefore remains parked on genuine secondary-window traffic; source or synthetic evidence is not substituted for live rendering.
 <!-- SECTION:NOTES:END -->

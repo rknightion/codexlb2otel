@@ -5,7 +5,7 @@ status: Parked
 assignee:
   - '@codex'
 created_date: '2026-09-04 19:32'
-updated_date: '2026-09-04 21:32'
+updated_date: '2026-09-04 22:30'
 labels: []
 dependencies: []
 priority: high
@@ -44,6 +44,8 @@ The Wave 1 in-process probe first ran on camden at 2026-09-04T19:23Z and immedia
 Full live classification on 2026-09-04 used a 0600 temporary snapshot outside the repository and removed it after analysis. The unsampled scan covered 22 files, 6,125,758,705 compressed bytes, 4,231,850 lines, 3,373,446 gzip members, 15.6 GB decompressed, and zero undecodable records. Both breaking findings were decoder-impacting. First, 439,272 HTTP SSE envelopes contained real protocol events, including 3,868 response.completed events, but ParseEvent treated every envelope as non-JSON; this caused the 2.23% to 10.38% unparsed-payload finding. Second, seven HTTP error envelopes, six 401 and one 429, used payload.error and were silently discarded because Payload decoded only payload.text. Added fail-first synthetic regressions for SSE extraction, error-envelope normalization, and profiler decoding, then implemented a shared ParseEventText path and payload.error normalization. Focused race tests and just check passed. A second full scan of the identical snapshot proved the unparsed-payload breaking finding disappeared; only storage.payload_shape object{error} remains because the newly supported shape is absent from the embedded baseline. No baseline was accepted because this follow-up run has no explicit authorization for the confirmation-gated baseline update. Live zero-breaking deployment therefore remains pending that authorization.
 
 CodeRabbit completed review_completed with two minor findings. Fixed the valid parser edge case by supporting an initial UTF-8 BOM plus CR-only and CRLF SSE line endings, with fail-first regressions; focused races and just check passed afterward. Left the unrelated missing language identifier on CXO-0026's imported Markdown fence because it is cosmetic tracker formatting and does not affect execution or evidence.
+
+Final v0.4.0 deployment recheck: codexlb_archive_drift_findings now reports breaking=1, new=37, and info=99 on m7kni. The remaining breaking finding is the already-classified, decoder-supported payload.error object shape absent from the embedded baseline. No baseline was changed. Resume still requires explicit authorization for a full unsampled baseline update, content-free signature verification, publication, deployment, and live breaking=0 proof.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
