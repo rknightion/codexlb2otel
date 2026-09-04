@@ -282,7 +282,6 @@ def panel(title, queries, viz="timeseries", desc="", unit=None, opts=None,
         defaults["decimals"] = decimals
     if thresholds:
         defaults["thresholds"] = {"mode": "absolute", "steps": thresholds}
-        defaults.setdefault("custom", {})
     if fieldcfg:
         defaults.update(fieldcfg)
     return {"kind": "Panel", "spec": {
