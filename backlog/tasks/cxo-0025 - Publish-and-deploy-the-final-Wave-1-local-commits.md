@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-09-04 19:37'
-updated_date: '2026-09-04 22:01'
+updated_date: '2026-09-04 22:05'
 labels: []
 dependencies: []
 priority: high
@@ -37,3 +37,9 @@ Wave 1 exhausted its sole authorised push at 20dafa64dc3d7c73c05dcef166c196826ac
 <!-- SECTION:PLAN:BEGIN -->
 1. Verify repository ownership, exact local head, clean worktree, and the already-green routine gate. 2. Push main without rewriting history and record the exact remote SHA. 3. Follow the exact-SHA CI and publish workflows to terminal conclusions, retaining failed or cancelled attempts separately. 4. Deploy only the digest built from that SHA using the repository runbook, then prove Camden health and restart count. 5. Recheck the live metric and dashboard surfaces, marking absent data unproven, and finalize the remaining parked tasks only where this evidence actually satisfies their prerequisites.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Pushed exact SHA 2f6c0cf972ece15c3d653c43efcb4cd618a74bc7. CI run 33923698394 failed after every Go test and four other jobs passed because dashboard-check invoked rg, which is absent on the GitHub-hosted runner. This is failed diagnostic history, not proof. Replaced the checker dependency with grep -E and revalidated locally with just check in 7.4s; publish and deployment evidence must use the successor SHA.
+<!-- SECTION:NOTES:END -->

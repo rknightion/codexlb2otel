@@ -160,7 +160,7 @@ dashboard-sidecar:
     target=dashboards/v2/.metrics_from_code.txt
     tmp=$(mktemp "${target}.XXXXXX")
     trap 'rm -f "$tmp"' EXIT
-    rg 'Metric[A-Za-z0-9]+\s*=\s*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > "$tmp"
+    grep -E 'Metric[A-Za-z0-9]+[[:space:]]*=[[:space:]]*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > "$tmp"
     test -s "$tmp"
     chmod 0644 "$tmp"
     mv "$tmp" "$target"
