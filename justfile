@@ -80,7 +80,7 @@ vuln: _govulncheck
 
 # THE GATE: exactly what CI's build-test job enforces.
 [group('check')]
-check: fmt-check lint build test-short probe-ci
+check: fmt-check lint build test-short probe-ci dashboard-check
 
 # CI's superset: snapshot needs cross-compilation and image needs a Docker daemon.
 [group('check')]
@@ -138,6 +138,29 @@ probe-ci:
       1) echo "clbprobe: drift at or above 'breaking' against the embedded baseline"; exit 1 ;;
       *) echo "clbprobe: exit $status (see output above)"; exit 1 ;;
     esac
+
+# regenerate the v2 metric inventory from every Metric constant
+[group('gen')]
+dashboard-sidecar:
+    rg 'Metric[A-Za-z0-9]+\s*=\s*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > dashboards/v2/.metrics_from_code.txt
+
+# regenerate the generated v2 dashboard
+[group('gen')]
+dashboard:
+    python3 dashboards/v2/generate.py > dashboards/v2/codexlb2otel-full.json
+
+# verify dashboard artifacts and source-name coverage without rewriting them
+[group('check')]
+[script('bash')]
+dashboard-check:
+    set -euo pipefail
+    tmp=$(mktemp)
+    trap 'rm -f "$tmp"' EXIT
+    rg 'Metric[A-Za-z0-9]+\s*=\s*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > "$tmp"
+    cmp -s "$tmp" dashboards/v2/.metrics_from_code.txt || { diff -u dashboards/v2/.metrics_from_code.txt "$tmp"; exit 1; }
+    python3 dashboards/v2/generate.py > "$tmp"
+    cmp -s "$tmp" dashboards/v2/codexlb2otel-full.json || { diff -u dashboards/v2/codexlb2otel-full.json "$tmp"; exit 1; }
+    python3 dashboards/scripts/check_names.py
 
 # build the runtime container image; pass a tag to override the default
 [group('build')]

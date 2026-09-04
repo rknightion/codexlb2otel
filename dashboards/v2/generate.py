@@ -25,6 +25,9 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+import check_names
+
 PROM = "grafanacloud-prom"
 LOKI = "grafanacloud-logs"
 TEMPO = "grafanacloud-traces"
@@ -35,7 +38,8 @@ JOB = 'job="codexlb2otel"'
 # read from the Go source so the generator runs anywhere; verify() diffs it against
 # .metrics_from_code.txt, which IS extracted from the source, so drift fails loudly.
 ALL_METRICS = [
-    "codexlb.attributes_rejected", "codexlb.baseline_resets", "codexlb.client_tool_pause",
+    "codexlb.archive_drift_findings", "codexlb.attributes_rejected", "codexlb.baseline_resets", "codexlb.client_tool_pause",
+    "codexlb.cost_usd",
     "codexlb.credits.balance", "codexlb.credits.unlimited", "codexlb.engine_calls",
     "codexlb.engine_iapi_inference", "codexlb.engine_iapi_sampling", "codexlb.engine_iapi_tbt",
     "codexlb.engine_service_inference", "codexlb.engine_service_minus_iapi_tbt",
@@ -43,22 +47,24 @@ ALL_METRICS = [
     "codexlb.engine_uncached_prompt_tokens", "codexlb.engine_wall", "codexlb.errors",
     "codexlb.harness_unblocked", "codexlb.image_gen_tokens", "codexlb.pre_inference",
     "codexlb.rate_limit.model_used_percent", "codexlb.rate_limit.reset_after",
+    "codexlb.rate_limit.secondary_used_percent",
     "codexlb.rate_limit.used_percent", "codexlb.responses",
     "codexlb.responses_excl_engine_and_tool", "codexlb.responses_excl_engine_wait_sampling",
     "codexlb.responses_excl_engine_wait_sampling_iapi", "codexlb.responsesapi_excl_client_tools",
     "codexlb.safety_buffering_events", "codexlb.sampling_and_stream",
     "codexlb.selfobs.bytes_read", "codexlb.selfobs.current_file_offset",
     "codexlb.selfobs.decode_errors", "codexlb.selfobs.file_replacements",
-    "codexlb.selfobs.files_reclaimed", "codexlb.selfobs.files_watched",
+    "codexlb.selfobs.enrich_cache_entries", "codexlb.selfobs.enrich_lookup_duration",
+    "codexlb.selfobs.enrich_lookups", "codexlb.selfobs.files_reclaimed", "codexlb.selfobs.files_watched",
     "codexlb.selfobs.gzip_members_decoded", "codexlb.selfobs.ingest_lag_seconds",
     "codexlb.selfobs.lines_decoded", "codexlb.selfobs.open_responses",
     "codexlb.selfobs.partial_member_reads", "codexlb.selfobs.reducer_series",
     "codexlb.selfobs.reducer_threads", "codexlb.selfobs.sink_pending",
     "codexlb.selfobs.sink_rejections", "codexlb.selfobs.turns_emitted",
     "codexlb.selfobs.turns_evicted", "codexlb.selfobs.undecodable_lines", "codexlb.tokens",
-    "codexlb.tool_calls", "codexlb.tool_calls_per_operation", "codexlb.transport_events",
+    "codexlb.tool_calls", "codexlb.transport_events",
     "codexlb.turn.duration", "codexlb.turns", "codexlb.web_search_requests",
-    "gen_ai.client.operation.duration", "gen_ai.client.token.usage",
+    "gen_ai.client.operation.duration", "gen_ai.client.token.usage", "gen_ai.client.tool_calls_per_operation",
     "gen_ai.client.time_to_first_token",
 ]
 
@@ -69,9 +75,11 @@ ALL_METRICS = [
 # client-tool pause recorded, no sink rejection since the last restart); they still get
 # panels, because "no data" and "no panel" are different answers.
 PROM_NAME = {
+    "codexlb.archive_drift_findings": "codexlb_archive_drift_findings",
     "codexlb.attributes_rejected": "codexlb_attributes_rejected_total",
     "codexlb.baseline_resets": "codexlb_baseline_resets_total",
     "codexlb.client_tool_pause": "codexlb_client_tool_pause_seconds",     # ZERO-TRAFFIC
+    "codexlb.cost_usd": "codexlb_cost_usd_total",
     "codexlb.credits.balance": "codexlb_credits_balance",
     "codexlb.credits.unlimited": "codexlb_credits_unlimited_ratio",
     "codexlb.engine_calls": "codexlb_engine_calls_total",
@@ -90,6 +98,7 @@ PROM_NAME = {
     "codexlb.pre_inference": "codexlb_pre_inference_seconds",
     "codexlb.rate_limit.model_used_percent": "codexlb_rate_limit_model_used_percent",
     "codexlb.rate_limit.reset_after": "codexlb_rate_limit_reset_after_seconds",
+    "codexlb.rate_limit.secondary_used_percent": "codexlb_rate_limit_secondary_used_percent",
     "codexlb.rate_limit.used_percent": "codexlb_rate_limit_used_percent",
     "codexlb.responses": "codexlb_responses_total",
     "codexlb.responses_excl_engine_and_tool": "codexlb_responses_excl_engine_and_tool_seconds",
@@ -98,9 +107,12 @@ PROM_NAME = {
     "codexlb.responsesapi_excl_client_tools": "codexlb_responsesapi_excl_client_tools_seconds",
     "codexlb.safety_buffering_events": "codexlb_safety_buffering_events_total",
     "codexlb.sampling_and_stream": "codexlb_sampling_and_stream_seconds",
-    "codexlb.selfobs.bytes_read": "codexlb_selfobs_bytes_read_total",
+    "codexlb.selfobs.bytes_read": "codexlb_selfobs_bytes_read_bytes_total",
     "codexlb.selfobs.current_file_offset": "codexlb_selfobs_current_file_offset_bytes",
     "codexlb.selfobs.decode_errors": "codexlb_selfobs_decode_errors_total",
+    "codexlb.selfobs.enrich_cache_entries": "codexlb_selfobs_enrich_cache_entries",
+    "codexlb.selfobs.enrich_lookup_duration": "codexlb_selfobs_enrich_lookup_duration_seconds",
+    "codexlb.selfobs.enrich_lookups": "codexlb_selfobs_enrich_lookups_total",
     "codexlb.selfobs.file_replacements": "codexlb_selfobs_file_replacements_total",
     "codexlb.selfobs.files_reclaimed": "codexlb_selfobs_files_reclaimed_total",
     "codexlb.selfobs.files_watched": "codexlb_selfobs_files_watched",
@@ -118,7 +130,6 @@ PROM_NAME = {
     "codexlb.selfobs.undecodable_lines": "codexlb_selfobs_undecodable_lines_total",
     "codexlb.tokens": "codexlb_tokens_total",
     "codexlb.tool_calls": "codexlb_tool_calls_total",
-    "codexlb.tool_calls_per_operation": "codexlb_tool_calls_per_operation",
     "codexlb.transport_events": "codexlb_transport_events_total",
     "codexlb.turn.duration": "codexlb_turn_duration_seconds",
     "codexlb.turns": "codexlb_turns_total",
@@ -126,6 +137,7 @@ PROM_NAME = {
     "gen_ai.client.operation.duration": "gen_ai_client_operation_duration_seconds",
     "gen_ai.client.token.usage": "gen_ai_client_token_usage",
     "gen_ai.client.time_to_first_token": "gen_ai_client_time_to_first_token_seconds",
+    "gen_ai.client.tool_calls_per_operation": "gen_ai_client_tool_calls_per_operation_count",
 }
 
 # The nine record types the Loki sink emits, as observed live. verify() requires a
@@ -136,8 +148,8 @@ RECORD_TYPES = ["turn", "message", "agent_message", "prompt", "instructions",
 # Span names observed in Tempo. The four critical_path.* children are the span-level
 # expression of the same decomposition the latency tab shows as histograms.
 SPAN_NAMES = ["turn", "critical_path.pre_inference", "critical_path.engine_wall",
-              "critical_path.sampling_and_stream", "critical_path.other",
-              "execute_tool", "generateText", "streamText"]
+              "critical_path.sampling_and_stream", "critical_path.client_tool_pause",
+              "critical_path.other", "execute_tool", "invoke_agent", "generateText", "streamText"]
 
 _covered_metrics = set()
 _covered_records = set()
@@ -156,6 +168,8 @@ def prom(metric, suffix=""):
 F_FULL = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexlb_request_kind=~"$kind"'
 F_MODEL = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account"'
 F_ACCT = 'codexlb_account_id=~"$account"'
+F_FAMILY = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexlb_family=~"$family"'
+F_TOKEN = F_FULL + ', codexlb_family=~"$family"'
 
 # gen_ai.token.type is a NESTED taxonomy, not a flat enum: cache_read is a sub-bucket
 # of input and reasoning a sub-bucket of output. Only input+output may be summed or
@@ -432,11 +446,20 @@ of one another. Filtering to `turn` hides real spend.
              "is looping - tool calls, retries, or continuation."))
     p.append(panel(
         "Tokens", [q(f'round(sum(increase({prom("codexlb.tokens")}'
-                     f'{sel(ADDITIVE_TOKENS)}[$__range])))', "tokens", instant=True)],
+                     f'{sel(ADDITIVE_TOKENS, F_TOKEN)}[$__range])))', "tokens", instant=True)],
         "stat", opts=stat_opts("none", "lastNotNull", 42), unit="short",
         desc="input + output ONLY. Summing every gen_ai.token.type would double-count: "
              "cache_read is a sub-bucket nested inside input, and reasoning inside output, "
              "not additive siblings of them. See the Tokens tab."))
+    p.append(panel(
+        "Spend in range", [q(f'sum(increase({prom("codexlb.cost_usd")}{sel(filt=F_TOKEN)}[$__range]))',
+                              "USD", instant=True)],
+        "stat", unit="currencyUSD", opts=stat_opts("none", "lastNotNull", 42),
+        desc="Observed enriched spend in the selected range. Probe traffic is excluded by the family selector."))
+    p.append(panel(
+        "Spend rate", [q(f'sum(rate({prom("codexlb.cost_usd")}{sel(filt=F_TOKEN)}[$__rate_interval]))', "USD/s")],
+        unit="currencyUSD", opts=LEG,
+        desc="Observed enriched spend per second, excluding probe traffic by default."))
     p.append(panel(
         "Errors", [q(f'round(sum(increase({prom("codexlb.errors")}{sel(filt=F_MODEL)}[$__range])))', "errors", instant=True)],
         "stat", opts=stat_opts("none", "lastNotNull", 42), unit="short",
@@ -464,13 +487,13 @@ of one another. Filtering to `turn` hides real spend.
     p.append(panel(
         "Turn duration percentiles",
         hist_quantiles("codexlb.turn.duration", "gen_ai_request_model", "{{gen_ai_request_model}}",
-                       filt=F_MODEL),
+                       filt=F_FAMILY),
         unit="s", opts=LEG,
         desc="End-to-end logical turn latency by model. Decomposed on the Latency tab."))
     p.append(panel(
         "Token rate (additive: input + output)", [
             q(f'sum by (gen_ai_token_type) (rate({prom("codexlb.tokens")}'
-              f'{sel(ADDITIVE_TOKENS)}[$__rate_interval]))', "{{gen_ai_token_type}}"),
+              f'{sel(ADDITIVE_TOKENS, F_TOKEN)}[$__rate_interval]))', "{{gen_ai_token_type}}"),
         ], unit="short", opts=LEG, fieldcfg=STACK,
         desc="Only input and output are stacked, because only they are additive. cache_read "
              "and reasoning are breakdowns NESTED inside them and appear on the Tokens "
@@ -625,6 +648,13 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
              "carry reasoning effort, so there is no effort split to be had here at any "
              "price. Input + output only; cache_read and reasoning are sub-buckets nested "
              "inside those two and stacking them on their own parents double-counts."))
+    p.append(panel(
+        "Distinct agent versions by model", [
+            q(f'count by (gen_ai_request_model) (count by (gen_ai_request_model, gen_ai_agent_version) '
+              f'(increase({prom("codexlb.responses")}{sel(filt=F_MODEL)}[$__rate_interval]) > 0))',
+              "{{gen_ai_request_model}}"),
+        ], unit="short", opts=LEG,
+        desc="Distinct instructions-hash versions observed per model. A sudden increase means agent instructions changed or diverged."))
     return p
 
 
@@ -688,6 +718,20 @@ def tab_turns():
              "match is not an error, but it changes what you are actually paying for and "
              "what latency to expect."),)
     p.append(panel(
+        "Proxy status versus wire status", [
+            logq(f'{{service_name="codexlb2otel", codexlb_record_type="{rec("turn")}"}} '
+                 '| json proxy_status="proxy_status", proxy_error_code="proxy_error_code", wire_status="status" '
+                 '| proxy_status!=""'),
+        ], "logs", opts=LOGS_OPTS,
+        desc="Per-turn proxy verdict beside the status inferred from the captured wire response. Disagreement is diagnostic, not silently collapsed."))
+    p.append(panel(
+        "Operation duration model divergence", [
+            q(f'sum by (gen_ai_request_model, gen_ai_response_model) '
+              f'(rate({prom("gen_ai.client.operation.duration", "_count")}{sel("gen_ai_response_model!=gen_ai_request_model", F_FAMILY)}[$__rate_interval]))',
+              "{{gen_ai_request_model}} -> {{gen_ai_response_model}}"),
+        ], unit="reqps", opts=LEG,
+        desc="Duration histogram samples where the response model differs from the requested model, such as safety-buffering reruns."))
+    p.append(panel(
         "Baseline resets", [
             q(f'sum by (codexlb_family, codexlb_request_kind) '
               f'(rate({prom("codexlb.baseline_resets")}{sel(filt=None)}[$__rate_interval]))',
@@ -736,20 +780,20 @@ it on the same axis would double-count against `input` for anyone who did not kn
     p.append(panel(
         "Additive token volume (input + output)", [
             q(f'sum by (gen_ai_token_type) (rate({prom("codexlb.tokens")}'
-              f'{sel(ADDITIVE_TOKENS)}[$__rate_interval]))', "{{gen_ai_token_type}}"),
+              f'{sel(ADDITIVE_TOKENS, F_TOKEN)}[$__rate_interval]))', "{{gen_ai_token_type}}"),
         ], unit="short", opts=LEG, fieldcfg=STACK,
         desc="Safe to stack: these two do not overlap, so the stack height is the real "
              "total."))
     p.append(panel(
         "Nested breakdowns (cache_read within input, reasoning within output)", [
             q(f'sum by (gen_ai_token_type) (rate({prom("codexlb.tokens")}'
-              f'{sel(NESTED_TOKENS)}[$__rate_interval]))', "{{gen_ai_token_type}}"),
+              f'{sel(NESTED_TOKENS, F_TOKEN)}[$__rate_interval]))', "{{gen_ai_token_type}}"),
         ], unit="short", opts=LEG,
         desc="Deliberately NOT stacked. Each line is a subset of one of the lines in the "
              "panel above, so stacking them together would be arithmetically meaningless."))
     tok = prom("codexlb.tokens")
-    cached = sel('gen_ai_token_type="cache_read"')
-    promptish = sel('gen_ai_token_type="input"')
+    cached = sel('gen_ai_token_type="cache_read"', F_TOKEN)
+    promptish = sel('gen_ai_token_type="input"', F_TOKEN)
     p.append(panel(
         "Cache read ratio", [
             q(f'100 * sum(rate({tok}{cached}[$__rate_interval])) '
@@ -781,10 +825,44 @@ it on the same axis would double-count against `input` for anyone who did not kn
     p.append(panel(
         "Tokens by model and kind", [
             q(f'sum by (gen_ai_request_model, codexlb_request_kind, gen_ai_token_type) '
-              f'(increase({prom("codexlb.tokens")}{sel()}[$__range]))', "", instant=True),
+              f'(increase({prom("codexlb.tokens")}{sel(filt=F_TOKEN)}[$__range]))', "", instant=True),
         ], "table", opts=TABLE_OPTS,
         desc="Where the tokens actually went. Sort by value to find the expensive corner - "
              "it is often compaction or prewarm rather than user turns."))
+    cost = prom("codexlb.cost_usd")
+    p.append(panel(
+        "Cost by model, effort, thread source, family, and API key", [
+            q(f'sum by (gen_ai_request_model, gen_ai_request_reasoning_level, codexlb_thread_source, codexlb_family, codexlb_api_key_name) '
+              f'(rate({cost}{sel(filt=F_TOKEN)}[$__rate_interval]))',
+              "{{gen_ai_request_model}} / {{gen_ai_request_reasoning_level}} / {{codexlb_thread_source}} / {{codexlb_family}} / {{codexlb_api_key_name}}"),
+        ], unit="currencyUSD", opts=LEG,
+        desc="Enriched spend split across bounded cost dimensions. The default family selection excludes probes."))
+    p.append(panel(
+        "Cost split by request kind", [
+            q(f'sum by (codexlb_request_kind) (increase({cost}{sel(filt=F_TOKEN)}[$__range]))',
+              "{{codexlb_request_kind}}", instant=True),
+        ], "barchart", unit="currencyUSD", opts=BARS,
+        desc="Compaction and memory spend are visible here even when the proxy request log does not show them."))
+    p.append(panel(
+        "Cost per turn", [
+            q(f'sum(increase({cost}{sel(filt=F_TOKEN)}[$__range])) / '
+              f'clamp_min(sum(increase({prom("codexlb.turns")}{sel(filt=F_FAMILY)}[$__range])), 1)', "USD/turn", instant=True),
+        ], "stat", unit="currencyUSD", opts=stat_opts("none"),
+        desc="Selected enriched cost divided by completed logical turns."))
+    p.append(panel(
+        "Cost per 1M tokens by model", [
+            q(f'1e6 * sum by (gen_ai_request_model) (increase({cost}{sel(filt=F_TOKEN)}[$__range])) / '
+              f'clamp_min(sum by (gen_ai_request_model) (increase({prom("codexlb.tokens")}{sel(ADDITIVE_TOKENS, F_TOKEN)}[$__range])), 1)',
+              "{{gen_ai_request_model}}", instant=True),
+        ], "barchart", unit="currencyUSD", opts=BARS,
+        desc="Cost normalized by additive input plus output tokens; nested token buckets are excluded."))
+    p.append(panel(
+        "Tokens by family, effort, and thread source", [
+            q(f'sum by (codexlb_family, gen_ai_request_reasoning_level, codexlb_thread_source) '
+              f'(rate({prom("codexlb.tokens")}{sel(ADDITIVE_TOKENS, F_TOKEN)}[$__rate_interval]))',
+              "{{codexlb_family}} / {{gen_ai_request_reasoning_level}} / {{codexlb_thread_source}}"),
+        ], unit="short", opts=LEG,
+        desc="Counter-native token dimensions replace the prior LogQL workaround."))
     p.append(panel(
         "Image generation tokens", [
             q(f'sum by (gen_ai_request_model) (rate({prom("codexlb.image_gen_tokens")}{sel()}[$__rate_interval]))',
@@ -1079,7 +1157,7 @@ isolate what a stage costs by comparing two of them rather than trusting a singl
              "trusting a single computed breakdown."))
     p.append(panel(
         "gen_ai client operation duration (by status)",
-        hist_quantiles("gen_ai.client.operation.duration", "status", "{{status}}"),
+        hist_quantiles("gen_ai.client.operation.duration", "codexlb_status", "{{codexlb_status}}", filt=F_FAMILY),
         unit="s", opts=LEG,
         desc="The OTel GenAI standard latency histogram, split by outcome. Errors that "
              "are FAST and errors that are SLOW are different failures."))
@@ -1127,7 +1205,7 @@ def tab_tools():
         desc="Same data ranked. The long tail is usually more interesting than the head."))
     p.append(panel(
         "Tool calls per operation",
-        hist_quantiles("codexlb.tool_calls_per_operation", "gen_ai_request_model", "{{gen_ai_request_model}}"),
+        hist_quantiles("gen_ai.client.tool_calls_per_operation", "gen_ai_request_model", "{{gen_ai_request_model}}"),
         unit="short", opts=LEG,
         desc="How many tools one response invokes. A rising p99 is an agent looping - it "
              "costs tokens and latency without necessarily failing, so nothing else alerts."))
@@ -1166,6 +1244,18 @@ def tab_tools():
             logq(f'{{service_name="codexlb2otel", codexlb_record_type="{rec("agent_message")}"}}'),
         ], "logs", opts=LOGS_OPTS,
         desc="What the agent said, as opposed to what it did."))
+    p.append(panel(
+        "Agent-message topology", [
+            logq(f'{{service_name="codexlb2otel", codexlb_record_type="{rec("agent_message")}"}} '
+                 '| json author="author", recipient="recipient"'),
+        ], "logs", opts=LOGS_OPTS,
+        desc="Author to recipient edges from agent-message records. This is the message topology rather than an inferred tree."))
+    p.append(panel(
+        "Parent and child threads", [
+            logq(f'{{service_name="codexlb2otel", codexlb_record_type="{rec("instructions")}"}} '
+                 '| json thread_id="thread_id", parent_thread_id="parent_thread_id"'),
+        ], "logs", opts=LOGS_OPTS,
+        desc="Parent and child thread pairs from the instruction record that establishes agent lineage."))
     return p
 
 
@@ -1182,9 +1272,15 @@ def tab_limits():
         desc="Percent of the account's primary rate-limit window consumed. This is "
              "reported BY the provider in the frames, not inferred here."))
     p.append(panel(
+        "Secondary window utilisation", [
+            q(f'{prom("codexlb.rate_limit.secondary_used_percent")}{{{JOB}}}',
+              "{{codexlb_account_id}} ({{codexlb_plan_type}})"),
+        ], unit="percent", maxv=100, minv=0, opts=LEG, thresholds=GREEN_RED,
+        desc="The independently reported secondary limit window. Its plan type is retained so unlike accounts are never averaged together."))
+    p.append(panel(
         "Per-model window utilisation", [
             q(f'{prom("codexlb.rate_limit.model_used_percent")}{{{JOB}}}',
-              "{{codexlb_account_id}} / {{gen_ai_request_model}}"),
+              "{{codexlb_account_id}} / {{codexlb_plan_type}} / {{gen_ai_request_model}}"),
         ], unit="percent", maxv=100, minv=0, opts=LEG, thresholds=GREEN_RED,
         desc="Some models carry their own window. This one can be exhausted while the "
              "primary window above still looks healthy - that mismatch is exactly the "
@@ -1241,26 +1337,26 @@ def tab_errors():
     p = []
     p.append(panel(
         "Error rate by type and code", [
-            q(f'sum by (codexlb_error_type, codexlb_error_code) '
+            q(f'sum by (error_type, codexlb_error_code) '
               f'(rate({prom("codexlb.errors")}{sel(filt=F_MODEL)}[$__rate_interval]))',
-              "{{codexlb_error_type}} / {{codexlb_error_code}}"),
+              "{{error_type}} / {{codexlb_error_code}}"),
         ], unit="reqps", opts=LEG, fieldcfg=BARS, thresholds=ZERO_OK,
         desc="Errors carried in the archive - the provider's and the harness's, not this "
              "exporter's. For the exporter's own health use the Pipeline tab."))
     p.append(panel(
         "Errors by model and status", [
-            q(f'sum by (gen_ai_request_model, codexlb_status, codexlb_error_type) '
+            q(f'sum by (gen_ai_request_model, codexlb_status, error_type) '
               f'(increase({prom("codexlb.errors")}{sel(filt=F_MODEL)}[$__range]))', "", instant=True),
         ], "table", opts=TABLE_OPTS,
         desc="Errors concentrated on one model are a different problem from errors spread "
              "across all of them."))
     p.append(panel(
         "Transport events", [
-            q(f'sum by (codexlb_frame_type, codexlb_family) '
+            q(f'sum by (codexlb_frame_type, codexlb_close_code, codexlb_family) '
               f'(rate({prom("codexlb.transport_events")}{sel(filt=F_ACCT)}[$__rate_interval]))',
-              "{{codexlb_family}} / {{codexlb_frame_type}}"),
+              "{{codexlb_family}} / {{codexlb_frame_type}} / {{codexlb_close_code}}"),
         ], unit="short", opts=LEG, fieldcfg=BARS,
-        desc="WebSocket-level events - connection open, close, error. A close-code storm "
+        desc="WebSocket-level events - connection open, close, error - split by close code. A close-code storm "
              "here explains latency and error spikes that look inexplicable at the "
              "response layer."))
     p.append(panel(
@@ -1342,6 +1438,13 @@ to Loki to discard silently behind a 204. Catching up on a backlog therefore pro
         ], "logs", opts=LOGS_OPTS,
         desc="Case-insensitive regex over line content, driven by the $search variable at "
              "the top. Leave it as . to match everything."))
+    p.append(panel(
+        "Lookup by request, response, or thread ID", [
+            logq('{service_name="codexlb2otel", codexlb_record_type=~"$record_type"} '
+                 '| json request_id="request_id", response_id="response_id", thread_id="thread_id" '
+                 '| request_id="$id" or response_id="$id" or thread_id="$id"'),
+        ], "logs", opts=LOGS_OPTS,
+        desc="Exact lookup across every record kind by request_id, response_id, or thread_id. Leave $id blank until an identifier is pasted."))
     return p
 
 
@@ -1353,9 +1456,9 @@ def tab_traces():
     p.append(text_panel("Trace structure", f"""
 One trace per **logical turn**. The root span is `{span('turn')}`; under it sit the critical-path
 children - `{span('critical_path.pre_inference')}`, `{span('critical_path.engine_wall')}`,
-`{span('critical_path.sampling_and_stream')}` and `{span('critical_path.other')}` - plus a
+`{span('critical_path.sampling_and_stream')}`, `{span('critical_path.client_tool_pause')}` and `{span('critical_path.other')}` - plus a
 `{span('generateText')}`/`{span('streamText')} <model>` span per model call and an
-`{span('execute_tool')} <tool>` span per tool
+`{span('execute_tool')} <tool>` or `{span('invoke_agent')} <agent>` span per tool
 invocation. Span names follow the OTel GenAI convention of `<operation> <target>`, so the model and
 tool name are in the span name as well as in attributes.
 
@@ -1378,6 +1481,11 @@ specific slow turn; use the histograms when you need the shape across all of the
         "table", opts=TABLE_OPTS,
         desc="One span per tool call, carrying the bounded arguments. The 16KB bound is "
              "applied at a rune boundary, so a truncated argument is still valid UTF-8."))
+    p.append(panel(
+        "Agent invocation spans", [tempoq('{resource.service.name="codexlb2otel" && '
+                                           'name=~"invoke_agent.*"}')],
+        "table", opts=TABLE_OPTS,
+        desc="Spawn-agent calls as their own GenAI operation, including the child agent name and bounded task metadata."))
     p.append(panel(
         "Model call spans", [tempoq('{resource.service.name="codexlb2otel" && '
                                     'name=~"(generateText|streamText).*"}')],
@@ -1517,6 +1625,37 @@ One trap worth stating: `files_reclaimed` staying flat while retention is enable
              "never having had any. This one keeps the count visible after the fact, "
              "which is what you actually want when asking 'did we lose anything today?'. "
              "A cumulative counter, so read it as a total rather than a rate."))
+    lookups = prom("codexlb.selfobs.enrich_lookups")
+    p.append(panel(
+        "Enrichment lookups by result", [
+            q(f'sum by (codexlb_selfobs_result) (rate({lookups}{{{JOB}}}[$__rate_interval]))',
+              "{{codexlb_selfobs_result}}"),
+        ], unit="reqps", opts=LEG,
+        desc="Postgres enrichment outcomes: cache_hit, db_hit, miss, error, or disabled."))
+    p.append(panel(
+        "Enrichment cache hit rate", [
+            q(f'100 * sum(rate({lookups}{{{JOB}, codexlb_selfobs_result="cache_hit"}}[$__rate_interval])) / '
+              f'clamp_min(sum(rate({lookups}{{{JOB}}}[$__rate_interval])), 0.001)', "cache hit %"),
+        ], "gauge", unit="percent", maxv=100, minv=0, thresholds=GREEN_RED,
+        desc="Cache hits as a share of every enrichment attempt. Disabled enrichment is included so a configuration change remains visible."))
+    p.append(panel(
+        "Enrichment lookup latency", [
+            q(f'histogram_quantile(0.95, sum by (le) (rate({prom("codexlb.selfobs.enrich_lookup_duration", "_bucket")}{{{JOB}}}[$__rate_interval])))',
+              "p95"),
+            q(f'sum(rate({prom("codexlb.selfobs.enrich_lookup_duration", "_sum")}{{{JOB}}}[$__rate_interval])) / '
+              f'clamp_min(sum(rate({prom("codexlb.selfobs.enrich_lookup_duration", "_count")}{{{JOB}}}[$__rate_interval])), 0.001)', "mean", "B"),
+        ], unit="s", opts=LEG,
+        desc="Database-attempt lookup latency. Cache hits and disabled enrichment deliberately have no synthetic zero observation."))
+    p.append(panel(
+        "Enrichment cache entries", [
+            q(f'{prom("codexlb.selfobs.enrich_cache_entries")}{{{JOB}}}', "entries"),
+        ], unit="short", opts=LEG,
+        desc="Response rows currently held by the enrichment LRU."))
+    p.append(panel(
+        "Breaking archive drift findings", [
+            q(f'{prom("codexlb.archive_drift_findings")}{{{JOB}, codexlb_selfobs_severity="breaking"}}', "breaking"),
+        ], "stat", unit="short", opts=stat_opts("none"), thresholds=ZERO_OK,
+        desc="Current breaking differences from the embedded archive baseline."))
     p.append(panel(
         "Exporter log stream", [
             logq('{service_name="codexlb2otel", job="integrations/docker"} |~ "(?i)error|warn"'),
@@ -1573,6 +1712,14 @@ def logvar(name, label, tag, desc):
         "skipUrlSync": False, "hide": "dontHide",
         "current": {"text": ["All"], "value": ["$__all"]}, "options": [],
     }}
+
+
+def family_var():
+    v = qvar("family", "Transport family", "codexlb_responses_total", "codexlb_family",
+             "Metric family selector. websocket, http, and unknown are selected by default; probe remains available for cost analysis.")
+    v["spec"]["current"] = {"text": ["websocket", "http", "unknown"],
+                              "value": ["websocket", "http", "unknown"]}
+    return v
 
 
 def build():
@@ -1658,8 +1805,11 @@ def build():
                  "filtering to turn hides real spend."),
             logvar("record_type", "Log record type", "codexlb_record_type",
                    "Loki stream label. One of nine record kinds."),
-            logvar("family", "Transport family", "codexlb_family",
-                   "Loki stream label: websocket or unknown."),
+            family_var(),
+            {"kind": "TextVariable", "spec": {
+                "name": "id", "label": "Lookup ID", "skipUrlSync": False,
+                "hide": "dontHide", "description": "Exact request, response, or thread ID for the Lookup panel.",
+                "query": "", "current": {"text": "", "value": ""}}},
             {"kind": "TextVariable", "spec": {
                 "name": "search", "label": "Log search", "skipUrlSync": False,
                 "hide": "dontHide",
@@ -1685,8 +1835,9 @@ def verify(spec):
     # ALL_METRICS above is hand-maintained so this file runs standalone. The list
     # extracted from internal/attr/names.go is the actual source of truth, so diff the
     # two: a metric added to the exporter and not to this dashboard fails here rather
-    # than silently never being plotted. Regenerate the sidecar with:
-    #   rg -n '^\s+Metric[A-Za-z]+\s+=\s+"' internal/attr/names.go \
+    # than silently never being plotted. The dashboard-sidecar recipe regenerates it
+    # with every Metric constant, including constants whose names contain digits:
+    #   rg -n '^\s+Metric[A-Za-z0-9]+\s+=\s+"' internal/attr/names.go \
     #     | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > dashboards/v2/.metrics_from_code.txt
     try:
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -1709,6 +1860,11 @@ def verify(spec):
     missing_sp = set(SPAN_NAMES) - _covered_spans
     if missing_sp:
         problems.append(f"span name(s) never referenced: {sorted(missing_sp)}")
+
+    wire_findings = check_names.validate_dashboard_object(
+        os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")), spec)
+    if wire_findings:
+        problems.append(f"panel query names not emitted by source: {wire_findings}")
 
     # Every element must be reachable from a tab, or it renders nowhere.
     referenced = set()

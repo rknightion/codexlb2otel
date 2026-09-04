@@ -1,6 +1,8 @@
+codexlb.archive_drift_findings
 codexlb.attributes_rejected
 codexlb.baseline_resets
 codexlb.client_tool_pause
+codexlb.cost_usd
 codexlb.credits.balance
 codexlb.credits.unlimited
 codexlb.engine_calls
@@ -19,6 +21,7 @@ codexlb.image_gen_tokens
 codexlb.pre_inference
 codexlb.rate_limit.model_used_percent
 codexlb.rate_limit.reset_after
+codexlb.rate_limit.secondary_used_percent
 codexlb.rate_limit.used_percent
 codexlb.responses
 codexlb.responses_excl_engine_and_tool
@@ -30,6 +33,9 @@ codexlb.sampling_and_stream
 codexlb.selfobs.bytes_read
 codexlb.selfobs.current_file_offset
 codexlb.selfobs.decode_errors
+codexlb.selfobs.enrich_cache_entries
+codexlb.selfobs.enrich_lookup_duration
+codexlb.selfobs.enrich_lookups
 codexlb.selfobs.file_replacements
 codexlb.selfobs.files_reclaimed
 codexlb.selfobs.files_watched
@@ -47,7 +53,6 @@ codexlb.selfobs.turns_evicted
 codexlb.selfobs.undecodable_lines
 codexlb.tokens
 codexlb.tool_calls
-codexlb.tool_calls_per_operation
 codexlb.transport_events
 codexlb.turn.duration
 codexlb.turns
@@ -55,3 +60,4 @@ codexlb.web_search_requests
 gen_ai.client.operation.duration
 gen_ai.client.time_to_first_token
 gen_ai.client.token.usage
+gen_ai.client.tool_calls_per_operation

@@ -167,8 +167,8 @@ forward reference, which the script explicitly allowlists rather than silently p
 
 ## v2/ - the full-telemetry dashboard
 
-`v2/codexlb2otel-full.json` is a single `dashboard.grafana.app/v2` dashboard with ten tabs covering
-**every** signal this exporter produces: all 57 metrics, all 9 Loki record types, and the trace tree.
+`v2/codexlb2otel-full.json` is a single `dashboard.grafana.app/v2` dashboard with twelve tabs covering
+**every** signal this exporter produces: all declared metrics, all 9 Loki record types, and the trace tree.
 It is live on the m7kni stack in the `codexlb2otel` folder.
 
 It is **generated**, never hand-edited:
@@ -182,12 +182,21 @@ The generator refuses to emit a dashboard that has lost coverage. It reconciles 
 against `internal/attr`'s metric constants (via `v2/.metrics_from_code.txt`), against the record types
 the Loki sink emits, and against the span names in Tempo - and exits non-zero naming whatever is
 missing. Add a metric to the exporter without adding it here and the generator fails rather than
-silently never plotting it. Regenerate the sidecar after touching `internal/attr/names.go`:
+silently never plotting it. Regenerate the sidecar after touching `internal/attr/names.go` with the
+`dashboard-sidecar` just recipe. Its extraction includes metric constants with digits:
 
 ```bash
-rg -n '^\s+Metric[A-Za-z]+\s+=\s+"' internal/attr/names.go \
+rg -n '^\s+Metric[A-Za-z0-9]+\s+=\s+"' internal/attr/names.go \
   | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > dashboards/v2/.metrics_from_code.txt
 ```
 
 The eight numbered dashboards beside it predate deployment and were never pushed; the v2 dashboard
 supersedes them and is the one validated against live data.
+
+The v2 tabs include enriched cost and token shape, proxy-versus-wire status diagnostics, agent
+message and parent/child topology, ID lookup, and trace panels for both `execute_tool` and
+`invoke_agent`. `$family` is a Prometheus-backed selector that defaults to non-probe traffic, so
+cost, token, and latency panels do not accidentally price synthetic probe requests.
+
+Deliberate omissions: `gen_ai.provider.name` is constant, `gen_ai.operation.name` has no requested
+question, and raw request-log columns remain on the codex-lb dashboard rather than being duplicated.

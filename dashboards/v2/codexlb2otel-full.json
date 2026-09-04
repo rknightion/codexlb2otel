@@ -221,19 +221,18 @@
         "spec": {
           "name": "family",
           "label": "Transport family",
-          "description": "Loki stream label: websocket or unknown.",
+          "description": "Metric family selector. websocket, http, and unknown are selected by default; probe remains available for cost analysis.",
           "query": {
             "kind": "DataQuery",
-            "group": "loki",
+            "group": "prometheus",
             "version": "v0",
             "datasource": {
-              "name": "grafanacloud-logs"
+              "name": "grafanacloud-prom"
             },
             "spec": {
-              "label": "codexlb_family",
-              "refId": "var-family",
-              "stream": "{service_name=\"codexlb2otel\"}",
-              "type": 1
+              "qryType": 1,
+              "query": "label_values(codexlb_responses_total, codexlb_family)",
+              "refId": "var-family"
             }
           },
           "regex": "",
@@ -247,13 +246,32 @@
           "hide": "dontHide",
           "current": {
             "text": [
-              "All"
+              "websocket",
+              "http",
+              "unknown"
             ],
             "value": [
-              "$__all"
+              "websocket",
+              "http",
+              "unknown"
             ]
           },
           "options": []
+        }
+      },
+      {
+        "kind": "TextVariable",
+        "spec": {
+          "name": "id",
+          "label": "Lookup ID",
+          "skipUrlSync": false,
+          "hide": "dontHide",
+          "description": "Exact request, response, or thread ID for the Lookup panel.",
+          "query": "",
+          "current": {
+            "text": "",
+            "value": ""
+          }
         }
       },
       {
@@ -554,7 +572,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "round(sum(increase(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=~\"input|output\"}[$__range])))",
+                        "expr": "round(sum(increase(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\", gen_ai_token_type=~\"input|output\"}[$__range])))",
                         "legendFormat": "tokens",
                         "instant": true,
                         "range": false
@@ -603,6 +621,141 @@
         "kind": "Panel",
         "spec": {
           "id": 6,
+          "title": "Spend in range",
+          "description": "Observed enriched spend in the selected range. Probe traffic is excluded by the family selector.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum(increase(codexlb_cost_usd_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\"}[$__range]))",
+                        "legendFormat": "USD",
+                        "instant": true,
+                        "range": false
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "graphMode": "none",
+                "colorMode": "value",
+                "justifyMode": "auto",
+                "textMode": "auto",
+                "orientation": "auto",
+                "text": {
+                  "valueSize": 42
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "currencyUSD"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-7": {
+        "kind": "Panel",
+        "spec": {
+          "id": 7,
+          "title": "Spend rate",
+          "description": "Observed enriched spend per second, excluding probe traffic by default.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum(rate(codexlb_cost_usd_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\"}[$__rate_interval]))",
+                        "legendFormat": "USD/s"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "currencyUSD"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-8": {
+        "kind": "Panel",
+        "spec": {
+          "id": 8,
           "title": "Errors",
           "description": "Error events in range, from the archive's own error records - not this exporter's health. Zero is the expected value.",
           "links": [],
@@ -682,10 +835,10 @@
           }
         }
       },
-      "panel-7": {
+      "panel-9": {
         "kind": "Panel",
         "spec": {
-          "id": 7,
+          "id": 9,
           "title": "Rate-limit headroom (worst account)",
           "description": "100 minus the highest primary-window utilisation across accounts. This is the number that decides whether the next request gets served.",
           "links": [],
@@ -755,10 +908,10 @@
           }
         }
       },
-      "panel-8": {
+      "panel-10": {
         "kind": "Panel",
         "spec": {
-          "id": 8,
+          "id": 10,
           "title": "Turn and response rate",
           "description": "Three levels of the same traffic: turns (user-visible), responses (model calls), engine calls (upstream inference invocations). The gaps between them are where tool loops and retries live.",
           "links": [],
@@ -859,10 +1012,10 @@
           }
         }
       },
-      "panel-9": {
+      "panel-11": {
         "kind": "Panel",
         "spec": {
-          "id": 9,
+          "id": 11,
           "title": "Turn duration percentiles",
           "description": "End-to-end logical turn latency by model. Decomposed on the Latency tab.",
           "links": [],
@@ -883,7 +1036,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "p50 {{gen_ai_request_model}}"
                       }
                     }
@@ -902,7 +1055,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "p95 {{gen_ai_request_model}}"
                       }
                     }
@@ -921,7 +1074,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_turn_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
                         "legendFormat": "p99 {{gen_ai_request_model}}"
                       }
                     }
@@ -963,10 +1116,10 @@
           }
         }
       },
-      "panel-10": {
+      "panel-12": {
         "kind": "Panel",
         "spec": {
-          "id": 10,
+          "id": 12,
           "title": "Token rate (additive: input + output)",
           "description": "Only input and output are stacked, because only they are additive. cache_read and reasoning are breakdowns NESTED inside them and appear on the Tokens tab, unstacked - stacking a sub-bucket on its parent silently doubles the total.",
           "links": [],
@@ -987,7 +1140,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=~\"input|output\"}[$__rate_interval]))",
+                        "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\", gen_ai_token_type=~\"input|output\"}[$__rate_interval]))",
                         "legendFormat": "{{gen_ai_token_type}}"
                       }
                     }
@@ -1037,10 +1190,10 @@
           }
         }
       },
-      "panel-11": {
+      "panel-13": {
         "kind": "Panel",
         "spec": {
-          "id": 11,
+          "id": 13,
           "title": "Traffic by model",
           "description": "Which model is actually doing the work.",
           "links": [],
@@ -1106,10 +1259,10 @@
           }
         }
       },
-      "panel-12": {
+      "panel-14": {
         "kind": "Panel",
         "spec": {
-          "id": 12,
+          "id": 14,
           "title": "Pipeline and sink health",
           "description": "Steady values are healthy. Open responses climbing without bound means completion frames are not arriving and the reducer is accumulating.",
           "links": [],
@@ -1210,10 +1363,10 @@
           }
         }
       },
-      "panel-13": {
+      "panel-15": {
         "kind": "Panel",
         "spec": {
-          "id": 13,
+          "id": 15,
           "title": "Log volume by record type",
           "description": "Every line this exporter pushes to Loki, by kind. Backlog older than loki.max_line_age (3h) is dropped locally rather than silently discarded server-side, so a gap here during catch-up is expected, not a fault.",
           "links": [],
@@ -1285,10 +1438,10 @@
           }
         }
       },
-      "panel-14": {
+      "panel-16": {
         "kind": "Panel",
         "spec": {
-          "id": 14,
+          "id": 16,
           "title": "Which instrument can answer which question",
           "description": "",
           "links": [],
@@ -1317,10 +1470,10 @@
           }
         }
       },
-      "panel-15": {
+      "panel-17": {
         "kind": "Panel",
         "spec": {
-          "id": 15,
+          "id": 17,
           "title": "Response rate by model",
           "description": "Model usage over time, NOT split by effort. Stacked, so the top of the stack is total response rate.",
           "links": [],
@@ -1391,10 +1544,10 @@
           }
         }
       },
-      "panel-16": {
+      "panel-18": {
         "kind": "Panel",
         "spec": {
-          "id": 16,
+          "id": 18,
           "title": "Turn rate by model",
           "description": "The same shape with prewarm and compaction excluded - real work only. A model whose turn rate sits far below its response rate is being prewarmed more than it is being used.",
           "links": [],
@@ -1465,10 +1618,10 @@
           }
         }
       },
-      "panel-17": {
+      "panel-19": {
         "kind": "Panel",
         "spec": {
-          "id": 17,
+          "id": 19,
           "title": "Response rate by model and reasoning effort",
           "description": "The grouped view, and the reason this tab exists. It shows an effort shift WITHIN a single model, which the by-model panel above averages away - and effort moves reasoning-token spend far harder than request count does.",
           "links": [],
@@ -1539,10 +1692,10 @@
           }
         }
       },
-      "panel-18": {
+      "panel-20": {
         "kind": "Panel",
         "spec": {
-          "id": 18,
+          "id": 20,
           "title": "Model mix over time (% of responses)",
           "description": "The same series normalised to 100%, so a change in the mix stays readable while total volume moves. Normalisation is the panel's percent stacking, not the query - the underlying values are still rates.",
           "links": [],
@@ -1609,10 +1762,10 @@
           }
         }
       },
-      "panel-19": {
+      "panel-21": {
         "kind": "Panel",
         "spec": {
-          "id": 19,
+          "id": 21,
           "title": "Reasoning effort mix over time (%)",
           "description": "Effort mix with the model collapsed. Read it against the panel to its left: the model split can hold steady while the effort mix drifts upward.",
           "links": [],
@@ -1679,10 +1832,10 @@
           }
         }
       },
-      "panel-20": {
+      "panel-22": {
         "kind": "Panel",
         "spec": {
-          "id": 20,
+          "id": 22,
           "title": "Responses by model",
           "description": "Whole-window totals per model, ungrouped.",
           "links": [],
@@ -1748,10 +1901,10 @@
           }
         }
       },
-      "panel-21": {
+      "panel-23": {
         "kind": "Panel",
         "spec": {
-          "id": 21,
+          "id": 23,
           "title": "Responses by reasoning effort",
           "description": "Whole-window totals per reasoning level, across every model.",
           "links": [],
@@ -1817,10 +1970,10 @@
           }
         }
       },
-      "panel-22": {
+      "panel-24": {
         "kind": "Panel",
         "spec": {
-          "id": 22,
+          "id": 24,
           "title": "Responses by model and effort",
           "description": "The two dimensions crossed and ranked - the flat ordering behind the stacked time series above.",
           "links": [],
@@ -1879,10 +2032,10 @@
           }
         }
       },
-      "panel-23": {
+      "panel-25": {
         "kind": "Panel",
         "spec": {
-          "id": 23,
+          "id": 25,
           "title": "Model x effort totals",
           "description": "The numbers behind the tab, with request kind as a third column so prewarm is visible rather than folded into the model total. Sort any column.",
           "links": [],
@@ -1963,10 +2116,10 @@
           }
         }
       },
-      "panel-24": {
+      "panel-26": {
         "kind": "Panel",
         "spec": {
-          "id": 24,
+          "id": 26,
           "title": "Response rate by reasoning effort",
           "description": "Absolute effort volume over time, drawn as bars so each bucket reads as a discrete count rather than a smoothed area.",
           "links": [],
@@ -2034,10 +2187,10 @@
           }
         }
       },
-      "panel-25": {
+      "panel-27": {
         "kind": "Panel",
         "spec": {
-          "id": 25,
+          "id": 27,
           "title": "Token rate by model",
           "description": "What the model mix costs in tokens. BY MODEL ONLY - codexlb.tokens does not carry reasoning effort, so there is no effort split to be had here at any price. Input + output only; cache_read and reasoning are sub-buckets nested inside those two and stacking them on their own parents double-counts.",
           "links": [],
@@ -2108,10 +2261,76 @@
           }
         }
       },
-      "panel-26": {
+      "panel-28": {
         "kind": "Panel",
         "spec": {
-          "id": 26,
+          "id": 28,
+          "title": "Distinct agent versions by model",
+          "description": "Distinct instructions-hash versions observed per model. A sudden increase means agent instructions changed or diverged.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "count by (gen_ai_request_model) (count by (gen_ai_request_model, gen_ai_agent_version) (increase(codexlb_responses_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\"}[$__rate_interval]) > 0))",
+                        "legendFormat": "{{gen_ai_request_model}}"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-29": {
+        "kind": "Panel",
+        "spec": {
+          "id": 29,
           "title": "Responses by status",
           "description": "completed is the happy path. Anything else is worth a look on the Errors tab.",
           "links": [],
@@ -2182,10 +2401,10 @@
           }
         }
       },
-      "panel-27": {
+      "panel-30": {
         "kind": "Panel",
         "spec": {
-          "id": 27,
+          "id": 30,
           "title": "Responses by request kind",
           "description": "turn, prewarm, compaction and memory run CONCURRENTLY on the same thread - they are separate metric series, not phases of one another. Prewarm and compaction volume is invisible to the user but not to the bill.",
           "links": [],
@@ -2256,10 +2475,10 @@
           }
         }
       },
-      "panel-28": {
+      "panel-31": {
         "kind": "Panel",
         "spec": {
-          "id": 28,
+          "id": 31,
           "title": "Turns by originator and thread source",
           "description": "Which client produced the traffic and how the thread began.",
           "links": [],
@@ -2315,10 +2534,10 @@
           }
         }
       },
-      "panel-29": {
+      "panel-32": {
         "kind": "Panel",
         "spec": {
-          "id": 29,
+          "id": 32,
           "title": "Response outcome matrix",
           "description": "The three labels that matter, crossed. Read it as: which model, doing what, ended how.",
           "links": [],
@@ -2399,10 +2618,10 @@
           }
         }
       },
-      "panel-30": {
+      "panel-33": {
         "kind": "Panel",
         "spec": {
-          "id": 30,
+          "id": 33,
           "title": "Reasoning level and service tier",
           "description": "Reasoning level drives both latency and reasoning-token spend; service tier drives queueing.",
           "links": [],
@@ -2482,10 +2701,10 @@
           }
         }
       },
-      "panel-31": {
+      "panel-34": {
         "kind": "Panel",
         "spec": {
-          "id": 31,
+          "id": 34,
           "title": "Request vs response model (substitution)",
           "description": "These differ when the service substitutes a model. A row where they do not match is not an error, but it changes what you are actually paying for and what latency to expect.",
           "links": [],
@@ -2543,10 +2762,134 @@
           }
         }
       },
-      "panel-32": {
+      "panel-35": {
         "kind": "Panel",
         "spec": {
-          "id": 32,
+          "id": 35,
+          "title": "Proxy status versus wire status",
+          "description": "Per-turn proxy verdict beside the status inferred from the captured wire response. Disagreement is diagnostic, not silently collapsed.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-logs"
+                      },
+                      "spec": {
+                        "expr": "{service_name=\"codexlb2otel\", codexlb_record_type=\"turn\"} | json proxy_status=\"proxy_status\", proxy_error_code=\"proxy_error_code\", wire_status=\"status\" | proxy_status!=\"\"",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "logs",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "showTime": true,
+                "showLabels": false,
+                "showCommonLabels": false,
+                "wrapLogMessage": true,
+                "prettifyLogMessage": false,
+                "enableLogDetails": true,
+                "dedupStrategy": "none",
+                "sortOrder": "Descending"
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-36": {
+        "kind": "Panel",
+        "spec": {
+          "id": 36,
+          "title": "Operation duration model divergence",
+          "description": "Duration histogram samples where the response model differs from the requested model, such as safety-buffering reruns.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum by (gen_ai_request_model, gen_ai_response_model) (rate(gen_ai_client_operation_duration_seconds_count{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\", gen_ai_response_model!=gen_ai_request_model}[$__rate_interval]))",
+                        "legendFormat": "{{gen_ai_request_model}} -> {{gen_ai_response_model}}"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "reqps"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-37": {
+        "kind": "Panel",
+        "spec": {
+          "id": 37,
           "title": "Baseline resets",
           "description": "A cumulative counter on a thread went backwards, so the reducer rebased it. Expected at thread start and after a reconnect; a sustained rate means sequence tracking is losing frames and per-response deltas may be wrong.",
           "links": [],
@@ -2614,10 +2957,10 @@
           }
         }
       },
-      "panel-33": {
+      "panel-38": {
         "kind": "Panel",
         "spec": {
-          "id": 33,
+          "id": 38,
           "title": "Attributes rejected by the cardinality guard",
           "description": "One guard per process caps distinct values per attribute. A non-zero rate means real values are being dropped to protect cardinality - the metric is still correct in aggregate but a dimension has gone lossy. Investigate before raising the cap.",
           "links": [],
@@ -2698,10 +3041,10 @@
           }
         }
       },
-      "panel-34": {
+      "panel-39": {
         "kind": "Panel",
         "spec": {
-          "id": 34,
+          "id": 39,
           "title": "Recent turn records",
           "description": "One line per completed logical turn, carrying the full structured metadata set - thread, session, window, account, plan, token usage. Expand a line to pivot into any of it.",
           "links": [],
@@ -2756,10 +3099,10 @@
           }
         }
       },
-      "panel-35": {
+      "panel-40": {
         "kind": "Panel",
         "spec": {
-          "id": 35,
+          "id": 40,
           "title": "gen_ai.token.type is NOT a flat enum",
           "description": "",
           "links": [],
@@ -2788,10 +3131,10 @@
           }
         }
       },
-      "panel-36": {
+      "panel-41": {
         "kind": "Panel",
         "spec": {
-          "id": 36,
+          "id": 41,
           "title": "Additive token volume (input + output)",
           "description": "Safe to stack: these two do not overlap, so the stack height is the real total.",
           "links": [],
@@ -2812,7 +3155,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=~\"input|output\"}[$__rate_interval]))",
+                        "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\", gen_ai_token_type=~\"input|output\"}[$__rate_interval]))",
                         "legendFormat": "{{gen_ai_token_type}}"
                       }
                     }
@@ -2862,10 +3205,10 @@
           }
         }
       },
-      "panel-37": {
+      "panel-42": {
         "kind": "Panel",
         "spec": {
-          "id": 37,
+          "id": 42,
           "title": "Nested breakdowns (cache_read within input, reasoning within output)",
           "description": "Deliberately NOT stacked. Each line is a subset of one of the lines in the panel above, so stacking them together would be arithmetically meaningless.",
           "links": [],
@@ -2886,7 +3229,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=~\"cache_read|reasoning\"}[$__rate_interval]))",
+                        "expr": "sum by (gen_ai_token_type) (rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\", gen_ai_token_type=~\"cache_read|reasoning\"}[$__rate_interval]))",
                         "legendFormat": "{{gen_ai_token_type}}"
                       }
                     }
@@ -2928,10 +3271,10 @@
           }
         }
       },
-      "panel-38": {
+      "panel-43": {
         "kind": "Panel",
         "spec": {
-          "id": 38,
+          "id": 43,
           "title": "Cache read ratio",
           "description": "cache_read / input. The denominator is input alone, NOT input + cache_read, because cache_read is already counted inside input - dividing by the sum would understate the hit rate and can never reach 100%. This is the single biggest lever on spend, and it collapses whenever the prompt prefix changes: a system-prompt edit shows up here before it shows up on the bill.",
           "links": [],
@@ -2952,7 +3295,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "100 * sum(rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=\"cache_read\"}[$__rate_interval])) / clamp_min(sum(rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", gen_ai_token_type=\"input\"}[$__rate_interval])), 0.001)",
+                        "expr": "100 * sum(rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\", gen_ai_token_type=\"cache_read\"}[$__rate_interval])) / clamp_min(sum(rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\", gen_ai_token_type=\"input\"}[$__rate_interval])), 0.001)",
                         "legendFormat": "cache read %"
                       }
                     }
@@ -2999,10 +3342,10 @@
           }
         }
       },
-      "panel-39": {
+      "panel-44": {
         "kind": "Panel",
         "spec": {
-          "id": 39,
+          "id": 44,
           "title": "Uncached prompt tokens",
           "description": "The engine's own count of prompt tokens it had to process rather than reuse. Cross-check against the cache ratio above: they should move inversely.",
           "links": [],
@@ -3073,10 +3416,10 @@
           }
         }
       },
-      "panel-40": {
+      "panel-45": {
         "kind": "Panel",
         "spec": {
-          "id": 40,
+          "id": 45,
           "title": "Token usage distribution (gen_ai semconv)",
           "description": "The OTel GenAI standard histogram, kept alongside the codexlb counter deliberately: this one is per-request DISTRIBUTION, the counter is volume. A rising p99 with flat volume is prompt growth.",
           "links": [],
@@ -3177,10 +3520,10 @@
           }
         }
       },
-      "panel-41": {
+      "panel-46": {
         "kind": "Panel",
         "spec": {
-          "id": 41,
+          "id": 46,
           "title": "Tokens by model and kind",
           "description": "Where the tokens actually went. Sort by value to find the expensive corner - it is often compaction or prewarm rather than user turns.",
           "links": [],
@@ -3201,7 +3544,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (gen_ai_request_model, codexlb_request_kind, gen_ai_token_type) (increase(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__range]))",
+                        "expr": "sum by (gen_ai_request_model, codexlb_request_kind, gen_ai_token_type) (increase(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\"}[$__range]))",
                         "instant": true,
                         "range": false,
                         "format": "table"
@@ -3238,10 +3581,326 @@
           }
         }
       },
-      "panel-42": {
+      "panel-47": {
         "kind": "Panel",
         "spec": {
-          "id": 42,
+          "id": 47,
+          "title": "Cost by model, effort, thread source, family, and API key",
+          "description": "Enriched spend split across bounded cost dimensions. The default family selection excludes probes.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum by (gen_ai_request_model, gen_ai_request_reasoning_level, codexlb_thread_source, codexlb_family, codexlb_api_key_name) (rate(codexlb_cost_usd_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\"}[$__rate_interval]))",
+                        "legendFormat": "{{gen_ai_request_model}} / {{gen_ai_request_reasoning_level}} / {{codexlb_thread_source}} / {{codexlb_family}} / {{codexlb_api_key_name}}"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "currencyUSD"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-48": {
+        "kind": "Panel",
+        "spec": {
+          "id": 48,
+          "title": "Cost split by request kind",
+          "description": "Compaction and memory spend are visible here even when the proxy request log does not show them.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum by (codexlb_request_kind) (increase(codexlb_cost_usd_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\"}[$__range]))",
+                        "legendFormat": "{{codexlb_request_kind}}",
+                        "instant": true,
+                        "range": false
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "barchart",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "lineWidth": 0
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "currencyUSD"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-49": {
+        "kind": "Panel",
+        "spec": {
+          "id": 49,
+          "title": "Cost per turn",
+          "description": "Selected enriched cost divided by completed logical turns.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum(increase(codexlb_cost_usd_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\"}[$__range])) / clamp_min(sum(increase(codexlb_turns_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__range])), 1)",
+                        "legendFormat": "USD/turn",
+                        "instant": true,
+                        "range": false
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "graphMode": "none",
+                "colorMode": "value",
+                "justifyMode": "auto",
+                "textMode": "auto",
+                "orientation": "auto"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "currencyUSD"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-50": {
+        "kind": "Panel",
+        "spec": {
+          "id": 50,
+          "title": "Cost per 1M tokens by model",
+          "description": "Cost normalized by additive input plus output tokens; nested token buckets are excluded.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "1e6 * sum by (gen_ai_request_model) (increase(codexlb_cost_usd_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\"}[$__range])) / clamp_min(sum by (gen_ai_request_model) (increase(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\", gen_ai_token_type=~\"input|output\"}[$__range])), 1)",
+                        "legendFormat": "{{gen_ai_request_model}}",
+                        "instant": true,
+                        "range": false
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "barchart",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "lineWidth": 0
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "currencyUSD"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-51": {
+        "kind": "Panel",
+        "spec": {
+          "id": 51,
+          "title": "Tokens by family, effort, and thread source",
+          "description": "Counter-native token dimensions replace the prior LogQL workaround.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum by (codexlb_family, gen_ai_request_reasoning_level, codexlb_thread_source) (rate(codexlb_tokens_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\", codexlb_family=~\"$family\", gen_ai_token_type=~\"input|output\"}[$__rate_interval]))",
+                        "legendFormat": "{{codexlb_family}} / {{gen_ai_request_reasoning_level}} / {{codexlb_thread_source}}"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-52": {
+        "kind": "Panel",
+        "spec": {
+          "id": 52,
           "title": "Image generation tokens",
           "description": "NO DATA IS THE EXPECTED STATE on this capture - no image generation has occurred. The panel exists so the first image-generating turn is visible immediately rather than being invisible until someone thinks to look.",
           "links": [],
@@ -3309,10 +3968,10 @@
           }
         }
       },
-      "panel-43": {
+      "panel-53": {
         "kind": "Panel",
         "spec": {
-          "id": 43,
+          "id": 53,
           "title": "Web search requests",
           "description": "Also expected empty on this capture. Web search is billed separately from tokens, so it is worth its own panel rather than being folded into tool calls.",
           "links": [],
@@ -3380,10 +4039,10 @@
           }
         }
       },
-      "panel-44": {
+      "panel-54": {
         "kind": "Panel",
         "spec": {
-          "id": 44,
+          "id": 54,
           "title": "Credits balance",
           "description": "Remaining credit, per account. Flat at zero with unlimited=1 below is a plan without a balance, not an exhausted one.",
           "links": [],
@@ -3442,10 +4101,10 @@
           }
         }
       },
-      "panel-45": {
+      "panel-55": {
         "kind": "Panel",
         "spec": {
-          "id": 45,
+          "id": 55,
           "title": "Unlimited plan",
           "description": "1 when the account's plan carries no credit limit. Reads the credits balance above for you - a zero balance means nothing on an unlimited plan.",
           "links": [],
@@ -3525,10 +4184,10 @@
           }
         }
       },
-      "panel-46": {
+      "panel-56": {
         "kind": "Panel",
         "spec": {
-          "id": 46,
+          "id": 56,
           "title": "What fast mode can and cannot prove",
           "description": "",
           "links": [],
@@ -3557,10 +4216,10 @@
           }
         }
       },
-      "panel-47": {
+      "panel-57": {
         "kind": "Panel",
         "spec": {
-          "id": 47,
+          "id": 57,
           "title": "Fast requests",
           "description": "Responses whose request explicitly asked for priority processing in the selected range.",
           "links": [],
@@ -3626,10 +4285,10 @@
           }
         }
       },
-      "panel-48": {
+      "panel-58": {
         "kind": "Panel",
         "spec": {
-          "id": 48,
+          "id": 58,
           "title": "Fast share",
           "description": "Share of selected responses that explicitly asked for priority. Normal is an absent requested-tier label, not a requested value called default.",
           "links": [],
@@ -3698,10 +4357,10 @@
           }
         }
       },
-      "panel-49": {
+      "panel-59": {
         "kind": "Panel",
         "spec": {
-          "id": 49,
+          "id": 59,
           "title": "Reported priority rate",
           "description": "Of requests that asked for priority, the percentage whose response also reported priority. This is metadata agreement, not proof of queue treatment; default or auto may mean the request was declined or that the response does not echo the applied tier.",
           "links": [],
@@ -3770,10 +4429,10 @@
           }
         }
       },
-      "panel-50": {
+      "panel-60": {
         "kind": "Panel",
         "spec": {
-          "id": 50,
+          "id": 60,
           "title": "Requested fast traffic by reported tier",
           "description": "Only requests that asked for priority, split by the tier reported in each response. An empty reported value is preserved rather than rewritten.",
           "links": [],
@@ -3844,10 +4503,10 @@
           }
         }
       },
-      "panel-51": {
+      "panel-61": {
         "kind": "Panel",
         "spec": {
-          "id": 51,
+          "id": 61,
           "title": "TTFT sample sizes by cohort",
           "description": "The exact denominator for the TTFT comparison. A blank requested tier is normal traffic. Do not interpret a large percentage based on a tiny cohort.",
           "links": [],
@@ -3928,10 +4587,10 @@
           }
         }
       },
-      "panel-52": {
+      "panel-62": {
         "kind": "Panel",
         "spec": {
-          "id": 52,
+          "id": 62,
           "title": "Time to first token by requested mode",
           "description": "Perceived responsiveness grouped by what Codex asked for. Blank is normal; priority is fast. This aggregate distribution shows shape; the cohort-normalized effect below is the fairer comparison.",
           "links": [],
@@ -4032,10 +4691,10 @@
           }
         }
       },
-      "panel-53": {
+      "panel-63": {
         "kind": "Panel",
         "spec": {
-          "id": 53,
+          "id": 63,
           "title": "Fast TTFT improvement by model and kind",
           "description": "Mean TTFT improvement within the same model and request kind: 100 \u00d7 (normal - fast) / normal. Positive is faster. Cohorts without both modes are absent, avoiding a misleading cross-model aggregate.",
           "links": [],
@@ -4111,10 +4770,10 @@
           }
         }
       },
-      "panel-54": {
+      "panel-64": {
         "kind": "Panel",
         "spec": {
-          "id": 54,
+          "id": 64,
           "title": "Turn-duration sample sizes by model",
           "description": "The exact denominator for the end-to-end comparison below. Blank is normal and priority is fast; only real user-visible turns enter this histogram.",
           "links": [],
@@ -4194,10 +4853,10 @@
           }
         }
       },
-      "panel-55": {
+      "panel-65": {
         "kind": "Panel",
         "spec": {
-          "id": 55,
+          "id": 65,
           "title": "Fast end-to-end turn improvement by model",
           "description": "Mean user-visible turn-duration improvement within each model. Positive is faster. Turn duration only records real turns, so request kind is not a dimension here.",
           "links": [],
@@ -4273,10 +4932,10 @@
           }
         }
       },
-      "panel-56": {
+      "panel-66": {
         "kind": "Panel",
         "spec": {
-          "id": 56,
+          "id": 66,
           "title": "How to read this tab",
           "description": "",
           "links": [],
@@ -4305,10 +4964,10 @@
           }
         }
       },
-      "panel-57": {
+      "panel-67": {
         "kind": "Panel",
         "spec": {
-          "id": 57,
+          "id": 67,
           "title": "Critical path stages (p95)",
           "description": "Stacked p95 by stage. Stacking quantiles is not arithmetically exact - p95s do not sum - but it is the fastest way to see WHICH stage moved, which is the question this panel exists to answer. Use the mean panel below when you need the sum to be honest.",
           "links": [],
@@ -4436,10 +5095,10 @@
           }
         }
       },
-      "panel-58": {
+      "panel-68": {
         "kind": "Panel",
         "spec": {
-          "id": 58,
+          "id": 68,
           "title": "Critical path stages (mean, additive)",
           "description": "Means DO sum, so this stack is a true decomposition. Split by critical_path_coverage so a partial attribution cannot masquerade as a complete one.",
           "links": [],
@@ -4548,10 +5207,10 @@
           }
         }
       },
-      "panel-59": {
+      "panel-69": {
         "kind": "Panel",
         "spec": {
-          "id": 59,
+          "id": 69,
           "title": "Engine wall by model",
           "description": "Time the upstream engine was working, as it reported it. This is the part no amount of local tuning changes.",
           "links": [],
@@ -4652,10 +5311,10 @@
           }
         }
       },
-      "panel-60": {
+      "panel-70": {
         "kind": "Panel",
         "spec": {
-          "id": 60,
+          "id": 70,
           "title": "Service vs IAPI inference",
           "description": "Two measurements of the same inference from different layers. A widening gap is overhead between them, not a slower model.",
           "links": [],
@@ -4775,10 +5434,10 @@
           }
         }
       },
-      "panel-61": {
+      "panel-71": {
         "kind": "Panel",
         "spec": {
-          "id": 61,
+          "id": 71,
           "title": "Service vs IAPI sampling",
           "description": "Same pairing for the sampling phase - generating tokens once the prompt is processed.",
           "links": [],
@@ -4898,10 +5557,10 @@
           }
         }
       },
-      "panel-62": {
+      "panel-72": {
         "kind": "Panel",
         "spec": {
-          "id": 62,
+          "id": 72,
           "title": "Time between tokens",
           "description": "TBT is what streaming feels like. The service-minus-iapi gap is transport and queueing between the two layers - if that is what is large, the model is not the problem.",
           "links": [],
@@ -5040,10 +5699,10 @@
           }
         }
       },
-      "panel-63": {
+      "panel-73": {
         "kind": "Panel",
         "spec": {
-          "id": 63,
+          "id": 73,
           "title": "Time to first token (gen_ai semconv)",
           "description": "TTFT dominates perceived responsiveness far more than total duration does.",
           "links": [],
@@ -5144,10 +5803,10 @@
           }
         }
       },
-      "panel-64": {
+      "panel-74": {
         "kind": "Panel",
         "spec": {
-          "id": 64,
+          "id": 74,
           "title": "Time to first token by REQUESTED service tier",
           "description": "Whether priority processing is worth having. Grouped by what the client ASKED for, because what the server reports having served is not a usable answer: across every response after the 2026-08-08 cutover the request said priority and the response said default, never once priority. So this panel, and the mean below, are the measurement - the served label is not. The series with no tier is the pre-cutover baseline, absent rather than empty; once every request asks for a tier it stops advancing and the comparison becomes historical rather than live.",
           "links": [],
@@ -5248,10 +5907,10 @@
           }
         }
       },
-      "panel-65": {
+      "panel-75": {
         "kind": "Panel",
         "spec": {
-          "id": 65,
+          "id": 75,
           "title": "Turn duration mean by requested service tier",
           "description": "The mean, not a quantile, and end-to-end rather than to-first-token: a tier change should move the whole distribution, and comparing two p95s across a changeover conflates the shift with whatever else moved in the window. Read it alongside the TTFT panel above - TTFT is where a queueing change shows up first and largest.",
           "links": [],
@@ -5314,10 +5973,10 @@
           }
         }
       },
-      "panel-66": {
+      "panel-76": {
         "kind": "Panel",
         "spec": {
-          "id": 66,
+          "id": 76,
           "title": "Response duration, with stages excluded",
           "description": "The same response with different components subtracted. Differences between these lines ARE the components - this is how you attribute latency without trusting a single computed breakdown.",
           "links": [],
@@ -5437,10 +6096,10 @@
           }
         }
       },
-      "panel-67": {
+      "panel-77": {
         "kind": "Panel",
         "spec": {
-          "id": 67,
+          "id": 77,
           "title": "gen_ai client operation duration (by status)",
           "description": "The OTel GenAI standard latency histogram, split by outcome. Errors that are FAST and errors that are SLOW are different failures.",
           "links": [],
@@ -5461,8 +6120,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p50 {{status}}"
+                        "expr": "histogram_quantile(0.5, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p50 {{codexlb_status}}"
                       }
                     }
                   }
@@ -5480,8 +6139,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p95 {{status}}"
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p95 {{codexlb_status}}"
                       }
                     }
                   }
@@ -5499,8 +6158,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
-                        "legendFormat": "p99 {{status}}"
+                        "expr": "histogram_quantile(0.99, sum by (le, codexlb_status) (rate(gen_ai_client_operation_duration_seconds_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "p99 {{codexlb_status}}"
                       }
                     }
                   }
@@ -5541,10 +6200,10 @@
           }
         }
       },
-      "panel-68": {
+      "panel-78": {
         "kind": "Panel",
         "spec": {
-          "id": 68,
+          "id": 78,
           "title": "Engine wall heatmap",
           "description": "The distribution rather than its summary. Bimodality - two bands - means two populations of request, which a p95 line hides completely. A single narrow vertical band is the backlog-replay artifact described on the Overview tab, not a real burst: every bucket was filled during one catch-up pass.",
           "links": [],
@@ -5630,10 +6289,10 @@
           }
         }
       },
-      "panel-69": {
+      "panel-79": {
         "kind": "Panel",
         "spec": {
-          "id": 69,
+          "id": 79,
           "title": "Client tool pause",
           "description": "Time the model spent waiting on a CLIENT-side tool - the harness, not the provider. Expected empty on this capture. When it is not empty, this is latency you own and can actually fix.",
           "links": [],
@@ -5696,10 +6355,10 @@
           }
         }
       },
-      "panel-70": {
+      "panel-80": {
         "kind": "Panel",
         "spec": {
-          "id": 70,
+          "id": 80,
           "title": "Tool call rate by tool",
           "description": "Which tools the agent actually reaches for.",
           "links": [],
@@ -5770,10 +6429,10 @@
           }
         }
       },
-      "panel-71": {
+      "panel-81": {
         "kind": "Panel",
         "spec": {
-          "id": 71,
+          "id": 81,
           "title": "Tool calls in range",
           "description": "Same data ranked. The long tail is usually more interesting than the head.",
           "links": [],
@@ -5828,10 +6487,10 @@
           }
         }
       },
-      "panel-72": {
+      "panel-82": {
         "kind": "Panel",
         "spec": {
-          "id": 72,
+          "id": 82,
           "title": "Tool calls per operation",
           "description": "How many tools one response invokes. A rising p99 is an agent looping - it costs tokens and latency without necessarily failing, so nothing else alerts.",
           "links": [],
@@ -5852,7 +6511,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(codexlb_tool_calls_per_operation_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(gen_ai_client_tool_calls_per_operation_count_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p50 {{gen_ai_request_model}}"
                       }
                     }
@@ -5871,7 +6530,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(codexlb_tool_calls_per_operation_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_tool_calls_per_operation_count_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p95 {{gen_ai_request_model}}"
                       }
                     }
@@ -5890,7 +6549,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(codexlb_tool_calls_per_operation_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(gen_ai_client_tool_calls_per_operation_count_bucket{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\", codexlb_request_kind=~\"$kind\"}[$__rate_interval])))",
                         "legendFormat": "p99 {{gen_ai_request_model}}"
                       }
                     }
@@ -5932,10 +6591,10 @@
           }
         }
       },
-      "panel-73": {
+      "panel-83": {
         "kind": "Panel",
         "spec": {
-          "id": 73,
+          "id": 83,
           "title": "Tool call records",
           "description": "Individual tool invocations with arguments, bounded at 16KB per call. Truncation is marked inline with the original length.",
           "links": [],
@@ -5990,10 +6649,10 @@
           }
         }
       },
-      "panel-74": {
+      "panel-84": {
         "kind": "Panel",
         "spec": {
-          "id": 74,
+          "id": 84,
           "title": "Tool output records",
           "description": "What came back. Paired with the call above by turn and thread id.",
           "links": [],
@@ -6048,10 +6707,10 @@
           }
         }
       },
-      "panel-75": {
+      "panel-85": {
         "kind": "Panel",
         "spec": {
-          "id": 75,
+          "id": 85,
           "title": "Subagent activity",
           "description": "Turns attributable to a subagent rather than the top-level thread. Only the instructions record carries subagent lineage, which is why this is derived from turns rather than counted directly.",
           "links": [],
@@ -6117,10 +6776,10 @@
           }
         }
       },
-      "panel-76": {
+      "panel-86": {
         "kind": "Panel",
         "spec": {
-          "id": 76,
+          "id": 86,
           "title": "Instructions records (agent lineage)",
           "description": "The only record carrying parent_thread_id, parent_turn_id, forked_from_thread_id and subagent_kind - the agent tree lives here. instructions_hash lets you tell a prompt change from a prompt reuse.",
           "links": [],
@@ -6175,10 +6834,10 @@
           }
         }
       },
-      "panel-77": {
+      "panel-87": {
         "kind": "Panel",
         "spec": {
-          "id": 77,
+          "id": 87,
           "title": "Agent messages",
           "description": "What the agent said, as opposed to what it did.",
           "links": [],
@@ -6233,10 +6892,126 @@
           }
         }
       },
-      "panel-78": {
+      "panel-88": {
         "kind": "Panel",
         "spec": {
-          "id": 78,
+          "id": 88,
+          "title": "Agent-message topology",
+          "description": "Author to recipient edges from agent-message records. This is the message topology rather than an inferred tree.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-logs"
+                      },
+                      "spec": {
+                        "expr": "{service_name=\"codexlb2otel\", codexlb_record_type=\"agent_message\"} | json author=\"author\", recipient=\"recipient\"",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "logs",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "showTime": true,
+                "showLabels": false,
+                "showCommonLabels": false,
+                "wrapLogMessage": true,
+                "prettifyLogMessage": false,
+                "enableLogDetails": true,
+                "dedupStrategy": "none",
+                "sortOrder": "Descending"
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-89": {
+        "kind": "Panel",
+        "spec": {
+          "id": 89,
+          "title": "Parent and child threads",
+          "description": "Parent and child thread pairs from the instruction record that establishes agent lineage.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-logs"
+                      },
+                      "spec": {
+                        "expr": "{service_name=\"codexlb2otel\", codexlb_record_type=\"instructions\"} | json thread_id=\"thread_id\", parent_thread_id=\"parent_thread_id\"",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "logs",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "showTime": true,
+                "showLabels": false,
+                "showCommonLabels": false,
+                "wrapLogMessage": true,
+                "prettifyLogMessage": false,
+                "enableLogDetails": true,
+                "dedupStrategy": "none",
+                "sortOrder": "Descending"
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-90": {
+        "kind": "Panel",
+        "spec": {
+          "id": 90,
           "title": "Primary window utilisation",
           "description": "Percent of the account's primary rate-limit window consumed. This is reported BY the provider in the frames, not inferred here.",
           "links": [],
@@ -6319,12 +7094,12 @@
           }
         }
       },
-      "panel-79": {
+      "panel-91": {
         "kind": "Panel",
         "spec": {
-          "id": 79,
-          "title": "Per-model window utilisation",
-          "description": "Some models carry their own window. This one can be exhausted while the primary window above still looks healthy - that mismatch is exactly the case worth watching.",
+          "id": 91,
+          "title": "Secondary window utilisation",
+          "description": "The independently reported secondary limit window. Its plan type is retained so unlike accounts are never averaged together.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -6343,8 +7118,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "codexlb_rate_limit_model_used_percent{job=\"codexlb2otel\"}",
-                        "legendFormat": "{{codexlb_account_id}} / {{gen_ai_request_model}}"
+                        "expr": "codexlb_rate_limit_secondary_used_percent{job=\"codexlb2otel\"}",
+                        "legendFormat": "{{codexlb_account_id}} ({{codexlb_plan_type}})"
                       }
                     }
                   }
@@ -6405,10 +7180,96 @@
           }
         }
       },
-      "panel-80": {
+      "panel-92": {
         "kind": "Panel",
         "spec": {
-          "id": 80,
+          "id": 92,
+          "title": "Per-model window utilisation",
+          "description": "Some models carry their own window. This one can be exhausted while the primary window above still looks healthy - that mismatch is exactly the case worth watching.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "codexlb_rate_limit_model_used_percent{job=\"codexlb2otel\"}",
+                        "legendFormat": "{{codexlb_account_id}} / {{codexlb_plan_type}} / {{gen_ai_request_model}}"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "percent",
+                  "max": 100,
+                  "min": 0,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "orange",
+                        "value": 70
+                      },
+                      {
+                        "color": "red",
+                        "value": 90
+                      }
+                    ]
+                  },
+                  "custom": {}
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-93": {
+        "kind": "Panel",
+        "spec": {
+          "id": 93,
           "title": "Time until window reset",
           "description": "Sawtooth is healthy - it should fall to zero and jump back. A flat line means the value has stopped being refreshed and everything above it is stale.",
           "links": [],
@@ -6471,10 +7332,10 @@
           }
         }
       },
-      "panel-81": {
+      "panel-94": {
         "kind": "Panel",
         "spec": {
-          "id": 81,
+          "id": 94,
           "title": "Current utilisation",
           "description": "At-a-glance headroom per account.",
           "links": [],
@@ -6555,10 +7416,10 @@
           }
         }
       },
-      "panel-82": {
+      "panel-95": {
         "kind": "Panel",
         "spec": {
-          "id": 82,
+          "id": 95,
           "title": "Traffic by plan type and service tier",
           "description": "Plan governs the limits; tier governs the queue. Both change what a given latency number means.",
           "links": [],
@@ -6616,10 +7477,10 @@
           }
         }
       },
-      "panel-83": {
+      "panel-96": {
         "kind": "Panel",
         "spec": {
-          "id": 83,
+          "id": 96,
           "title": "Requested vs served service tier",
           "description": "What was asked for against what the platform says it served. These do NOT agree and are not expected to: measured over the 332 responses following the 2026-08-08 priority cutover, every request asked priority and every response reported default (321) or auto (9). Whether that is the platform declining to serve priority or simply not reporting it is not answerable from the capture, so both sides are carried and this panel shows the disagreement rather than resolving it. The latency tab is where the question of whether it MATTERS gets answered.",
           "links": [],
@@ -6677,10 +7538,10 @@
           }
         }
       },
-      "panel-84": {
+      "panel-97": {
         "kind": "Panel",
         "spec": {
-          "id": 84,
+          "id": 97,
           "title": "Engine calls by account",
           "description": "Upstream invocations attributed to each account - the thing the rate limits above are actually counting.",
           "links": [],
@@ -6751,10 +7612,10 @@
           }
         }
       },
-      "panel-85": {
+      "panel-98": {
         "kind": "Panel",
         "spec": {
-          "id": 85,
+          "id": 98,
           "title": "Error rate by type and code",
           "description": "Errors carried in the archive - the provider's and the harness's, not this exporter's. For the exporter's own health use the Pipeline tab.",
           "links": [],
@@ -6775,8 +7636,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (codexlb_error_type, codexlb_error_code) (rate(codexlb_errors_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\"}[$__rate_interval]))",
-                        "legendFormat": "{{codexlb_error_type}} / {{codexlb_error_code}}"
+                        "expr": "sum by (error_type, codexlb_error_code) (rate(codexlb_errors_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\"}[$__rate_interval]))",
+                        "legendFormat": "{{error_type}} / {{codexlb_error_code}}"
                       }
                     }
                   }
@@ -6835,10 +7696,10 @@
           }
         }
       },
-      "panel-86": {
+      "panel-99": {
         "kind": "Panel",
         "spec": {
-          "id": 86,
+          "id": 99,
           "title": "Errors by model and status",
           "description": "Errors concentrated on one model are a different problem from errors spread across all of them.",
           "links": [],
@@ -6859,7 +7720,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (gen_ai_request_model, codexlb_status, codexlb_error_type) (increase(codexlb_errors_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\"}[$__range]))",
+                        "expr": "sum by (gen_ai_request_model, codexlb_status, error_type) (increase(codexlb_errors_total{job=\"codexlb2otel\", gen_ai_request_model=~\"$model\", codexlb_account_id=~\"$account\"}[$__range]))",
                         "instant": true,
                         "range": false,
                         "format": "table"
@@ -6896,12 +7757,12 @@
           }
         }
       },
-      "panel-87": {
+      "panel-100": {
         "kind": "Panel",
         "spec": {
-          "id": 87,
+          "id": 100,
           "title": "Transport events",
-          "description": "WebSocket-level events - connection open, close, error. A close-code storm here explains latency and error spikes that look inexplicable at the response layer.",
+          "description": "WebSocket-level events - connection open, close, error - split by close code. A close-code storm here explains latency and error spikes that look inexplicable at the response layer.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -6920,8 +7781,8 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "sum by (codexlb_frame_type, codexlb_family) (rate(codexlb_transport_events_total{job=\"codexlb2otel\", codexlb_account_id=~\"$account\"}[$__rate_interval]))",
-                        "legendFormat": "{{codexlb_family}} / {{codexlb_frame_type}}"
+                        "expr": "sum by (codexlb_frame_type, codexlb_close_code, codexlb_family) (rate(codexlb_transport_events_total{job=\"codexlb2otel\", codexlb_account_id=~\"$account\"}[$__rate_interval]))",
+                        "legendFormat": "{{codexlb_family}} / {{codexlb_frame_type}} / {{codexlb_close_code}}"
                       }
                     }
                   }
@@ -6967,10 +7828,10 @@
           }
         }
       },
-      "panel-88": {
+      "panel-101": {
         "kind": "Panel",
         "spec": {
-          "id": 88,
+          "id": 101,
           "title": "Safety buffering events",
           "description": "The provider held the stream back for a safety check. Directly visible to the user as a stall, and invisible in every latency histogram that measures the engine rather than the stream.",
           "links": [],
@@ -7038,10 +7899,10 @@
           }
         }
       },
-      "panel-89": {
+      "panel-102": {
         "kind": "Panel",
         "spec": {
-          "id": 89,
+          "id": 102,
           "title": "Error records",
           "description": "Full error records including error_message and error_code, with the thread and turn ids needed to find what the user was doing at the time.",
           "links": [],
@@ -7096,10 +7957,10 @@
           }
         }
       },
-      "panel-90": {
+      "panel-103": {
         "kind": "Panel",
         "spec": {
-          "id": 90,
+          "id": 103,
           "title": "Transport records",
           "description": "Individual transport frames with transport_event and frame_type.",
           "links": [],
@@ -7154,10 +8015,10 @@
           }
         }
       },
-      "panel-91": {
+      "panel-104": {
         "kind": "Panel",
         "spec": {
-          "id": 91,
+          "id": 104,
           "title": "Conversation records",
           "description": "",
           "links": [],
@@ -7186,10 +8047,10 @@
           }
         }
       },
-      "panel-92": {
+      "panel-105": {
         "kind": "Panel",
         "spec": {
-          "id": 92,
+          "id": 105,
           "title": "Record volume by type",
           "description": "All nine types stacked. Ratios between them are stable in normal operation, so a change in shape is a change in how the agent is being used.",
           "links": [],
@@ -7261,10 +8122,10 @@
           }
         }
       },
-      "panel-93": {
+      "panel-106": {
         "kind": "Panel",
         "spec": {
-          "id": 93,
+          "id": 106,
           "title": "Record volume by family",
           "description": "websocket vs unknown. A rising unknown share means frames are arriving in a shape the classifier does not recognise - worth investigating before it becomes a silent gap.",
           "links": [],
@@ -7333,10 +8194,10 @@
           }
         }
       },
-      "panel-94": {
+      "panel-107": {
         "kind": "Panel",
         "spec": {
-          "id": 94,
+          "id": 107,
           "title": "User prompts",
           "description": "What was actually asked. Carries the same thread/session/window metadata as everything else, so any line here pivots straight into the matching turn.",
           "links": [],
@@ -7391,10 +8252,10 @@
           }
         }
       },
-      "panel-95": {
+      "panel-108": {
         "kind": "Panel",
         "spec": {
-          "id": 95,
+          "id": 108,
           "title": "Messages",
           "description": "Conversation messages carrying full token accounting per line.",
           "links": [],
@@ -7449,10 +8310,10 @@
           }
         }
       },
-      "panel-96": {
+      "panel-109": {
         "kind": "Panel",
         "spec": {
-          "id": 96,
+          "id": 109,
           "title": "All records, live",
           "description": "Everything, filtered by the tab variables. The catch-all view for when you do not yet know which record type holds the answer.",
           "links": [],
@@ -7507,10 +8368,10 @@
           }
         }
       },
-      "panel-97": {
+      "panel-110": {
         "kind": "Panel",
         "spec": {
-          "id": 97,
+          "id": 110,
           "title": "Search all record content",
           "description": "Case-insensitive regex over line content, driven by the $search variable at the top. Leave it as . to match everything.",
           "links": [],
@@ -7565,10 +8426,68 @@
           }
         }
       },
-      "panel-98": {
+      "panel-111": {
         "kind": "Panel",
         "spec": {
-          "id": 98,
+          "id": 111,
+          "title": "Lookup by request, response, or thread ID",
+          "description": "Exact lookup across every record kind by request_id, response_id, or thread_id. Leave $id blank until an identifier is pasted.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-logs"
+                      },
+                      "spec": {
+                        "expr": "{service_name=\"codexlb2otel\", codexlb_record_type=~\"$record_type\"} | json request_id=\"request_id\", response_id=\"response_id\", thread_id=\"thread_id\" | request_id=\"$id\" or response_id=\"$id\" or thread_id=\"$id\"",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "logs",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "showTime": true,
+                "showLabels": false,
+                "showCommonLabels": false,
+                "wrapLogMessage": true,
+                "prettifyLogMessage": false,
+                "enableLogDetails": true,
+                "dedupStrategy": "none",
+                "sortOrder": "Descending"
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-112": {
+        "kind": "Panel",
+        "spec": {
+          "id": 112,
           "title": "Trace structure",
           "description": "",
           "links": [],
@@ -7587,7 +8506,7 @@
             "spec": {
               "options": {
                 "mode": "markdown",
-                "content": "One trace per **logical turn**. The root span is `turn`; under it sit the critical-path\nchildren - `critical_path.pre_inference`, `critical_path.engine_wall`,\n`critical_path.sampling_and_stream` and `critical_path.other` - plus a\n`generateText`/`streamText <model>` span per model call and an\n`execute_tool <tool>` span per tool\ninvocation. Span names follow the OTel GenAI convention of `<operation> <target>`, so the model and\ntool name are in the span name as well as in attributes.\n\nThe same decomposition appears as histograms on the **Latency** tab. Use these when you need one\nspecific slow turn; use the histograms when you need the shape across all of them."
+                "content": "One trace per **logical turn**. The root span is `turn`; under it sit the critical-path\nchildren - `critical_path.pre_inference`, `critical_path.engine_wall`,\n`critical_path.sampling_and_stream`, `critical_path.client_tool_pause` and `critical_path.other` - plus a\n`generateText`/`streamText <model>` span per model call and an\n`execute_tool <tool>` or `invoke_agent <agent>` span per tool\ninvocation. Span names follow the OTel GenAI convention of `<operation> <target>`, so the model and\ntool name are in the span name as well as in attributes.\n\nThe same decomposition appears as histograms on the **Latency** tab. Use these when you need one\nspecific slow turn; use the histograms when you need the shape across all of them."
               },
               "fieldConfig": {
                 "defaults": {},
@@ -7597,10 +8516,10 @@
           }
         }
       },
-      "panel-99": {
+      "panel-113": {
         "kind": "Panel",
         "spec": {
-          "id": 99,
+          "id": 113,
           "title": "Slowest turns",
           "description": "Root spans over 30 seconds. Click a trace id to open the waterfall and see which critical-path child owns the time.",
           "links": [],
@@ -7658,10 +8577,10 @@
           }
         }
       },
-      "panel-100": {
+      "panel-114": {
         "kind": "Panel",
         "spec": {
-          "id": 100,
+          "id": 114,
           "title": "Recent turns",
           "description": "Every logical turn as a trace, newest first.",
           "links": [],
@@ -7719,10 +8638,10 @@
           }
         }
       },
-      "panel-101": {
+      "panel-115": {
         "kind": "Panel",
         "spec": {
-          "id": 101,
+          "id": 115,
           "title": "Tool execution spans",
           "description": "One span per tool call, carrying the bounded arguments. The 16KB bound is applied at a rune boundary, so a truncated argument is still valid UTF-8.",
           "links": [],
@@ -7780,10 +8699,71 @@
           }
         }
       },
-      "panel-102": {
+      "panel-116": {
         "kind": "Panel",
         "spec": {
-          "id": 102,
+          "id": 116,
+          "title": "Agent invocation spans",
+          "description": "Spawn-agent calls as their own GenAI operation, including the child agent name and bounded task metadata.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "tempo",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-traces"
+                      },
+                      "spec": {
+                        "query": "{resource.service.name=\"codexlb2otel\" && name=~\"invoke_agent.*\"}",
+                        "queryType": "traceql",
+                        "limit": 20,
+                        "tableType": "traces"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "showHeader": true,
+                "cellHeight": "sm",
+                "footer": {
+                  "show": false,
+                  "reducer": [
+                    "sum"
+                  ],
+                  "countRows": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-117": {
+        "kind": "Panel",
+        "spec": {
+          "id": 117,
           "title": "Model call spans",
           "description": "The inference spans. Span name is `<operation> <model>`, so the model is greppable without opening the span, and the operation says whether the response streamed. Named generateText/streamText rather than the GenAI convention's `chat` because that is the vocabulary Grafana agent observability recognises - see attr's GenAIOperationGenerateText (#32).",
           "links": [],
@@ -7841,10 +8821,10 @@
           }
         }
       },
-      "panel-103": {
+      "panel-118": {
         "kind": "Panel",
         "spec": {
-          "id": 103,
+          "id": 118,
           "title": "Critical path spans",
           "description": "The stage spans on their own, for when you want to compare one stage across many turns rather than all stages within one turn.",
           "links": [],
@@ -7902,10 +8882,10 @@
           }
         }
       },
-      "panel-104": {
+      "panel-119": {
         "kind": "Panel",
         "spec": {
-          "id": 104,
+          "id": 119,
           "title": "Errored turns",
           "description": "Traces whose root span carries error status. Empty is the expected state.",
           "links": [],
@@ -7963,10 +8943,10 @@
           }
         }
       },
-      "panel-105": {
+      "panel-120": {
         "kind": "Panel",
         "spec": {
-          "id": 105,
+          "id": 120,
           "title": "This tab is about the exporter, not the agent",
           "description": "",
           "links": [],
@@ -7995,10 +8975,10 @@
           }
         }
       },
-      "panel-106": {
+      "panel-121": {
         "kind": "Panel",
         "spec": {
-          "id": 106,
+          "id": 121,
           "title": "Ingest lag",
           "description": "Sustained growth means the tailer is falling behind the writer. Healthy is around the poll interval.",
           "links": [],
@@ -8079,10 +9059,10 @@
           }
         }
       },
-      "panel-107": {
+      "panel-122": {
         "kind": "Panel",
         "spec": {
-          "id": 107,
+          "id": 122,
           "title": "Read throughput",
           "description": "Compressed archive bytes consumed per second. Spikes on startup as the backlog is worked through, then settles to the write rate.",
           "links": [],
@@ -8103,7 +9083,7 @@
                         "name": "grafanacloud-prom"
                       },
                       "spec": {
-                        "expr": "rate(codexlb_selfobs_bytes_read_total{job=\"codexlb2otel\"}[$__rate_interval])",
+                        "expr": "rate(codexlb_selfobs_bytes_read_bytes_total{job=\"codexlb2otel\"}[$__rate_interval])",
                         "legendFormat": "bytes/s"
                       }
                     }
@@ -8145,10 +9125,10 @@
           }
         }
       },
-      "panel-108": {
+      "panel-123": {
         "kind": "Panel",
         "spec": {
-          "id": 108,
+          "id": 123,
           "title": "Decode pipeline",
           "description": "The three stages of reduction. Lines far exceeding turns is normal - many frames reduce to one turn.",
           "links": [],
@@ -8249,10 +9229,10 @@
           }
         }
       },
-      "panel-109": {
+      "panel-124": {
         "kind": "Panel",
         "spec": {
-          "id": 109,
+          "id": 124,
           "title": "Partial member reads",
           "description": "A gzip member cut off mid-write at the tail of the file. This is the NORMAL steady state of tailing a file being appended to, and a healthy rate here is the signal that ingestion is keeping up. Deliberately never conflated with decode errors below.",
           "links": [],
@@ -8320,10 +9300,10 @@
           }
         }
       },
-      "panel-110": {
+      "panel-125": {
         "kind": "Panel",
         "spec": {
-          "id": 110,
+          "id": 125,
           "title": "Data faults",
           "description": "A complete-but-corrupt gzip member, or a line that would not parse. Unlike partial reads above, these are real faults: counted, dropped, and the checkpoint moves past them so one bad byte cannot wedge the pipeline.",
           "links": [],
@@ -8423,10 +9403,10 @@
           }
         }
       },
-      "panel-111": {
+      "panel-126": {
         "kind": "Panel",
         "spec": {
-          "id": 111,
+          "id": 126,
           "title": "Archive files",
           "description": "Watched should track the retention window. Replacements count a file recreated at the same name as different content - real behaviour, caught by fingerprinting the head rather than trusting the path.",
           "links": [],
@@ -8527,10 +9507,10 @@
           }
         }
       },
-      "panel-112": {
+      "panel-127": {
         "kind": "Panel",
         "spec": {
-          "id": 112,
+          "id": 127,
           "title": "Current file offset",
           "description": "How far into the live archive file the checkpoint has advanced. Sawtooth as each hour's file rolls over.",
           "links": [],
@@ -8593,10 +9573,10 @@
           }
         }
       },
-      "panel-113": {
+      "panel-128": {
         "kind": "Panel",
         "spec": {
-          "id": 113,
+          "id": 128,
           "title": "Reducer state",
           "description": "Open responses growing without bound means completion frames are not arriving. Persisted series and threads are never pruned by design, so slow growth is expected and fast growth is not. Evictions are in-flight responses given up on - measured against the archive's watermark, not the wall clock, so a backlog does not evict everything on the first pass.",
           "links": [],
@@ -8716,10 +9696,10 @@
           }
         }
       },
-      "panel-114": {
+      "panel-129": {
         "kind": "Panel",
         "spec": {
-          "id": 114,
+          "id": 129,
           "title": "Sink backlog",
           "description": "Lines buffered and not yet pushed, per sink. Should hover near zero and return to it.",
           "links": [],
@@ -8782,10 +9762,10 @@
           }
         }
       },
-      "panel-115": {
+      "panel-130": {
         "kind": "Panel",
         "spec": {
-          "id": 115,
+          "id": 130,
           "title": "Sink rejections (rate)",
           "description": "Deliveries refused, BY REASON - the reason matters far more than the count. too_old is the Loki max_line_age guard dropping backlog locally rather than letting Loki discard it behind a 204, and is expected while catching up. unauthorized or bad_request is a config fault that will NOT fix itself and holds the checkpoint until someone intervenes.",
           "links": [],
@@ -8853,10 +9833,10 @@
           }
         }
       },
-      "panel-116": {
+      "panel-131": {
         "kind": "Panel",
         "spec": {
-          "id": 116,
+          "id": 131,
           "title": "Sink rejections in range (cumulative)",
           "description": "The rate panel goes flat once rejections STOP, which reads identically to never having had any. This one keeps the count visible after the fact, which is what you actually want when asking 'did we lose anything today?'. A cumulative counter, so read it as a total rather than a rate.",
           "links": [],
@@ -8931,10 +9911,376 @@
           }
         }
       },
-      "panel-117": {
+      "panel-132": {
         "kind": "Panel",
         "spec": {
-          "id": 117,
+          "id": 132,
+          "title": "Enrichment lookups by result",
+          "description": "Postgres enrichment outcomes: cache_hit, db_hit, miss, error, or disabled.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum by (codexlb_selfobs_result) (rate(codexlb_selfobs_enrich_lookups_total{job=\"codexlb2otel\"}[$__rate_interval]))",
+                        "legendFormat": "{{codexlb_selfobs_result}}"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "reqps"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-133": {
+        "kind": "Panel",
+        "spec": {
+          "id": 133,
+          "title": "Enrichment cache hit rate",
+          "description": "Cache hits as a share of every enrichment attempt. Disabled enrichment is included so a configuration change remains visible.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "100 * sum(rate(codexlb_selfobs_enrich_lookups_total{job=\"codexlb2otel\", codexlb_selfobs_result=\"cache_hit\"}[$__rate_interval])) / clamp_min(sum(rate(codexlb_selfobs_enrich_lookups_total{job=\"codexlb2otel\"}[$__rate_interval])), 0.001)",
+                        "legendFormat": "cache hit %"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "gauge",
+            "version": "v0",
+            "spec": {
+              "options": {},
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "percent",
+                  "max": 100,
+                  "min": 0,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "orange",
+                        "value": 70
+                      },
+                      {
+                        "color": "red",
+                        "value": 90
+                      }
+                    ]
+                  },
+                  "custom": {}
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-134": {
+        "kind": "Panel",
+        "spec": {
+          "id": 134,
+          "title": "Enrichment lookup latency",
+          "description": "Database-attempt lookup latency. Cache hits and disabled enrichment deliberately have no synthetic zero observation.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "histogram_quantile(0.95, sum by (le) (rate(codexlb_selfobs_enrich_lookup_duration_seconds_bucket{job=\"codexlb2otel\"}[$__rate_interval])))",
+                        "legendFormat": "p95"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum(rate(codexlb_selfobs_enrich_lookup_duration_seconds_sum{job=\"codexlb2otel\"}[$__rate_interval])) / clamp_min(sum(rate(codexlb_selfobs_enrich_lookup_duration_seconds_count{job=\"codexlb2otel\"}[$__rate_interval])), 0.001)",
+                        "legendFormat": "mean"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "s"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-135": {
+        "kind": "Panel",
+        "spec": {
+          "id": 135,
+          "title": "Enrichment cache entries",
+          "description": "Response rows currently held by the enrichment LRU.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "codexlb_selfobs_enrich_cache_entries{job=\"codexlb2otel\"}",
+                        "legendFormat": "entries"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-136": {
+        "kind": "Panel",
+        "spec": {
+          "id": 136,
+          "title": "Breaking archive drift findings",
+          "description": "Current breaking differences from the embedded archive baseline.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "codexlb_archive_drift_findings{job=\"codexlb2otel\", codexlb_selfobs_severity=\"breaking\"}",
+                        "legendFormat": "breaking"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "graphMode": "none",
+                "colorMode": "value",
+                "justifyMode": "auto",
+                "textMode": "auto",
+                "orientation": "auto"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short",
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 1
+                      }
+                    ]
+                  },
+                  "custom": {}
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-137": {
+        "kind": "Panel",
+        "spec": {
+          "id": 137,
           "title": "Exporter log stream",
           "description": "codexlb2otel's OWN stdout, collected by the docker integration - a different stream from the conversation records it pushes. This is where a flush failure or a config fault says so in words.",
           "links": [],
@@ -9170,6 +10516,32 @@
                           "name": "panel-13"
                         }
                       }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 35,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-14"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 35,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-15"
+                        }
+                      }
                     }
                   ]
                 }
@@ -9193,7 +10565,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-14"
+                          "name": "panel-16"
                         }
                       }
                     },
@@ -9206,7 +10578,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-15"
+                          "name": "panel-17"
                         }
                       }
                     },
@@ -9219,7 +10591,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-16"
+                          "name": "panel-18"
                         }
                       }
                     },
@@ -9232,7 +10604,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-17"
+                          "name": "panel-19"
                         }
                       }
                     },
@@ -9245,7 +10617,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-18"
+                          "name": "panel-20"
                         }
                       }
                     },
@@ -9258,32 +10630,6 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-19"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 35,
-                        "width": 8,
-                        "height": 9,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-20"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 8,
-                        "y": 35,
-                        "width": 8,
-                        "height": 9,
-                        "element": {
-                          "kind": "ElementReference",
                           "name": "panel-21"
                         }
                       }
@@ -9291,7 +10637,7 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 16,
+                        "x": 0,
                         "y": 35,
                         "width": 8,
                         "height": 9,
@@ -9304,13 +10650,39 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
+                        "x": 8,
+                        "y": 35,
+                        "width": 8,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-23"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 16,
+                        "y": 35,
+                        "width": 8,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-24"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
                         "x": 0,
                         "y": 44,
                         "width": 24,
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-23"
+                          "name": "panel-25"
                         }
                       }
                     },
@@ -9323,7 +10695,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-24"
+                          "name": "panel-26"
                         }
                       }
                     },
@@ -9336,7 +10708,20 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-25"
+                          "name": "panel-27"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 63,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-28"
                         }
                       }
                     }
@@ -9362,7 +10747,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-26"
+                          "name": "panel-29"
                         }
                       }
                     },
@@ -9375,45 +10760,6 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-27"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 8,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-28"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 8,
-                        "width": 12,
-                        "height": 9,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-29"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 17,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
                           "name": "panel-30"
                         }
                       }
@@ -9421,10 +10767,10 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 12,
-                        "y": 17,
+                        "x": 0,
+                        "y": 8,
                         "width": 12,
-                        "height": 9,
+                        "height": 8,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-31"
@@ -9434,13 +10780,52 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
+                        "x": 12,
+                        "y": 8,
+                        "width": 12,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-32"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 17,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-33"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 17,
+                        "width": 12,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-34"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
                         "x": 0,
                         "y": 26,
                         "width": 12,
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-32"
+                          "name": "panel-35"
                         }
                       }
                     },
@@ -9453,7 +10838,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-33"
+                          "name": "panel-36"
                         }
                       }
                     },
@@ -9466,7 +10851,33 @@
                         "height": 11,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-34"
+                          "name": "panel-37"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 44,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-38"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 44,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-39"
                         }
                       }
                     }
@@ -9492,7 +10903,7 @@
                         "height": 6,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-35"
+                          "name": "panel-40"
                         }
                       }
                     },
@@ -9505,7 +10916,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-36"
+                          "name": "panel-41"
                         }
                       }
                     },
@@ -9518,7 +10929,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-37"
+                          "name": "panel-42"
                         }
                       }
                     },
@@ -9531,7 +10942,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-38"
+                          "name": "panel-43"
                         }
                       }
                     },
@@ -9544,7 +10955,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-39"
+                          "name": "panel-44"
                         }
                       }
                     },
@@ -9557,7 +10968,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-40"
+                          "name": "panel-45"
                         }
                       }
                     },
@@ -9570,7 +10981,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-41"
+                          "name": "panel-46"
                         }
                       }
                     },
@@ -9583,7 +10994,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-42"
+                          "name": "panel-47"
                         }
                       }
                     },
@@ -9596,7 +11007,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-43"
+                          "name": "panel-48"
                         }
                       }
                     },
@@ -9609,7 +11020,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-44"
+                          "name": "panel-49"
                         }
                       }
                     },
@@ -9622,7 +11033,72 @@
                         "height": 6,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-45"
+                          "name": "panel-50"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 55,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-51"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 55,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-52"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 63,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-53"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 63,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-54"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 71,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-55"
                         }
                       }
                     }
@@ -9648,7 +11124,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-46"
+                          "name": "panel-56"
                         }
                       }
                     },
@@ -9661,7 +11137,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-47"
+                          "name": "panel-57"
                         }
                       }
                     },
@@ -9674,7 +11150,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-48"
+                          "name": "panel-58"
                         }
                       }
                     },
@@ -9687,7 +11163,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-49"
+                          "name": "panel-59"
                         }
                       }
                     },
@@ -9700,7 +11176,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-50"
+                          "name": "panel-60"
                         }
                       }
                     },
@@ -9713,7 +11189,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-51"
+                          "name": "panel-61"
                         }
                       }
                     },
@@ -9726,7 +11202,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-52"
+                          "name": "panel-62"
                         }
                       }
                     },
@@ -9739,7 +11215,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-53"
+                          "name": "panel-63"
                         }
                       }
                     },
@@ -9752,7 +11228,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-54"
+                          "name": "panel-64"
                         }
                       }
                     },
@@ -9765,7 +11241,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-55"
+                          "name": "panel-65"
                         }
                       }
                     }
@@ -9791,136 +11267,6 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-56"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 7,
-                        "width": 12,
-                        "height": 9,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-57"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 7,
-                        "width": 12,
-                        "height": 9,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-58"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 16,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-59"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 16,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-60"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 24,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-61"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 24,
-                        "width": 12,
-                        "height": 9,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-62"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 33,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-63"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 33,
-                        "width": 12,
-                        "height": 9,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-64"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 42,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-65"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 42,
-                        "width": 12,
-                        "height": 9,
-                        "element": {
-                          "kind": "ElementReference",
                           "name": "panel-66"
                         }
                       }
@@ -9929,9 +11275,9 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 51,
+                        "y": 7,
                         "width": 12,
-                        "height": 8,
+                        "height": 9,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-67"
@@ -9942,12 +11288,142 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
+                        "y": 7,
+                        "width": 12,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-68"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 16,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-69"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 16,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-70"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 24,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-71"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 24,
+                        "width": 12,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-72"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 33,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-73"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 33,
+                        "width": 12,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-74"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 42,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-75"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 42,
+                        "width": 12,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-76"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
                         "y": 51,
                         "width": 12,
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-68"
+                          "name": "panel-77"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 51,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-78"
                         }
                       }
                     },
@@ -9960,7 +11436,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-69"
+                          "name": "panel-79"
                         }
                       }
                     }
@@ -9986,7 +11462,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-70"
+                          "name": "panel-80"
                         }
                       }
                     },
@@ -9999,7 +11475,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-71"
+                          "name": "panel-81"
                         }
                       }
                     },
@@ -10012,7 +11488,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-72"
+                          "name": "panel-82"
                         }
                       }
                     },
@@ -10025,7 +11501,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-73"
+                          "name": "panel-83"
                         }
                       }
                     },
@@ -10038,7 +11514,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-74"
+                          "name": "panel-84"
                         }
                       }
                     },
@@ -10051,7 +11527,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-75"
+                          "name": "panel-85"
                         }
                       }
                     },
@@ -10064,7 +11540,7 @@
                         "height": 11,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-76"
+                          "name": "panel-86"
                         }
                       }
                     },
@@ -10077,7 +11553,33 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-77"
+                          "name": "panel-87"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 39,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-88"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 39,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-89"
                         }
                       }
                     }
@@ -10103,7 +11605,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-78"
+                          "name": "panel-90"
                         }
                       }
                     },
@@ -10116,7 +11618,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-79"
+                          "name": "panel-91"
                         }
                       }
                     },
@@ -10129,7 +11631,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-80"
+                          "name": "panel-92"
                         }
                       }
                     },
@@ -10142,7 +11644,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-81"
+                          "name": "panel-93"
                         }
                       }
                     },
@@ -10155,7 +11657,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-82"
+                          "name": "panel-94"
                         }
                       }
                     },
@@ -10168,7 +11670,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-83"
+                          "name": "panel-95"
                         }
                       }
                     },
@@ -10181,7 +11683,20 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-84"
+                          "name": "panel-96"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 24,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-97"
                         }
                       }
                     }
@@ -10207,7 +11722,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-85"
+                          "name": "panel-98"
                         }
                       }
                     },
@@ -10220,7 +11735,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-86"
+                          "name": "panel-99"
                         }
                       }
                     },
@@ -10233,7 +11748,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-87"
+                          "name": "panel-100"
                         }
                       }
                     },
@@ -10246,7 +11761,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-88"
+                          "name": "panel-101"
                         }
                       }
                     },
@@ -10259,7 +11774,7 @@
                         "height": 11,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-89"
+                          "name": "panel-102"
                         }
                       }
                     },
@@ -10272,7 +11787,7 @@
                         "height": 11,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-90"
+                          "name": "panel-103"
                         }
                       }
                     }
@@ -10298,7 +11813,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-91"
+                          "name": "panel-104"
                         }
                       }
                     },
@@ -10311,7 +11826,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-92"
+                          "name": "panel-105"
                         }
                       }
                     },
@@ -10324,7 +11839,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-93"
+                          "name": "panel-106"
                         }
                       }
                     },
@@ -10337,7 +11852,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-94"
+                          "name": "panel-107"
                         }
                       }
                     },
@@ -10350,7 +11865,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-95"
+                          "name": "panel-108"
                         }
                       }
                     },
@@ -10363,7 +11878,7 @@
                         "height": 12,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-96"
+                          "name": "panel-109"
                         }
                       }
                     },
@@ -10376,7 +11891,20 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-97"
+                          "name": "panel-110"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 47,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-111"
                         }
                       }
                     }
@@ -10402,7 +11930,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-98"
+                          "name": "panel-112"
                         }
                       }
                     },
@@ -10415,7 +11943,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-99"
+                          "name": "panel-113"
                         }
                       }
                     },
@@ -10428,7 +11956,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-100"
+                          "name": "panel-114"
                         }
                       }
                     },
@@ -10441,7 +11969,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-101"
+                          "name": "panel-115"
                         }
                       }
                     },
@@ -10454,7 +11982,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-102"
+                          "name": "panel-116"
                         }
                       }
                     },
@@ -10467,7 +11995,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-103"
+                          "name": "panel-117"
                         }
                       }
                     },
@@ -10480,7 +12008,20 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-104"
+                          "name": "panel-118"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 34,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-119"
                         }
                       }
                     }
@@ -10506,7 +12047,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-105"
+                          "name": "panel-120"
                         }
                       }
                     },
@@ -10519,7 +12060,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-106"
+                          "name": "panel-121"
                         }
                       }
                     },
@@ -10532,7 +12073,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-107"
+                          "name": "panel-122"
                         }
                       }
                     },
@@ -10545,7 +12086,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-108"
+                          "name": "panel-123"
                         }
                       }
                     },
@@ -10558,7 +12099,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-109"
+                          "name": "panel-124"
                         }
                       }
                     },
@@ -10571,7 +12112,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-110"
+                          "name": "panel-125"
                         }
                       }
                     },
@@ -10584,7 +12125,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-111"
+                          "name": "panel-126"
                         }
                       }
                     },
@@ -10597,7 +12138,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-112"
+                          "name": "panel-127"
                         }
                       }
                     },
@@ -10610,7 +12151,7 @@
                         "height": 9,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-113"
+                          "name": "panel-128"
                         }
                       }
                     },
@@ -10623,7 +12164,7 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-114"
+                          "name": "panel-129"
                         }
                       }
                     },
@@ -10636,7 +12177,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-115"
+                          "name": "panel-130"
                         }
                       }
                     },
@@ -10649,7 +12190,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-116"
+                          "name": "panel-131"
                         }
                       }
                     },
@@ -10662,7 +12203,72 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-117"
+                          "name": "panel-132"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 56,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-133"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 56,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-134"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 64,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-135"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 64,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-136"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 72,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-137"
                         }
                       }
                     }

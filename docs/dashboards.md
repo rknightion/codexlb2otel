@@ -26,8 +26,16 @@ The generator reconciles its panels against the metric constants, emitted Loki r
 span names. It exits non-zero and names missing coverage rather than producing a dashboard that
 silently ignores a new signal.
 
+The twelve tabs include enriched cost and token shape, status disagreement diagnostics, agent
+topology, ID lookup, and trace views. The `$family` selector defaults to websocket, HTTP, and
+unknown traffic, excluding probes from cost, token, and latency views unless probes are selected.
+`gen_ai.provider.name`, `gen_ai.operation.name`, and raw request-log columns are deliberately
+omitted because they are constant, unasked, or already shown by codex-lb's dashboard.
+
 If metric constants changed, regenerate the source sidecar first using the command documented in
 [`dashboards/README.md`](https://github.com/rknightion/codexlb2otel/blob/main/dashboards/README.md).
+The check recipe detects a stale sidecar or generated JSON and validates every v2 metric and label
+reference against the checked-out source.
 
 ## Datasources
 

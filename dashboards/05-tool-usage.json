@@ -138,7 +138,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "Tool calls per response, p50/p90",
-      "description": "codexlb.tool_calls_per_operation, recorded once per response including the zero case, so this reflects every operation, not only tool-using ones.",
+      "description": "gen_ai.client.tool_calls_per_operation, recorded once per response including the zero case, so this reflects every operation, not only tool-using ones.",
       "gridPos": {
         "x": 0,
         "y": 11,
@@ -181,7 +181,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(codexlb_tool_calls_per_operation_bucket{service_name=~\"$service_name\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(gen_ai_client_tool_calls_per_operation_count_bucket{service_name=~\"$service_name\"}[$__rate_interval])))",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -193,7 +193,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.90, sum by (le) (rate(codexlb_tool_calls_per_operation_bucket{service_name=~\"$service_name\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(gen_ai_client_tool_calls_per_operation_count_bucket{service_name=~\"$service_name\"}[$__rate_interval])))",
           "refId": "B",
           "range": true,
           "instant": false,

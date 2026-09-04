@@ -57,14 +57,14 @@ def loki_key(dotted):
 # ---------------------------------------------------------------------------
 
 INSTRUMENT_KIND_RE = re.compile(
-    r'meter\.(Int64Counter|Int64ObservableCounter|Int64Histogram|Float64Histogram|'
+    r'meter\.(Int64Counter|Float64Counter|Int64ObservableCounter|Int64Histogram|Float64Histogram|'
     r'Float64Gauge|Float64ObservableGauge|Int64ObservableGauge)\(\s*attr\.(\w+),'
 )
 UNIT_RE = re.compile(r'otelmetric\.WithUnit\("([^"]*)"\)')
 
 # Standard-unit UCUM -> Prometheus suffix table (pkg/translator/prometheus's own
 # mapping), restricted to the units this codebase actually declares.
-UNIT_SUFFIX = {"s": "seconds", "%": "percent", "1": "ratio", "By": "bytes"}
+UNIT_SUFFIX = {"s": "seconds", "%": "percent", "1": "ratio", "By": "bytes", "count": "count"}
 # "_ratio" is appended for GAUGES ONLY per the translator's own comment
 # (normalize_name.go: "Until these issues have been fixed, we're appending `_ratio`
 # for gauges ONLY") - verified via context7 2026-08-07, not assumed. A hypothetical
@@ -123,7 +123,7 @@ def prometheus_names(metric_ident, dotted_name, instrument_info):
         named = base
     else:
         named = base + ("_" + suffix if suffix else "")
-    if kind in ("Int64Counter", "Int64ObservableCounter"):
+    if kind in ("Int64Counter", "Float64Counter", "Int64ObservableCounter"):
         return {named + "_total"}, True
     if kind in ("Int64Histogram", "Float64Histogram"):
         return {named + "_bucket", named + "_sum", named + "_count"}, True
@@ -188,6 +188,47 @@ def collect_alert_exprs(path):
     out = []
     extract_expr_strings(d, out)
     return out
+
+
+def source_contract(repo_root):
+    """Return the metric and label names the checked-out exporter can emit."""
+    names_go = os.path.join(repo_root, "internal", "attr", "names.go")
+    instruments_go = os.path.join(repo_root, "internal", "sink", "otlpmetric", "instruments.go")
+    selfobs_go = os.path.join(repo_root, "internal", "sink", "otlpmetric", "selfobs.go")
+    attr_consts, metric_idents = parse_names_go(names_go)
+    instrument_info = parse_instruments_go(instruments_go)
+    if os.path.exists(selfobs_go):
+        selfobs_attr_consts, _ = parse_names_go(selfobs_go)
+        for ident, value in selfobs_attr_consts.items():
+            if not ident.startswith("Metric"):
+                attr_consts[ident] = value
+        instrument_info.update(parse_instruments_go(selfobs_go))
+
+    valid_attr_keys = {loki_key(dotted) for ident, dotted in attr_consts.items()
+                       if not ident.startswith("Metric")}
+    valid_attr_keys.update({"service_name", "codexlb_record_type"})
+    valid_metric_names = set()
+    for ident, dotted in metric_idents.items():
+        names, _ = prometheus_names(ident, dotted, instrument_info)
+        valid_metric_names |= names
+    return valid_metric_names, valid_attr_keys
+
+
+def validate_dashboard_object(repo_root, dashboard):
+    """Return invalid emitted-name references in one generated dashboard object.
+
+    This deliberately has no forward-reference allowlist: generated v2 dashboards
+    must not claim a metric or label exists before its exporter does.
+    """
+    valid_metrics, valid_labels = source_contract(repo_root)
+    exprs = []
+    extract_expr_strings(dashboard, exprs)
+    findings = []
+    for expr in exprs:
+        for tok in TOKEN_RE.findall(expr):
+            if tok not in valid_metrics and tok not in valid_labels:
+                findings.append(tok)
+    return sorted(set(findings))
 
 
 def main():
@@ -273,7 +314,7 @@ def main():
             # table above, so treat anything left over as a genuine finding.
             findings.append((fname, "unknown identifier", tok))
 
-    for path in sorted(glob.glob(os.path.join(dash_dir, "*.json"))):
+    for path in sorted(glob.glob(os.path.join(dash_dir, "**", "*.json"), recursive=True)):
         for expr in collect_dashboard_exprs(path):
             check_expr(os.path.relpath(path, repo_root), expr)
 
@@ -285,7 +326,7 @@ def main():
     # turn.go's own json tags (top-level, plus one level of critical_path.* nesting).
     loki_field_findings = []
     all_exprs = []
-    for path in sorted(glob.glob(os.path.join(dash_dir, "*.json"))):
+    for path in sorted(glob.glob(os.path.join(dash_dir, "**", "*.json"), recursive=True)):
         d = json.load(open(path))
         tmp = []
         extract_expr_strings(d, tmp)
