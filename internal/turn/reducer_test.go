@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,6 +42,32 @@ func corpusTurns(t *testing.T, n int) []*Turn {
 	return reduceFiles(t, fixture.Any(t, n)...)
 }
 
+// corpusTurnCache avoids decoding the same multi-gigabyte corpus once for every
+// invariant. Turns are immutable after reduction, and none of the corpus tests may
+// mutate the cached values.
+type corpusTurnCache struct {
+	mu    sync.Mutex
+	turns []*Turn
+}
+
+func (c *corpusTurnCache) load(loader func() []*Turn) []*Turn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.turns == nil {
+		c.turns = loader()
+	}
+	return c.turns
+}
+
+var allCorpusTurns corpusTurnCache
+
+func fullCorpusTurns(t *testing.T) []*Turn {
+	t.Helper()
+	return allCorpusTurns.load(func() []*Turn {
+		return reduceFiles(t, fixture.All(t)...)
+	})
+}
+
 // reduceUntil feeds archives, cheapest first, until the corpus has supplied the
 // property the test needs - then stops. Some shapes are rare (the probe family was
 // 204 records in 1.32M) and live in whichever hour happened to capture them, so a
@@ -50,26 +77,14 @@ func corpusTurns(t *testing.T, n int) []*Turn {
 // corpus no longer covers that case and the property is silently untested.
 func reduceUntil(t *testing.T, what string, want func([]*Turn) bool) []*Turn {
 	t.Helper()
-	files := fixture.Files(t)
-	r := New()
-	var out []*Turn
-	for i, p := range files {
-		out = append(out, feed(t, r, p)...)
-		if want(out) {
-			t.Logf("%s found after %d/%d archives", what, i+1, len(files))
-			out = append(out, r.Flush()...)
-			sortByStart(out)
-			return out
-		}
-	}
-	out = append(out, r.Flush()...)
-	sortByStart(out)
-	if !want(out) {
+	turns := fullCorpusTurns(t)
+	if !want(turns) {
 		t.Fatalf("the corpus under %s does not contain %s (%d archives, %d turns). "+
 			"Add an archive hour that does - otherwise this property is untested.",
-			fixture.Root(t), what, len(files), len(out))
+			fixture.Root(t), what, len(fixture.Files(t)), len(turns))
 	}
-	return out
+	t.Logf("%s found in the full corpus (%d archives)", what, len(fixture.Files(t)))
+	return turns
 }
 
 // enoughArchivesFor returns the fewest archives, cheapest first, that between them
@@ -158,7 +173,7 @@ func TestReducer_DeltasTrackUsage(t *testing.T) {
 // none of them in the three smallest hours. A guard on the package's core correctness
 // property is worth the minute it costs; sampling it defeated the point.
 func TestReducer_NoNegativeDeltas(t *testing.T) {
-	turns := reduceFiles(t, fixture.All(t)...)
+	turns := fullCorpusTurns(t)
 	for _, x := range turns {
 		if x.EngineCallsDelta < 0 || x.SampledTokensDelta < 0 ||
 			x.EnginePromptTokensDelta < 0 || x.EngineCachedTokensDelta < 0 ||
@@ -975,7 +990,7 @@ func TestImageParts_MediaTypeIsDeclaredNotGuessed(t *testing.T) {
 // kind it does NOT name is one whose counter series is being diffed against another's.
 func TestReducer_RequestKindsAreNamed(t *testing.T) {
 	kinds := set{}
-	for _, x := range reduceFiles(t, fixture.All(t)...) {
+	for _, x := range fullCorpusTurns(t) {
 		kinds.add(x.RequestKind)
 	}
 	known := map[string]bool{
