@@ -138,23 +138,36 @@ func TestDiff_NewPayloadFramingIsBreaking(t *testing.T) {
 
 func TestFraming(t *testing.T) {
 	for in, want := range map[string]string{
-		`{"type":"x"}`:      FramingJSONObject,
-		`  {"type":"x"}`:    FramingJSONObject,
-		"data: {}\n\n":      FramingSSE,
-		"event: delta\n":    FramingSSE,
-		": keepalive\n":     FramingSSE,
-		"[1,2]":             FramingJSONArray,
-		`"a string"`:        FramingJSONScalar,
-		"no close frame":    FramingPlainText,
-		"":                  FramingEmpty,
-		"   \n":             FramingEmpty,
-		"retry: 1000\n":     FramingSSE,
-		"id: 42\ndata: {}":  FramingSSE,
-		"received 1012 (x)": FramingPlainText,
+		`{"type":"x"}`:       FramingJSONObject,
+		`  {"type":"x"}`:     FramingJSONObject,
+		"data: {}\n\n":       FramingSSE,
+		"event: delta\n":     FramingSSE,
+		": keepalive\n":      FramingSSE,
+		"[1,2]":              FramingJSONArray,
+		`"a string"`:         FramingJSONScalar,
+		"no close frame":     FramingPlainText,
+		"":                   FramingEmpty,
+		"   \n":              FramingEmpty,
+		"retry: 1000\n":      FramingSSE,
+		"id: 42\ndata: {}":   FramingSSE,
+		"\uFEFFdata: {}\r\r": FramingSSE,
+		"received 1012 (x)":  FramingPlainText,
 	} {
 		if got := framing(in); got != want {
 			t.Errorf("framing(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestProfile_SSEDataFrameIsAProtocolEvent(t *testing.T) {
+	p := profileOf(t, record("event: response.completed\n"+
+		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"))
+
+	if p.PayloadUnparsed != 0 {
+		t.Fatalf("SSE protocol event counted as unparsed payload: %d", p.PayloadUnparsed)
+	}
+	if got := p.KindEvents["responses"]["response.completed"]; got != 1 {
+		t.Fatalf("profiled response.completed events = %d, want 1", got)
 	}
 }
 

@@ -72,12 +72,28 @@ type Payload struct {
 // or copying any field into a higher-cardinality contract.
 func (p *Payload) UnmarshalJSON(b []byte) error {
 	var wire struct {
-		Text json.RawMessage `json:"text"`
+		Text  json.RawMessage `json:"text"`
+		Error json.RawMessage `json:"error"`
 	}
 	if err := json.Unmarshal(b, &wire); err != nil {
 		return err
 	}
 	if len(wire.Text) == 0 || bytes.Equal(wire.Text, []byte("null")) {
+		// HTTP failures are stored as payload.error rather than payload.text. Turn
+		// them into the protocol error shape the reducer already understands. The
+		// live 2026-09-04 archive contained both 401 and 429 forms here; leaving
+		// Text empty silently discarded every one of them.
+		if len(wire.Error) != 0 && !bytes.Equal(wire.Error, []byte("null")) {
+			event, err := json.Marshal(struct {
+				Type  string          `json:"type"`
+				Error json.RawMessage `json:"error"`
+			}{Type: EvError, Error: wire.Error})
+			if err != nil {
+				return err
+			}
+			p.Text = string(event)
+			return nil
+		}
 		p.Text = ""
 		return nil
 	}
@@ -295,15 +311,60 @@ type typeProbe struct {
 // ParseEvent decodes payload.text. A frame whose payload is not JSON yields ok=false
 // rather than an error: the archive is a wire capture and may contain anything.
 func (r *Record) ParseEvent() (Event, bool) {
-	if r.Payload.Text == "" {
+	return ParseEventText(r.Payload.Text)
+}
+
+// ParseEventText decodes a JSON protocol event or the single-event SSE envelope
+// used by the HTTP family. The live archive stores one data event per outer record,
+// but SSE permits several data lines for that event, so they are joined with the
+// newline required by the event-stream grammar before JSON decoding.
+func ParseEventText(text string) (Event, bool) {
+	if text == "" {
 		return Event{}, false
 	}
 	var p typeProbe
-	raw := json.RawMessage(r.Payload.Text)
+	raw := json.RawMessage(text)
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return Event{}, false
+		var ok bool
+		raw, ok = sseData(raw)
+		if !ok || json.Unmarshal(raw, &p) != nil {
+			return Event{}, false
+		}
 	}
 	return Event{Type: p.Type, Raw: raw}, true
+}
+
+func sseData(eventStream []byte) (json.RawMessage, bool) {
+	text := strings.TrimPrefix(string(eventStream), "\uFEFF")
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	var data strings.Builder
+	sawData := false
+	for _, line := range strings.Split(text, "\n") {
+		if line == "" {
+			if sawData {
+				break
+			}
+			continue
+		}
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		field, value, _ := strings.Cut(line, ":")
+		if field != "data" {
+			continue
+		}
+		value = strings.TrimPrefix(value, " ")
+		if sawData {
+			data.WriteByte('\n')
+		}
+		data.WriteString(value)
+		sawData = true
+	}
+	if !sawData {
+		return nil, false
+	}
+	return json.RawMessage(data.String()), true
 }
 
 // Event type discriminators. The delta types dominate by volume and carry no

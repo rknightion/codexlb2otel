@@ -26,6 +26,60 @@ func TestPayloadTextAcceptsStringAndObjectShapes(t *testing.T) {
 	}
 }
 
+func TestParseEventAcceptsSSEDataEnvelope(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+	}{
+		{name: "CRLF", text: "event: response.completed\r\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\r\n\r\n"},
+		{name: "BOM and CR", text: "\uFEFFevent: response.completed\r" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\r\r"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := Record{Payload: Payload{Text: tc.text}}
+			ev, ok := rec.ParseEvent()
+			if !ok {
+				t.Fatal("SSE data envelope was not decoded")
+			}
+			if ev.Type != EvResponseCompleted {
+				t.Fatalf("event type = %q, want %q", ev.Type, EvResponseCompleted)
+			}
+		})
+	}
+}
+
+func TestPayloadErrorEnvelopeBecomesProtocolError(t *testing.T) {
+	var rec Record
+	blob := `{"kind":"responses","direction":"server_to_codex","transport":"http",` +
+		`"request_id":"00000000-0000-0000-0000-000000000001","status_code":429,` +
+		`"payload":{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded",` +
+		`"message":"synthetic fixture"}}}`
+	if err := json.Unmarshal([]byte(blob), &rec); err != nil {
+		t.Fatal(err)
+	}
+
+	ev, ok := rec.ParseEvent()
+	if !ok {
+		t.Fatal("HTTP error payload was not decoded")
+	}
+	if ev.Type != EvError {
+		t.Fatalf("event type = %q, want %q", ev.Type, EvError)
+	}
+	var got struct {
+		Error struct {
+			Type string `json:"type"`
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := ev.Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Type != "rate_limit_error" || got.Error.Code != "rate_limit_exceeded" {
+		t.Fatalf("error identity = %#v", got.Error)
+	}
+}
+
 // Header casing is not stable in the capture: the websocket family sends
 // "chatgpt-account-id", the CLI family sends "ChatGPT-Account-Id", and Authorization
 // is capitalised everywhere. A case-sensitive lookup reads as absent with no error,

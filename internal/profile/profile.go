@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rknightion/codexlb2otel/internal/frame"
 )
 
 // Caps bound memory on adversarial input. A capped histogram still reports how many
@@ -337,18 +339,15 @@ func (p *Profile) payload(rec map[string]json.RawMessage, kind string, control b
 		return
 	}
 	p.PayloadFraming[framing(s)]++
-	evRaw := json.RawMessage(s)
-	var probe struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal(evRaw, &probe); err != nil {
+	ev, ok := frame.ParseEventText(s)
+	if !ok {
 		p.PayloadUnparsed++
 		if len(p.UnparsedSamples) < 8 {
 			p.UnparsedSamples = append(p.UnparsedSamples, truncate(s))
 		}
 		return
 	}
-	t := probe.Type
+	t := ev.Type
 	if t == "" {
 		t = "<no type field>"
 	}
@@ -356,7 +355,7 @@ func (p *Profile) payload(rec map[string]json.RawMessage, kind string, control b
 		p.KindEvents[kind] = map[string]int64{}
 	}
 	p.KindEvents[kind][t]++
-	p.induce(t, evRaw)
+	p.induce(t, ev.Raw)
 }
 
 // induce walks an event and records every path it contains, for the first sampleDepth
@@ -655,7 +654,8 @@ const (
 
 // framing classifies the wire framing of a payload body.
 func framing(s string) string {
-	t := strings.TrimLeft(s, " \t\r\n")
+	t := strings.TrimPrefix(s, "\uFEFF")
+	t = strings.TrimLeft(t, " \t\r\n")
 	switch {
 	case t == "":
 		return FramingEmpty
