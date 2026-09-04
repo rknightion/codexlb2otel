@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.4.0](https://github.com/rknightion/codexlb2otel/compare/v0.3.0...v0.4.0) (2026-09-04)
+
+
+### Features
+
+* add cost and bounded metric dimensions ([3897b83](https://github.com/rknightion/codexlb2otel/commit/3897b83e1fb4fa6fc2dbfde79d6e4c2f61ce0e42))
+* add optional Postgres enrichment ([83063d0](https://github.com/rknightion/codexlb2otel/commit/83063d06da32f63b8c941900ed4d4a8eecd50f0e))
+* adopt September wire attributes ([ea31d46](https://github.com/rknightion/codexlb2otel/commit/ea31d46b46df188821867a3c751a06967bf8de72))
+* **ci:** add a ci-success aggregator and a renovate.json ([2f553c0](https://github.com/rknightion/codexlb2otel/commit/2f553c0211f55bfacd25e387abac05ecdcdf8dd6))
+* **ci:** add govulncheck to align with the rest of the 2otel family ([4d3b268](https://github.com/rknightion/codexlb2otel/commit/4d3b2681bb218d56fb10ac0b98351675eed87cf0))
+* evict stale reducer state ([d83368b](https://github.com/rknightion/codexlb2otel/commit/d83368b0d33e0a46835e96ad617615856f683ab2))
+* expand generated observability dashboard ([7a54c59](https://github.com/rknightion/codexlb2otel/commit/7a54c593302466807693f78080eddfb127b09b47))
+* expose requested tier across session signals ([6281483](https://github.com/rknightion/codexlb2otel/commit/62814838495b8109ebf91bcf49983e968d81fae6))
+* freeze wave 1 telemetry seams ([84a0783](https://github.com/rknightion/codexlb2otel/commit/84a07834dd49c5ec0891755abb946a8b7ab1b671))
+* restyle live monitor console ([ffa7ea0](https://github.com/rknightion/codexlb2otel/commit/ffa7ea09187b9a8d046ce535d4888db6fdd9ed0f))
+* run archive drift probe in process ([472ff94](https://github.com/rknightion/codexlb2otel/commit/472ff94c1510f7d28a53db7ea8d28d71c4e65655))
+* wire wave 1 runtime integration ([6a54f61](https://github.com/rknightion/codexlb2otel/commit/6a54f61bb369dfb558b8428e48b866448963a5a9))
+
+
+### Bug Fixes
+
+* address integrated review findings ([05c53ed](https://github.com/rknightion/codexlb2otel/commit/05c53edaa43feed0c497e64984e6ebd094bf4e4d))
+* **agento11y:** align archive replay with Codex plugin ([ceb2d05](https://github.com/rknightion/codexlb2otel/commit/ceb2d05399f9c902a8cdff8e72fe567bf96a15da))
+* **agento11y:** align generation trace and metric contracts ([0d7ac95](https://github.com/rknightion/codexlb2otel/commit/0d7ac95cf107704ae26624446b8a711ad8464e62))
+* bound projected metric series ([334a4db](https://github.com/rknightion/codexlb2otel/commit/334a4db0f453c2da94d94e9f108aa429e9bc2a38))
+* **ci:** repair two breaks the just migration introduced ([c0b64d3](https://github.com/rknightion/codexlb2otel/commit/c0b64d3efb6131347c791e05616287bddb059db5))
+* **ci:** stop the archive probe persisting credentials ([bf291bb](https://github.com/rknightion/codexlb2otel/commit/bf291bbfccc89529d179f1299ae7d9e74c7c5474))
+* decode direct HTTP payload objects ([a347d39](https://github.com/rknightion/codexlb2otel/commit/a347d398840c20287c04703ee821472f70894d64))
+* decode duration prompt cache TTLs ([4cd37d3](https://github.com/rknightion/codexlb2otel/commit/4cd37d30f654adde3475a069ec0bb6e6cb5d07ce))
+* decode HTTP archive envelopes ([3cb09fe](https://github.com/rknightion/codexlb2otel/commit/3cb09fe7d9bfe970720055335a2f563f9169ab01))
+* **deps:** update module github.com/cenkalti/backoff/v5 to v7 ([#53](https://github.com/rknightion/codexlb2otel/issues/53)) ([98f2e51](https://github.com/rknightion/codexlb2otel/commit/98f2e51eb8e3b735ee26d47aada6c4730b9ed2de))
+* **deps:** update module github.com/grafana/agento11y/go to v0.18.0 ([#49](https://github.com/rknightion/codexlb2otel/issues/49)) ([42b6881](https://github.com/rknightion/codexlb2otel/commit/42b6881cb1f3557f267657df5025412912f87471))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.102 ([#69](https://github.com/rknightion/codexlb2otel/issues/69)) ([dd075b6](https://github.com/rknightion/codexlb2otel/commit/dd075b6248b536cef3837c922f6c32ab16089319))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.103 ([#70](https://github.com/rknightion/codexlb2otel/issues/70)) ([6ce8e89](https://github.com/rknightion/codexlb2otel/commit/6ce8e890b9ffd835684ba3797be40c50f9fba094))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.104 ([#71](https://github.com/rknightion/codexlb2otel/issues/71)) ([121c3c3](https://github.com/rknightion/codexlb2otel/commit/121c3c385b2543bccf76faa9cb774d3899e49ab5))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.105 ([#72](https://github.com/rknightion/codexlb2otel/issues/72)) ([20bba52](https://github.com/rknightion/codexlb2otel/commit/20bba52297dbc01b3437922bbfe994087c28fd5c))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.96 ([#46](https://github.com/rknightion/codexlb2otel/issues/46)) ([7ec692d](https://github.com/rknightion/codexlb2otel/commit/7ec692dfd1007c5be69e0e2c2926d44e36ba21bd))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.97 ([#67](https://github.com/rknightion/codexlb2otel/issues/67)) ([3d63efc](https://github.com/rknightion/codexlb2otel/commit/3d63efc48d9a17073366b7cd5c4deaeb1928b4e4))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.98 ([#68](https://github.com/rknightion/codexlb2otel/issues/68)) ([02d27e1](https://github.com/rknightion/codexlb2otel/commit/02d27e131250581701cc9bedd5f1a7223e9ef247))
+* **deps:** update opentelemetry-go monorepo to v1.46.0 ([#50](https://github.com/rknightion/codexlb2otel/issues/50)) ([ac26b50](https://github.com/rknightion/codexlb2otel/commit/ac26b506b05f2253122bddda95fbe45a09652883))
+* keep dashboard check runner portable ([13a12a5](https://github.com/rknightion/codexlb2otel/commit/13a12a51e0492dea5e4877205aca8b5b97b667a7))
+* match Grafana dashboard canonical form ([f1f6a92](https://github.com/rknightion/codexlb2otel/commit/f1f6a921f70183eb637e8485ea6a0f57ce896fd6))
+* refresh archive drift baseline ([1ad2396](https://github.com/rknightion/codexlb2otel/commit/1ad2396aee9f281e9611dbb95bc036aadfe68201))
+* remove final ripgrep gate dependency ([eeb3e2b](https://github.com/rknightion/codexlb2otel/commit/eeb3e2b7a3b458df9fde59babbcc5022e1f447c6))
+* separate routine corpus validation ([9381c3b](https://github.com/rknightion/codexlb2otel/commit/9381c3b153d11b3d47786e1ccd7fe2ed39008b1b))
+
 ## [0.3.0](https://github.com/m7kni/codexlb2otel/compare/v0.2.0...v0.3.0) (2026-08-23)
 
 
