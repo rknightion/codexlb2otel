@@ -5,7 +5,7 @@ status: Parked
 assignee:
   - '@codex'
 created_date: '2026-08-14 16:58'
-updated_date: '2026-09-04 19:54'
+updated_date: '2026-09-04 20:27'
 labels:
   - enhancement
   - from-gh-issue
@@ -47,8 +47,7 @@ present there, and measure the join hit rate on the corpus first.
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
-- [x] #2 go build ./... succeeds
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan

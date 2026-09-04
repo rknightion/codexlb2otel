@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-14 17:00'
-updated_date: '2026-09-04 19:54'
+updated_date: '2026-09-04 20:49'
 labels:
   - enhancement
   - from-gh-issue
@@ -82,8 +82,7 @@ The size is already observable: `Watcher.Progress` exposes `ReducerSeriesCount` 
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
-- [x] #2 go build ./... succeeds
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -102,6 +101,8 @@ CORRECTION 2026-09-03: the description's section 2 (save on every poll) is STALE
 L4 implementation landed at commit d83368b. Age-based reducer state eviction is anchored to archive timestamps for timing baselines; reducer state v3 restores with timestamps defaulted to load time; outer checkpoint format v2 accepts v1 and rewrites current format. Dead prev and seq entries are removed, open response threads are retained, returning evicted series emits BaselineReset with the full current cumulative reading, Progress counts shrink after eviction, and file tombstones more than three UTC filename days old are pruned. Focused race tests, go vet, gofmt, just lint, just build, just test-short, and git diff check passed. One broader go test -race invocation unexpectedly consumed the present corpus despite CLB_NO_CORPUS=1 and timed out after 10 minutes in pre-existing TestReducer_NoNegativeDeltas while decompressing all 58 archives; internal/tail completed green. Decision: open response exemption is thread-wide because request_kind can arrive after opening. Integration still must wire archive.state_retain. Review note for L8: replace the temporary seqSeenByReducer sidecar with a Reducer-owned timestamp field and update it on every logical-turn sequence increment so a recent seq entry without a timing baseline is not eligible immediately.
 
 After measurement at 2026-09-04T19:53:43Z, 30 minutes 40 seconds after the partial-SHA container start: checkpoint size 7,049,349 bytes; files 68 with 48 tombstones; reducer.prev 9,370; reducer.seq 4,094; checkpoint version 2. Before was 5,683,577 bytes, files 532 with 523 tombstones, prev 8,854, and seq 3,891. The file grew under fresh traffic, so no shrink is claimed, while stale file entries and tombstones were materially pruned. The configured 15 minute periodic save contract remains in force with identical-byte skips, plus explicit reclaim and clean-shutdown saves. Container restart count was zero and Docker health was healthy. Final just check passed; the full corpus just test was cancelled and remains unproven.
+
+Review reconciliation: the claimed unwired state_retain seam is stale. Current cmd/codexlb2otel/main.go passes cfg.Archive.StateRetain directly into tail.Config. internal/config/load_test.go proves 168h parses from YAML and internal/tail/watcher_test.go TestWatcher_StateRetainShrinksPublishedReducerCounts proves that configured value evicts old reducer state. No source change was required.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

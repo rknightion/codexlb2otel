@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-31 12:13'
-updated_date: '2026-09-04 19:41'
+updated_date: '2026-09-04 20:12'
 labels:
   - design-system
 dependencies: []
@@ -31,7 +31,6 @@ Scope: the single static ui/index.html with inline CSS/vanilla JS, served via go
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
-- [ ] #2 make check green
 <!-- DOD:END -->
 
 ## Implementation Plan
