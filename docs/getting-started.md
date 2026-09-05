@@ -66,13 +66,15 @@ loosening the archive's permissions.
 ## Enable one sink at a time
 
 1. Enable OTLP metrics and confirm series arrive.
-2. Enable traces if the additional volume is useful.
-3. Review [Security](security.md), choose `loki.record_types`, then enable Loki.
-4. Enable Agent Observability only with a token carrying the required generation-write scope.
+2. Review [Security](security.md), choose `loki.record_types`, then enable Loki.
+3. Treat traces and Agent Observability as separate optional sinks for deployments that explicitly
+   need them and have the required scopes. Camden keeps both disabled permanently because native
+   per-profile Codex integration owns Agent Observability there; source-level trace-link tests do
+   not imply live signal delivery.
 
 See [Configuration](configuration.md) for secret indirection and [Troubleshooting](troubleshooting.md)
 for empty-output and delivery failures.
 
-For the host-specific Compose layout, optional Postgres join, drift probe, and post-deploy Grafana
+For the host-specific Compose layout, enabled Postgres join, drift probe, and post-deploy Grafana
 verification, follow the [Camden deployment contract](operations.md#camden-deployment). The published
 configuration does not imply that Camden has traces or Agent Observability enabled.

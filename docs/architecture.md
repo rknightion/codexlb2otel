@@ -41,7 +41,18 @@ poll. Chunked reads bound memory use while a file is growing.
 The frame layer normalizes websocket and response events. The turn reducer then joins continuations,
 tool calls and outputs, usage updates, rate limits, errors, and parent-agent references into one
 logical turn. The CLI tools, live view, logs, metrics, and traces use the same reducer rather than
-maintaining separate interpretations of the archive.
+maintaining separate interpretations of the archive. Content items are retained in five arrays
+(`Prompts`, `Messages`, `ToolCalls`, `ToolOutputs`, and `AgentMessages`) and receive one ordinal
+sequence across all five arrays. Each item also carries its wire id when present, the timestamp of
+the archive frame that produced it, and provenance (`live`, `replayed`, or `unknown`). That
+`captured_at` value describes archive observation; it is not authorship time or execution start.
+
+Function-call arguments remain valid JSON after the reducer's structural encrypted-value handling.
+The reducer recursively replaces encrypted-looking string values with `"[omitted: encrypted]"`,
+records the original byte length in `input_chars`, counts replacements in `input_omitted`, and
+marks a bound replacement with `input_truncated`. Custom tool calls keep their existing fields.
+The same reduced Turn feeds every sink, so ordering, provenance, redaction markers, and original
+lengths remain consistent across the outputs.
 
 ## Checkpoint contract
 
@@ -56,6 +67,14 @@ returns after eviction is flagged `BaselineReset`; its current cumulative value 
 not an exact delta. Deleted-file tombstones prevent a reclaimed path from being treated as the same
 generation forever and are pruned after their UTC filename day is more than three days old.
 
+The checkpoint also persists the bounded tool-call correlation index. It stores unconsumed
+`(thread, call_id)` entries with the originating response id, turn id, tool name, and archive
+capture time. It keeps at most 512 entries per thread and evicts entries older than 24 hours on the
+archive clock. A matching result is classified as `exact`, `ambiguous`, or `none`; an exact entry
+is consumed. The index is state version 5, and version 4 or older snapshots restore with an empty
+index. Replay deduplication prevents a replay from re-inserting a call or consuming its origin a
+second time, and lookup never crosses thread boundaries.
+
 ## Enrichment boundary
 
 When enabled, the Postgres source is read-only and additive. The response id drives an indexed
@@ -64,6 +83,13 @@ indexes the returned rows by both request id and `archive_request_id`; the latte
 alias and is never sent to the point query. Each lookup has its own timeout, and a database fault
 cannot hold the archive checkpoint or stop another sink.
 
+Enrichment attaches cost, API-key, proxy status/error/phase, response-created and first-upstream
+timings, three nullable proxy wait measurements, and upstream status/error/transport diagnostics.
+The wait measurements retain null versus an observed zero. Queue wait covers account selection,
+admission, and failed failovers outside the successful attempt's latency anchor; response-create
+gate and bridge-queue waits are inside the HTTP bridge. They remain separate observations and are
+never added into an end-to-end total. Freeform database or error bodies are excluded.
+
 ## Sink isolation
 
 Each sink has its own queue, timeout, batching, and rejection counters. Permanent input or delivery
@@ -71,8 +97,12 @@ failures are counted and dropped rather than blocking the checkpoint forever. Re
 failures use bounded retry.
 
 Loki is intentionally native rather than OTLP logs because Loki stream labels and structured
-metadata are part of the query contract. Metrics and traces share the OTLP gateway. Agent
-Observability generations use their product-specific export endpoint.
+metadata are part of the query contract. Content lines use their input-side or output-side event
+timestamp, and equal timestamps are ordered by the reducer ordinal. Metrics and traces share the
+OTLP gateway. A result that arrives on a later response is represented by a `tool_result` child
+span linked to the origin call span; no completed span is amended. Agent Observability generations
+use their product-specific export endpoint when explicitly enabled, while the current Camden
+deployment keeps both generations and traces off.
 
 ## Drift detection
 

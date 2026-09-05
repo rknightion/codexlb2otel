@@ -51,6 +51,34 @@ sinks. Confirm that the existing database role has `SELECT` on `request_logs`, `
 `accounts`, and that the response id matches `request_logs.request_id`; `archive_request_id` is only
 used as a prefetch cache alias.
 
+On Camden, enrichment is expected to be enabled through the dedicated read-only
+`codexlb2otel_ro` role. If `db_hit` stops, separate `disabled`, `error`, and `miss` outcomes first,
+then check the lookup-duration histogram, timeout or query errors, the three read grants, and the
+response-id match. Keep the connection secret in the deployment environment. The archive and other
+sinks continue while enrichment is unavailable; the cost counter is a useful regression check when
+cost data should be present.
+
+## Function-call arguments are missing or marked
+
+Function-call arguments are kept as valid JSON. Strings under an `encrypted`-named key and strings
+matching the observable Fernet shape are replaced with `"[omitted: encrypted]"`; `input_omitted`
+counts those replacements. The detector recurses through maps and arrays. Non-string leaves remain
+unchanged; containers below encrypted-named keys keep their structure while string descendants are
+replaced. `input_chars` is the original byte length, while `input_truncated` means the reducer's
+`MaxToolOutputChars` bound (4096 by default) or the later Loki line budget replaced the captured input.
+The summary
+`MaxCharsPerToolInput` setting is a rendering limit and does not change the reducer capture. A
+custom tool call follows its existing path.
+
+## A tool output has no origin
+
+`origin_match="none"` means the call id was not present in the same thread's bounded index when the
+output was observed. `ambiguous` means more than one open call in that thread shared the id. An
+`exact` match provides `origin_response_id`, `origin_turn_id`, and `origin_tool_name`; that index
+entry is consumed, so a duplicate output does not match it again. The index is limited to 512
+entries per thread and 24 hours of archive time, and is replay-safe. Check the thread id and call id
+before treating `none` as a missing tool invocation.
+
 ## Loki accepts pushes but records are missing
 
 Check `loki.record_types`, `max_line_age`, and the backend's query time range. Old lines can be dropped
@@ -66,9 +94,9 @@ The generation endpoint is separate from the generic OTLP gateway and needs a to
 generation-write permission. Verify the full `.../api/v1/generations:export` URL, instance username,
 and token scope.
 
-Camden keeps this sink disabled until its token scope is proven. The same rule applies to OTLP
-traces there. Do not interpret a healthy container as proof that either signal is enabled or
-accepted.
+Camden keeps this sink and OTLP traces disabled permanently. Native per-profile Codex integration
+owns Agent Observability there, and trace-link behavior is proven only by source-level tests. Do not
+interpret a healthy container as proof that either signal is enabled or accepted.
 
 ## The live view is unreachable
 
@@ -106,5 +134,6 @@ The release pipeline publishes the GHCR image, while Camden runs the separate pr
 `/opt/compose/codexlb2otel/compose.yml` with `/opt/codexlb2otel/config.yaml` and `/opt/compose/codexlb2otel/.env`.
 Verify those mounted files, the archive path, and the binary `/healthz` healthcheck first. Then
 verify each enabled Grafana signal separately. If Postgres is enabled, an archive-only deployment
-can still be healthy when enrichment is disabled; if the DSN uses the host database, confirm the
-Compose service has `host.docker.internal:host-gateway` in `extra_hosts`.
+can still be healthy when enrichment is disabled; Camden's expected configuration uses the existing
+read-only role and keeps traces and generations off. If the deployment's DSN uses the host database,
+confirm the Compose service has `host.docker.internal:host-gateway` in `extra_hosts`.

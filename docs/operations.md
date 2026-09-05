@@ -73,11 +73,26 @@ Postgres enrichment is disabled by default and must use an existing read-only ro
 indexed lookup on `request_logs.request_id`, with a bounded LRU and a background `request_logs.id`
 tail prefetch. The prefetch may match `archive_request_id` from its cache, but that value is never
 used as a point-query key. `cache_hit`, `db_hit`, `miss`, `error`, and `disabled` outcomes are
-visible in `codexlb.selfobs.enrich_lookups`; lookup duration covers DB attempts only.
+visible in `codexlb.selfobs.enrich_lookups`; lookup duration covers DB attempts only. The joined row
+also supplies nullable proxy waits (`latency_queue_ms`, `latency_response_create_gate_wait_ms`, and
+`latency_bridge_queue_wait_ms`) and bounded upstream status, error-code, and transport fields.
+Null means no observation; a stored zero remains an observed zero.
 
 If the DSN, pool, or query is unavailable, enrichment is disabled or records an error while archive
 tailing and the other sinks continue. The read-only role must already have `SELECT` on `request_logs`,
 `api_keys`, and `accounts`; this service never creates roles or changes grants.
+
+### Camden enrichment check
+
+Camden runs enrichment enabled through its dedicated `codexlb2otel_ro` role. That role is read-only
+and has `SELECT` on `request_logs`, `api_keys`, and `accounts`; its secret connection details stay in
+the deployment environment. When `db_hit` stops, inspect the `codexlb.selfobs.enrich_lookups`
+counter by `codexlb.selfobs.result` and distinguish `disabled`, `error`, and `miss` before changing
+anything. Check the lookup-duration histogram and the service logs for timeout or query errors, then
+verify that the response id still matches `request_logs.request_id` and that the role retains its
+three grants. A `miss` can be a missing request row, while `error` indicates the database operation
+failed. Cache hits have no lookup-duration sample. The archive tail and other sinks should continue
+while this is investigated; use the cost counter as a regression check when cost data was expected.
 
 ## Camden deployment
 
@@ -94,11 +109,13 @@ extra_hosts:
   - "host.docker.internal:host-gateway"
 ```
 
-Probe may be enabled on the real archive. Camden keeps Agent Observability and traces disabled while
-their token scopes remain unproven. After each rollout, check container health and then verify the
-enabled Grafana signals separately: self-observability health, metric series, Loki records, and any
-intentionally enabled Tempo or generation data. A successful healthcheck or HTTP response is not
-proof of downstream signal delivery.
+Probe may be enabled on the real archive. Camden's settled configuration has Postgres enrichment
+enabled through `codexlb2otel_ro`, while Agent Observability and traces remain disabled permanently.
+Native per-profile Codex integration owns Agent Observability; do not enable either sink as part of
+this deployment. After each rollout, check container health and then verify the enabled Grafana
+signals separately: self-observability health, metric series, and Loki records. Trace-link behavior
+is source-level only in this deployment, so a healthy process or HTTP response cannot serve as live
+Tempo or generation evidence.
 
 ## Investigation tools
 

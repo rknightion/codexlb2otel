@@ -2,14 +2,15 @@
 
 Tails [codex-lb](https://github.com/rknightion/codex-lb)'s conversation-archive files, derives
 model and agent telemetry from the raw Codex websocket traffic, and emits it to Grafana Cloud as
-**OTLP metrics** and **Loki logs**. When an existing read-only Postgres DSN is configured, it also
-joins request-log data onto the matching response without writing to the database.
+**OTLP metrics**, **Loki logs**, and optional **Tempo traces**. When an existing read-only Postgres
+connection is configured, it also joins request-log data onto the matching response without writing
+to the database.
 
 codex-lb captures every frame of the Codex CLI's `wss://chatgpt.com/backend-api/codex/responses`
-session. That capture carries telemetry available nowhere else — OpenAI's internal engine ids, queue
-wait, per-engine-call cache hit ratios, the sub-agent spawn tree, and the full conversation. The
-optional request-log join adds the proxy-side cost, API-key, status, and timing context that the wire
-capture cannot provide by itself.
+session. That capture carries telemetry available nowhere else - OpenAI's internal engine ids,
+engine queue timing, the sub-agent spawn tree, and the conversation content. The optional request-log
+join adds the proxy-side cost, API-key, status, wait, upstream diagnostic, and timing context that
+the wire capture cannot provide by itself.
 
 ## What it deliberately does not do
 
@@ -21,9 +22,11 @@ capture cannot provide by itself.
 
 ## Content warning
 
-This ships **full conversation content** to Loki — assistant messages, tool input, and complete
-command stdout. Anything the agent printed, including a secret it happened to `cat`, lands in your
-log store. That is a deliberate choice for a private, single-tenant deployment.
+This can ship conversation content to Loki - assistant messages, tool input, and tool output. Content
+is still sensitive: anything the agent printed, including a secret it happened to `cat`, can land in
+your log store. Function arguments structurally replace opaque encrypted-looking strings with
+`"[omitted: encrypted]"`; tool output and arguments are bounded before export. That is a deliberate
+choice for a private, single-tenant deployment.
 
 Each content kind is its own Loki line, so `loki.record_types` is the control: listing only
 `turn`, `transport` and `error` gives an event timeline with no bodies, dropping `prompt`,
@@ -289,9 +292,10 @@ postgres:
 The response id is looked up through the indexed `request_logs.request_id` column. A background
 prefetch follows the monotonically increasing `request_logs.id` tail and caches rows by both
 `request_id` and `archive_request_id`; the latter is a cache alias, never a point-query key. The
-bounded LRU adds cost, API-key, proxy status, proxy error, failure phase, and proxy timing context
-to response metadata and spans. A missing DSN, unavailable database, timeout, or query error affects
-enrichment only, so archive ingestion and other sinks continue.
+bounded LRU adds cost, API-key, proxy status, proxy error, failure phase, proxy timing context,
+nullable proxy waits, and bounded upstream status, error-code, and transport diagnostics to response
+metadata and spans. A missing DSN, unavailable database, timeout, or query error affects enrichment
+only, so archive ingestion and other sinks continue.
 
 The read-only role must already have `SELECT` on `request_logs`, `api_keys`, and `accounts`. The
 service never creates roles or changes grants. Enrichment outcomes are visible as `cache_hit`,
@@ -318,7 +322,9 @@ Release automation publishes the runtime image to GHCR. Camden runs it from its 
 service configuration and `/opt/compose/codexlb2otel/.env` supplying secrets. The healthcheck invokes the service binary and checks `/healthz`
 using the mounted config.
 
-Keep Postgres disabled unless the `.env` can provide an existing read-only DSN. If that DSN reaches a
+Camden's settled deployment enables Postgres enrichment through its existing `codexlb2otel_ro`
+read-only role, with credentials supplied by `.env`. That role has `SELECT` on `request_logs`,
+`api_keys`, and `accounts`; the service never creates roles or changes grants. If the DSN reaches a
 database on the host, the Compose service needs:
 
 ```yaml
@@ -326,10 +332,11 @@ extra_hosts:
   - "host.docker.internal:host-gateway"
 ```
 
-The probe may be enabled against the real archive. Camden keeps Agent Observability and traces
-disabled while their token scopes remain unproven. After a rollout, verify container health and then
-verify each enabled Grafana signal separately: self-observability, metrics, Loki, and any deliberately
-enabled Tempo or generation data. A healthy container or HTTP success is not proof that downstream
+The probe may be enabled against the real archive. Camden keeps Agent Observability and Tempo traces
+disabled permanently because native per-profile Codex integration owns that observation path. After a
+rollout, verify container health and then verify the enabled Grafana signals separately:
+self-observability, metrics, and Loki. Source-level trace-link tests do not provide live Tempo or
+generation delivery evidence, and a healthy container or HTTP success is not proof that downstream
 telemetry arrived.
 
 ## Live view

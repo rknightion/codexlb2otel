@@ -28,6 +28,15 @@ This repo's task surface is a `justfile`. Discover it, don't guess it:
 - `just check` also requires Python 3 for dashboard artifact and coverage validation. Make sure
   `python3` is on `PATH` before running the gate.
 
+## Camden deployment boundary
+
+Camden's settled deployment enables Postgres enrichment through the existing `codexlb2otel_ro` role,
+which has `SELECT` on `request_logs`, `api_keys`, and `accounts`; connection details stay in the
+deployment environment. Tempo traces and Agent Observability generations remain permanently disabled
+there because native per-profile Codex integration owns that path. Camden verification therefore
+covers the enabled health, self-observability, metrics, and Loki paths; source-level trace tests are
+not live delivery evidence.
+
 ## The archives are personal data
 
 The conversation archives hold full prompts, tool output and assistant messages. They are gitignored

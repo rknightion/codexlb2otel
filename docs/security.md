@@ -16,16 +16,35 @@ live view, summaries, and diagnostic output as sensitive data.
 The archive can contain prompts, assistant messages, tool arguments, tool output, instructions, and
 anything a command printed—including credentials accidentally read by an agent.
 
-Loki exports all record types when `loki.record_types` is empty. To operate a structural timeline
-without message bodies, configure only:
+Loki exports all record types when `loki.record_types` is empty. Content records are bounded before
+export: tool output is limited by the reducer's tool-content bound, and function-call arguments
+replace opaque encrypted-looking string values with a structural marker. This is targeted handling,
+not a general secret scanner. To operate a structural timeline without message bodies, configure
+only:
 
 ```yaml
 loki:
   record_types: [turn, transport, error]
 ```
 
-This is data minimization, not a redaction engine. Metadata can still carry model, agent, timing,
-usage, and conversation identifiers.
+Metadata can still carry model, agent, timing, usage, and conversation identifiers.
+
+## Function arguments
+
+Function-call `input` is retained as valid JSON after reduction. The detector walks maps and arrays,
+including a root string. It replaces a string when its key contains `encrypted` (case-insensitive)
+or when its decoded URL-safe-base64 bytes have Fernet version `0x80` and are at least 73 bytes long.
+The replacement is the JSON string `"[omitted: encrypted]"`; `input_omitted` counts replacements.
+Non-string leaves remain unchanged. A map or array below an encrypted-named key keeps its structure,
+while string descendants in that context are replaced.
+
+`input_chars` records the original argument byte length. The reducer has no input-specific bound, so
+it uses `MaxToolOutputChars`, whose default is 4096; `input_truncated` marks a bound replacement.
+The summary package's `MaxCharsPerToolInput` is applied later while rendering and does not alter
+capture. Malformed argument text is retained as a JSON string, and any bound fallback remains valid
+JSON. Custom tool calls retain their existing behavior. Function-call extraction populates the
+`spawn_agent` task, model, and effort fields when those arguments are present. This handling does not
+decrypt reasoning content.
 
 ## Live view
 
@@ -59,6 +78,11 @@ Postgres enrichment is read-only and optional. Use an existing role with `SELECT
 Keep `postgres.enabled` false when no such DSN is available. A database outage must affect only
 enrichment, not archive ingestion or another enabled sink.
 
+Upstream status, error code, and transport are bounded diagnostics carried in the turn body and
+response span. Freeform database or error bodies, failure detail, client addresses, endpoint
+identifiers, and other unbounded columns stay out of the enrichment output. Proxy waits preserve
+null versus zero and are recorded as separate measurements rather than an inferred total.
+
 ## Archive and checkpoint storage
 
 Conversation archives must remain outside Git. Repository tests fail if an archive-shaped file is
@@ -82,4 +106,6 @@ was safely removed.
 ## Encrypted reasoning
 
 `reasoning.encrypted_content` is encrypted by OpenAI and is never decrypted here. The exporter uses
-observable metadata such as reasoning token counts; encrypted reasoning text remains opaque.
+observable metadata such as reasoning token counts; encrypted reasoning text remains opaque. Camden
+also keeps Tempo traces and Agent Observability generations disabled permanently, so source-level
+trace-link tests do not imply live content delivery there.

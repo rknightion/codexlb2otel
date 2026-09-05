@@ -99,8 +99,16 @@ Enrichment supplies `cost_usd`, `api_key_id`, `api_key_name`, `proxy_status`, `p
 `proxy_failure_phase`, `proxy.time_to_response_created`, and
 `proxy.time_to_first_upstream_event`. Cost and proxy timings remain numeric response-span
 attributes; the API-key and proxy status fields are response-scoped metadata and span attributes.
-Lookup outcomes are
-`cache_hit`, `db_hit`, `miss`, `error`, and `disabled`.
+It also carries `proxy_queue_wait_ms`, `proxy_response_create_gate_wait_ms`, and
+`proxy_bridge_queue_wait_ms` as nullable turn fields. A non-null zero is preserved as zero; a null
+value is omitted. Queue wait covers account selection, admission, and failed failovers outside the
+successful attempt's latency anchor. The response-create gate and bridge-queue waits are inside the
+HTTP bridge. They are independent observations and are never summed into end-to-end latency.
+
+The join also carries `upstream_status_code`, `upstream_error_code`, and `upstream_transport`.
+These bounded diagnostics are emitted in the turn body and response span only; freeform database or
+error bodies are not copied. Lookup outcomes are `cache_hit`, `db_hit`, `miss`, `error`, and
+`disabled`.
 
 The database role must already exist and have `SELECT` on `request_logs`, `api_keys`, and
 `accounts`. The service does not create roles, change grants, or write to the database. Invalid
@@ -151,8 +159,9 @@ This omits prompt, message, tool-call, tool-output, agent-message, and instructi
 
 One OTLP endpoint and credential serve both signals. Metrics and traces have independent `enabled`
 switches. `metrics.interval` controls periodic export; `traces.sample_ratio` controls head sampling.
-Camden keeps traces disabled until the token's trace scope is proven. Do not treat the checked-in
-example's trace setting as the deployed Camden setting.
+The checked-in example leaves traces disabled. Camden's settled deployment also keeps traces disabled
+permanently; its live proof therefore covers the enabled metrics and Loki paths, while trace-link
+behavior is proven by synthetic source tests.
 
 ## Health and live view
 
@@ -175,7 +184,9 @@ unauthenticated exposure.
 `agento11y` exports Grafana Agent Observability generations and is additive to Tempo traces.
 `summarize` configures `clbsum`, which sends selected conversation content through OpenRouter.
 Both are disabled by default and need separate credentials; `summarize` defaults to zero-data-
-retention routing and denied provider data collection.
+retention routing and denied provider data collection. Camden keeps Agent Observability disabled
+permanently because native per-profile Codex integration owns that observation path; do not enable
+the generation sink as part of a Camden rollout.
 
 ## Camden deployment contract
 
@@ -194,8 +205,9 @@ extra_hosts:
   - "host.docker.internal:host-gateway"
 ```
 
-Probe may be enabled against Camden's real archive. Agent Observability and traces remain disabled
-until their token scopes are proven. After a rollout, verify container health and then verify the
-enabled Grafana signals separately: ingest lag and rejection health, metrics series, Loki records,
-and traces or generations only when their switches and credentials are intentionally enabled. A
-healthy container or HTTP success alone is not evidence that a signal reached its backend.
+Probe may be enabled against Camden's real archive. Camden has Postgres enrichment enabled through
+its existing dedicated read-only role; keep its DSN and credentials in the deployment secret store,
+never in this repository. Agent Observability and traces remain disabled permanently. After a
+rollout, verify container health and then verify the enabled Grafana signals separately: ingest lag
+and rejection health, metrics series, and Loki records. A healthy container or HTTP success alone is
+not evidence that a signal reached its backend.

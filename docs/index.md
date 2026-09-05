@@ -17,18 +17,24 @@ It produces:
 - OpenTelemetry metrics for models, tokens, cache behavior, rate limits, tools, latency, and
   exporter health;
 - structured Loki records for turns, messages, tool activity, errors, and transport events;
-- Tempo traces for response, engine-call, and tool-call timing;
+- optional Tempo traces for response, engine-call, tool-call, and cross-response tool-result timing;
 - optional Grafana Agent Observability generations; and
 - an optional live view of current root sessions and their subagent trees.
 
 ## Why use it?
 
-`codex-lb` already measures the proxy. This project reads the websocket archive to expose the
-conversation-level facts that exist only on the wire: served engine IDs, queue wait, per-call cache
-behavior, tool activity, response continuations, and parent-child agent relationships.
+`codex-lb` already measures the proxy. This project reads the websocket archive to expose
+conversation-level facts that the proxy's request metrics cannot see: served engine IDs, engine wait
+breakdowns, per-call cache behavior, tool activity, response continuations, and parent-child agent
+relationships. Optional read-only Postgres enrichment adds proxy wait breakdowns and bounded
+diagnostics alongside those wire-derived facts. Content records retain capture order and provenance,
+and function arguments keep valid JSON while marking opaque encrypted values.
 
 The exporter does not decrypt encrypted reasoning content and does not duplicate the proxy's
-existing request telemetry.
+existing request telemetry. Proxy enrichment is optional and read-only; its wait measurements are
+kept separate rather than summed into a guessed end-to-end duration. Camden keeps Tempo and Agent
+Observability disabled permanently because native per-profile Codex integration owns that observation
+path.
 
 ## Start here
 
