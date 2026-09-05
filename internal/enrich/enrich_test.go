@@ -18,6 +18,9 @@ func TestStoreEnricher_PointLookupThenCacheHit(t *testing.T) {
 				ID: 7, RequestID: "resp_1", ArchiveRequestID: "ws_1", CostUSD: &cost,
 				APIKeyID: "key-1", APIKeyName: "primary", Status: "success",
 				LatencyResponseCreatedMS: 12.5, LatencyFirstUpstreamEventMS: 8.25,
+				LatencyQueueMS: intPtr(125), LatencyResponseCreateGateWaitMS: intPtr(0),
+				LatencyBridgeQueueWaitMS: intPtr(2), UpstreamStatusCode: 503,
+				UpstreamErrorCode: "upstream_overloaded", UpstreamTransport: "http",
 			},
 		},
 	}
@@ -43,6 +46,15 @@ func TestStoreEnricher_PointLookupThenCacheHit(t *testing.T) {
 		first.ProxyFirstUpstreamEventMS != 8.25 {
 		t.Fatalf("proxy fields were not attached: %+v", first)
 	}
+	if first.ProxyQueueWaitMS == nil || *first.ProxyQueueWaitMS != 125 ||
+		first.ProxyResponseCreateGateWaitMS == nil || *first.ProxyResponseCreateGateWaitMS != 0 ||
+		first.ProxyBridgeQueueWaitMS == nil || *first.ProxyBridgeQueueWaitMS != 2 {
+		t.Fatalf("proxy wait fields were not attached: %+v", first)
+	}
+	if first.UpstreamStatusCode != 503 || first.UpstreamErrorCode != "upstream_overloaded" ||
+		first.UpstreamTransport != "http" {
+		t.Fatalf("upstream fields were not attached: %+v", first)
+	}
 	if first.RequestKind != "compaction" || first.AccountID != "acct-wire" {
 		t.Fatalf("wire-owned fields were overwritten: request_kind=%q account_id=%q",
 			first.RequestKind, first.AccountID)
@@ -67,6 +79,86 @@ func TestStoreEnricher_PointLookupThenCacheHit(t *testing.T) {
 	stats := e.Stats()
 	if stats.CacheHits != 1 || stats.CacheMisses != 2 || stats.LookupErrors != 0 {
 		t.Fatalf("Stats() = %+v, want one hit, two misses, zero errors", stats)
+	}
+}
+
+func TestStoreEnricher_OptionalProxyAndUpstreamFields(t *testing.T) {
+	zero := 0
+	queue := 125
+	bridge := 2
+	status := 503
+
+	tests := []struct {
+		name          string
+		row           Row
+		wantQueue     *int
+		wantGate      *int
+		wantBridge    *int
+		wantStatus    int
+		wantErrorCode string
+		wantTransport string
+	}{
+		{
+			name: "present",
+			row: Row{
+				RequestID:                       "resp_present",
+				LatencyQueueMS:                  &queue,
+				LatencyResponseCreateGateWaitMS: &zero,
+				LatencyBridgeQueueWaitMS:        &bridge,
+				UpstreamStatusCode:              status,
+				UpstreamErrorCode:               "upstream_overloaded",
+				UpstreamTransport:               "http",
+			},
+			wantQueue:     &queue,
+			wantGate:      &zero,
+			wantBridge:    &bridge,
+			wantStatus:    status,
+			wantErrorCode: "upstream_overloaded",
+			wantTransport: "http",
+		},
+		{
+			name: "zero",
+			row: Row{
+				RequestID:                       "resp_zero",
+				LatencyQueueMS:                  &zero,
+				LatencyResponseCreateGateWaitMS: &zero,
+				LatencyBridgeQueueWaitMS:        &zero,
+			},
+			wantQueue:  &zero,
+			wantGate:   &zero,
+			wantBridge: &zero,
+		},
+		{
+			name: "null",
+			row: Row{
+				RequestID: "resp_null",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeStore{lookups: map[string]Row{tt.row.RequestID: tt.row}}
+			e := NewStoreEnricher(store, Options{LookupTimeout: time.Second, CacheEntries: 8})
+			defer e.Close()
+
+			gotTurn := &turn.Turn{ResponseID: tt.row.RequestID}
+			if got := e.Enrich(context.Background(), gotTurn); !got.Found {
+				t.Fatalf("Enrich() = %+v, want found", got)
+			}
+			assertOptionalInt(t, gotTurn.ProxyQueueWaitMS, tt.wantQueue)
+			assertOptionalInt(t, gotTurn.ProxyResponseCreateGateWaitMS, tt.wantGate)
+			assertOptionalInt(t, gotTurn.ProxyBridgeQueueWaitMS, tt.wantBridge)
+			if gotTurn.UpstreamStatusCode != tt.wantStatus {
+				t.Fatalf("UpstreamStatusCode = %d, want %d", gotTurn.UpstreamStatusCode, tt.wantStatus)
+			}
+			if gotTurn.UpstreamErrorCode != tt.wantErrorCode {
+				t.Fatalf("UpstreamErrorCode = %q, want %q", gotTurn.UpstreamErrorCode, tt.wantErrorCode)
+			}
+			if gotTurn.UpstreamTransport != tt.wantTransport {
+				t.Fatalf("UpstreamTransport = %q, want %q", gotTurn.UpstreamTransport, tt.wantTransport)
+			}
+		})
 	}
 }
 
@@ -120,6 +212,9 @@ func TestStoreEnricher_PrefetchMatchesArchiveRequestIDWithoutPointQueryingIt(t *
 			ID: 11, RequestID: "resp_2", ArchiveRequestID: "ws_2", CostUSD: &cost,
 			APIKeyID: "key-2", APIKeyName: "secondary", Status: "rate_limited",
 			ErrorCode: "rate_limit_exceeded", FailurePhase: "upstream",
+			LatencyQueueMS: intPtr(18), LatencyResponseCreateGateWaitMS: intPtr(0),
+			LatencyBridgeQueueWaitMS: intPtr(1), UpstreamStatusCode: 429,
+			UpstreamErrorCode: "upstream_rate_limited", UpstreamTransport: "http",
 		}},
 	}
 	e := NewStoreEnricher(store, Options{LookupTimeout: time.Second, CacheEntries: 8})
@@ -137,6 +232,15 @@ func TestStoreEnricher_PrefetchMatchesArchiveRequestIDWithoutPointQueryingIt(t *
 	if byArchiveID.ProxyErrorCode != "rate_limit_exceeded" ||
 		byArchiveID.ProxyFailurePhase != "upstream" {
 		t.Fatalf("proxy error fields were not attached: %+v", byArchiveID)
+	}
+	if byArchiveID.ProxyQueueWaitMS == nil || *byArchiveID.ProxyQueueWaitMS != 18 ||
+		byArchiveID.ProxyResponseCreateGateWaitMS == nil || *byArchiveID.ProxyResponseCreateGateWaitMS != 0 ||
+		byArchiveID.ProxyBridgeQueueWaitMS == nil || *byArchiveID.ProxyBridgeQueueWaitMS != 1 {
+		t.Fatalf("archive proxy wait fields were not attached: %+v", byArchiveID)
+	}
+	if byArchiveID.UpstreamStatusCode != 429 || byArchiveID.UpstreamErrorCode != "upstream_rate_limited" ||
+		byArchiveID.UpstreamTransport != "http" {
+		t.Fatalf("archive upstream fields were not attached: %+v", byArchiveID)
 	}
 	if store.lookupCount != 0 {
 		t.Fatalf("archive_request_id caused %d point lookups; want 0", store.lookupCount)

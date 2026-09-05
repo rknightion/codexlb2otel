@@ -38,17 +38,23 @@ type Options struct {
 // turn. It deliberately contains no request_kind or account id because those are
 // wire-owned in codexlb2otel and must not be re-derived from Postgres.
 type Row struct {
-	ID                          int64
-	RequestID                   string
-	ArchiveRequestID            string
-	CostUSD                     *float64
-	APIKeyID                    string
-	APIKeyName                  string
-	Status                      string
-	ErrorCode                   string
-	FailurePhase                string
-	LatencyResponseCreatedMS    float64
-	LatencyFirstUpstreamEventMS float64
+	ID                              int64
+	RequestID                       string
+	ArchiveRequestID                string
+	CostUSD                         *float64
+	APIKeyID                        string
+	APIKeyName                      string
+	Status                          string
+	ErrorCode                       string
+	FailurePhase                    string
+	LatencyResponseCreatedMS        float64
+	LatencyFirstUpstreamEventMS     float64
+	LatencyQueueMS                  *int
+	LatencyResponseCreateGateWaitMS *int
+	LatencyBridgeQueueWaitMS        *int
+	UpstreamStatusCode              int
+	UpstreamErrorCode               string
+	UpstreamTransport               string
 }
 
 // Outcome is a bounded label value for codexlb.selfobs.enrich_lookups.
@@ -368,6 +374,12 @@ func attach(t *turn.Turn, row Row) {
 	t.ProxyFailurePhase = row.FailurePhase
 	t.ProxyResponseCreatedMS = row.LatencyResponseCreatedMS
 	t.ProxyFirstUpstreamEventMS = row.LatencyFirstUpstreamEventMS
+	t.ProxyQueueWaitMS = row.LatencyQueueMS
+	t.ProxyResponseCreateGateWaitMS = row.LatencyResponseCreateGateWaitMS
+	t.ProxyBridgeQueueWaitMS = row.LatencyBridgeQueueWaitMS
+	t.UpstreamStatusCode = row.UpstreamStatusCode
+	t.UpstreamErrorCode = row.UpstreamErrorCode
+	t.UpstreamTransport = row.UpstreamTransport
 }
 
 type disabled struct{}

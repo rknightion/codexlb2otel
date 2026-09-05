@@ -65,6 +65,14 @@ type rowScanner interface {
 
 func scanRow(rs rowScanner) (Row, error) {
 	var row Row
+	var (
+		latencyQueueMS                  *int
+		latencyResponseCreateGateWaitMS *int
+		latencyBridgeQueueWaitMS        *int
+		upstreamStatusCode              *int
+		upstreamErrorCode               *string
+		upstreamTransport               *string
+	)
 	err := rs.Scan(
 		&row.ID,
 		&row.RequestID,
@@ -77,7 +85,28 @@ func scanRow(rs rowScanner) (Row, error) {
 		&row.FailurePhase,
 		&row.LatencyResponseCreatedMS,
 		&row.LatencyFirstUpstreamEventMS,
+		&latencyQueueMS,
+		&latencyResponseCreateGateWaitMS,
+		&latencyBridgeQueueWaitMS,
+		&upstreamStatusCode,
+		&upstreamErrorCode,
+		&upstreamTransport,
 	)
+	if err != nil {
+		return row, err
+	}
+	row.LatencyQueueMS = latencyQueueMS
+	row.LatencyResponseCreateGateWaitMS = latencyResponseCreateGateWaitMS
+	row.LatencyBridgeQueueWaitMS = latencyBridgeQueueWaitMS
+	if upstreamStatusCode != nil {
+		row.UpstreamStatusCode = *upstreamStatusCode
+	}
+	if upstreamErrorCode != nil {
+		row.UpstreamErrorCode = *upstreamErrorCode
+	}
+	if upstreamTransport != nil {
+		row.UpstreamTransport = *upstreamTransport
+	}
 	return row, err
 }
 
@@ -96,7 +125,13 @@ const selectFields = `
 	COALESCE(request_logs.error_code, '') AS error_code,
 	COALESCE(request_logs.failure_phase, '') AS failure_phase,
 	COALESCE(request_logs.latency_response_created_ms, 0) AS latency_response_created_ms,
-	COALESCE(request_logs.latency_first_upstream_event_ms, 0) AS latency_first_upstream_event_ms`
+	COALESCE(request_logs.latency_first_upstream_event_ms, 0) AS latency_first_upstream_event_ms,
+	request_logs.latency_queue_ms,
+	request_logs.latency_response_create_gate_wait_ms,
+	request_logs.latency_bridge_queue_wait_ms,
+	request_logs.upstream_status_code,
+	request_logs.upstream_error_code,
+	request_logs.upstream_transport`
 
 const lookupSQL = `
 SELECT` + selectFields + `
