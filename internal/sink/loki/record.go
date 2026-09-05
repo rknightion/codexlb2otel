@@ -3,6 +3,8 @@ package loki
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
 	"time"
 
 	"github.com/rknightion/codexlb2otel/internal/attr"
@@ -85,7 +87,7 @@ func buildLines(t *turn.Turn, guard *attr.Guard, serviceName string, labelKeys [
 				pp.Text = text
 				return json.Marshal(pp)
 			})
-			emit(rt, inputTS(t), body, ok && err == nil)
+			emit(rt, inputTS(t), body, ok && err == nil, contentMetadata(p.Ordinal, p.ItemID, p.CapturedAt, p.Provenance)...)
 		}
 	}
 
@@ -96,21 +98,18 @@ func buildLines(t *turn.Turn, guard *attr.Guard, serviceName string, labelKeys [
 				mm.Text = text
 				return json.Marshal(mm)
 			})
-			emit(attr.RecordMessage, outputTS(t), body, ok && err == nil)
+			emit(attr.RecordMessage, outputTS(t), body, ok && err == nil, contentMetadata(m.Ordinal, m.ItemID, m.CapturedAt, m.Provenance)...)
 		}
 	}
 
 	if isEnabled(enabled, attr.RecordToolCall) {
 		for _, tc := range t.ToolCalls {
-			body, ok, err := fitLine(maxLineBytes, tc.Input, func(text string) ([]byte, error) {
-				cc := tc
-				cc.Input = text
-				return json.Marshal(cc)
-			})
+			body, ok := toolCallLine(tc, maxLineBytes)
 			// ToolName is not on the Turn-level attribute contract (a turn can have
 			// several tool calls; attr.Field.Of returns one value per turn) - it is
 			// exactly the one-off, not-Turn-derived case attr.With exists for.
-			emit(attr.RecordToolCall, outputTS(t), body, ok && err == nil, attr.KV{Key: attr.ToolName, Value: tc.Name})
+			extra := append([]attr.KV{{Key: attr.ToolName, Value: tc.Name}}, contentMetadata(tc.Ordinal, tc.ItemID, tc.CapturedAt, tc.Provenance)...)
+			emit(attr.RecordToolCall, outputTS(t), body, ok, extra...)
 		}
 	}
 
@@ -124,7 +123,7 @@ func buildLines(t *turn.Turn, guard *attr.Guard, serviceName string, labelKeys [
 			// Tool outputs are recovered from response.create alongside prompts -
 			// see turn.ToolOutput's doc comment - so they are input-side content
 			// timestamped the same way.
-			emit(attr.RecordToolOutput, inputTS(t), body, ok && err == nil)
+			emit(attr.RecordToolOutput, inputTS(t), body, ok && err == nil, contentMetadata(to.Ordinal, to.ItemID, to.CapturedAt, to.Provenance)...)
 		}
 	}
 
@@ -137,7 +136,7 @@ func buildLines(t *turn.Turn, guard *attr.Guard, serviceName string, labelKeys [
 			})
 			// Agent-to-agent messages are captured by captureInput from the same
 			// input items as prompts and tool outputs - input-side, not output-side.
-			emit(attr.RecordAgentMessage, inputTS(t), body, ok && err == nil)
+			emit(attr.RecordAgentMessage, inputTS(t), body, ok && err == nil, contentMetadata(am.Ordinal, am.ItemID, am.CapturedAt, am.Provenance)...)
 		}
 	}
 
@@ -151,7 +150,69 @@ func buildLines(t *turn.Turn, guard *attr.Guard, serviceName string, labelKeys [
 		emit(attr.RecordError, lifecycleTS(t), body, ok)
 	}
 
+	// Content records retain their established inputTS/outputTS event timestamp. If
+	// two records share that timestamp, Ordinal provides the archive-capture order;
+	// it is also sent as structured metadata so a Loki query can apply the same tie
+	// break after ingestion. CapturedAt is deliberately separate: it is when the
+	// archive frame was observed, not the record event time used for this timestamp.
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].ts.Equal(out[j].ts) {
+			return out[i].ts.Before(out[j].ts)
+		}
+		return contentOrdinal(out[i].metadata) < contentOrdinal(out[j].metadata)
+	})
 	return out
+}
+
+// contentMetadata is structured metadata for one content item. These describe
+// archive observation and ordering, never a tool's execution or authorisation.
+func contentMetadata(ordinal int, itemID string, capturedAt time.Time, provenance string) []attr.KV {
+	if provenance == "" {
+		provenance = "unknown"
+	}
+	return []attr.KV{
+		{Key: attr.ContentOrdinal, Value: strconv.Itoa(ordinal)},
+		{Key: attr.ContentItemID, Value: itemID},
+		{Key: attr.ContentCapturedAt, Value: capturedAt.UTC().Format(time.RFC3339Nano)},
+		{Key: attr.ContentProvenance, Value: provenance},
+	}
+}
+
+func contentOrdinal(metadata []attr.KV) int {
+	for _, kv := range metadata {
+		if kv.Key == attr.ContentOrdinal {
+			ordinal, err := strconv.Atoi(kv.Value)
+			if err == nil {
+				return ordinal
+			}
+		}
+	}
+	return 0
+}
+
+// toolCallLine preserves the inner JSON contract when a Loki line budget forces an
+// input replacement. fitLine is appropriate for free text, but slicing an argument
+// document produces invalid JSON. The replacement is itself a valid JSON string and
+// InputTruncated records that this sink, after reduction, made the replacement.
+func toolCallLine(tc turn.ToolCall, budget int) ([]byte, bool) {
+	body, err := json.Marshal(tc)
+	if err != nil {
+		return nil, false
+	}
+	if len(body) <= budget {
+		return body, true
+	}
+	cc := tc
+	if cc.InputChars == 0 {
+		cc.InputChars = len(tc.Input)
+	}
+	cc.InputTruncated = true
+	cc.Input = strconv.Quote(fmt.Sprintf("[truncated by codexlb2otel loki sink; original %d chars]", len(tc.Input)))
+	body, err = json.Marshal(cc)
+	if err != nil {
+		return nil, false
+	}
+	return body, len(body) <= budget
 }
 
 func isEnabled(enabled map[string]bool, recordType string) bool {

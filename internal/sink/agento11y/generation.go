@@ -3,6 +3,7 @@ package agento11y
 import (
 	"crypto/sha256"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -310,15 +311,20 @@ func mapRole(role string) string {
 // inputMessages builds the input array from Turn.Prompts and Turn.ToolOutputs, and
 // separately returns the system prompt text pulled out of Prompts along the way.
 //
-// Ordering: Prompts in capture order, followed by ToolOutputs in capture order.
-// Turn carries no relative-ordering signal between the two (no per-item timestamp),
-// so this is the simplest defensible order rather than a claim about true
-// conversation interleaving - the same limitation the Loki sink has, just less
-// visible there because each becomes its own timestamped line instead of sharing one
-// array.
+// Ordering: supported prompts and tool outputs are interleaved by their shared
+// Ordinal. A system/instructions prompt is returned separately because the wire has
+// a dedicated system_prompt field, and developer prompts remain omitted because the
+// wire has no developer role. Those unsupported placements retain the prior handling
+// rather than being mislabeled as user messages.
 func inputMessages(t *turn.Turn) ([]wireMessage, string) {
 	var systemPrompt string
-	out := make([]wireMessage, 0, len(t.Prompts)+len(t.ToolOutputs))
+	type orderedMessage struct {
+		ordinal int
+		order   int
+		message wireMessage
+	}
+	ordered := make([]orderedMessage, 0, len(t.Prompts)+len(t.ToolOutputs))
+	order := 0
 
 	for _, p := range t.Prompts {
 		if p.Role == "instructions" {
@@ -351,20 +357,32 @@ func inputMessages(t *turn.Turn) ([]wireMessage, string) {
 		if len(parts) == 0 {
 			continue
 		}
-		out = append(out, wireMessage{Role: role, Parts: parts})
+		ordered = append(ordered, orderedMessage{ordinal: p.Ordinal, order: order, message: wireMessage{Role: role, Parts: parts}})
+		order++
 	}
 
 	for _, to := range t.ToolOutputs {
 		if to.Text == "" && to.CallID == "" {
 			continue
 		}
-		out = append(out, wireMessage{
+		ordered = append(ordered, orderedMessage{ordinal: to.Ordinal, order: order, message: wireMessage{
 			Role: roleTool,
 			Parts: []wirePart{{ToolResult: &wireToolResult{
 				ToolCallID: to.CallID,
 				Content:    to.Text,
 			}}},
-		})
+		}})
+		order++
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].ordinal != ordered[j].ordinal {
+			return ordered[i].ordinal < ordered[j].ordinal
+		}
+		return ordered[i].order < ordered[j].order
+	})
+	out := make([]wireMessage, len(ordered))
+	for i := range ordered {
+		out[i] = ordered[i].message
 	}
 
 	if len(out) == 0 {
@@ -373,26 +391,50 @@ func inputMessages(t *turn.Turn) ([]wireMessage, string) {
 	return out, systemPrompt
 }
 
-// outputMessages builds the output array from Turn.Messages (assistant text) followed
-// by Turn.ToolCalls (function calls), both role ASSISTANT, in capture order - the
-// same ordering caveat as inputMessages applies: Turn has no signal for how text and
-// tool calls interleaved within one response.
+// outputMessages builds assistant text and tool calls in their shared Ordinal order.
+// Both have a supported ASSISTANT representation, unlike developer and system input
+// prompts, so no output item needs a role-based placement exception.
 func outputMessages(t *turn.Turn) []wireMessage {
-	out := make([]wireMessage, 0, len(t.Messages)+len(t.ToolCalls))
+	type orderedMessage struct {
+		ordinal int
+		order   int
+		message wireMessage
+	}
+	ordered := make([]orderedMessage, 0, len(t.Messages)+len(t.ToolCalls))
+	order := 0
 
 	for _, m := range t.Messages {
 		if m.Text == "" {
 			continue
 		}
-		out = append(out, wireMessage{Role: roleAssistant, Parts: []wirePart{{Text: m.Text}}})
+		ordered = append(ordered, orderedMessage{ordinal: m.Ordinal, order: order, message: wireMessage{Role: roleAssistant, Parts: []wirePart{{Text: m.Text}}}})
+		order++
 	}
 
 	for _, tc := range t.ToolCalls {
-		out = append(out, wireMessage{Role: roleAssistant, Parts: []wirePart{{ToolCall: &wireToolCall{
-			ID:        tc.CallID,
-			Name:      tc.Name,
-			InputJSON: []byte(tc.Input),
-		}}}})
+		ordered = append(ordered, orderedMessage{
+			ordinal: tc.Ordinal,
+			order:   order,
+			message: wireMessage{
+				Role: roleAssistant,
+				Parts: []wirePart{{ToolCall: &wireToolCall{
+					ID:        tc.CallID,
+					Name:      tc.Name,
+					InputJSON: []byte(tc.Input),
+				}}},
+			},
+		})
+		order++
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].ordinal != ordered[j].ordinal {
+			return ordered[i].ordinal < ordered[j].ordinal
+		}
+		return ordered[i].order < ordered[j].order
+	})
+	out := make([]wireMessage, len(ordered))
+	for i := range ordered {
+		out[i] = ordered[i].message
 	}
 
 	if len(out) == 0 {

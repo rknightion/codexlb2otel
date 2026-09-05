@@ -186,6 +186,21 @@ func traceAttrs(t *turn.Turn, kvs []attr.KV) (base, response []attribute.KeyValu
 		response = append(response,
 			attribute.Float64(attr.ProxyTimeToFirstUpstreamEvent, t.ProxyFirstUpstreamEventMS/1000))
 	}
+	// The three wait pointers preserve the distinction between an observed zero and
+	// no observation. They are response-level measurements, in seconds, and are not
+	// summed into an end-to-end duration.
+	for _, wait := range []struct {
+		key string
+		ms  *int
+	}{
+		{attr.ProxyQueueWait, t.ProxyQueueWaitMS},
+		{attr.ProxyResponseCreateGateWait, t.ProxyResponseCreateGateWaitMS},
+		{attr.ProxyBridgeQueueWait, t.ProxyBridgeQueueWaitMS},
+	} {
+		if wait.ms != nil {
+			response = append(response, attribute.Float64(wait.key, float64(*wait.ms)/1000))
+		}
+	}
 	return base, response
 }
 
@@ -354,7 +369,7 @@ func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 	if hasCriticalPath {
 		respSpan.SetAttributes(attribute.Bool(traceAttrReconciled, reconciled))
 	}
-	s.emitToolCalls(respCtx, respSpan.SpanContext(), raw, rkey, t.ToolCalls, t.ToolOutputs, t.ToolCallDurationsMs, respStart, respEnd)
+	s.emitToolCalls(respCtx, respSpan.SpanContext(), raw, rkey, t, respStart, respEnd)
 	if message := callErrorMessage(t); message != "" {
 		respSpan.RecordError(errors.New(message))
 		respSpan.SetStatus(codes.Error, message)
@@ -480,8 +495,10 @@ func boundArguments(in string) string {
 	return in[:cut] + fmt.Sprintf(argTruncMarkerFmt, len(in))
 }
 
-func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw []attr.KV, respKey string, calls []turn.ToolCall, outputs []turn.ToolOutput, durationsMs []float64, respStart, respEnd time.Time) {
+func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw []attr.KV, respKey string, t *turn.Turn, respStart, respEnd time.Time) {
+	calls, outputs, durationsMs := t.ToolCalls, t.ToolOutputs, t.ToolCallDurationsMs
 	if len(calls) == 0 {
+		s.emitCrossResponseToolResults(ctx, parent, raw, respKey, t, respStart, respEnd)
 		return
 	}
 	// Joined by call id, matching how the reducer itself associates a tool's result
@@ -500,19 +517,21 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 	base := attr.Only(raw, attr.GenAIResponseID, attr.ThreadID, attr.GenAIRequestModel, attr.Status)
 	for i, tc := range calls {
 		op := toolOperationName(tc)
-		attrs := s.guard.With(base,
-			attr.KV{Key: attr.ToolName, Value: tc.Name},
-			attr.KV{Key: attr.ToolCallID, Value: tc.CallID},
-			attr.KV{Key: attr.ToolType, Value: tc.Kind},
-			attr.KV{Key: attr.ToolCallArguments, Value: boundArguments(tc.Input)},
-			attr.KV{Key: attr.ToolCallResult, Value: outputByCallID[tc.CallID]},
+		extra := []attr.KV{
+			{Key: attr.ToolName, Value: tc.Name},
+			{Key: attr.ToolCallID, Value: tc.CallID},
+			{Key: attr.ToolType, Value: tc.Kind},
+			{Key: attr.ToolCallArguments, Value: boundArguments(tc.Input)},
+			{Key: attr.ToolCallResult, Value: outputByCallID[tc.CallID]},
 			// SubagentTask only actually has a value when op is invoke_agent -
 			// TaskName is empty for every other tool - so this is a no-op KV on an
 			// execute_tool call rather than a branch. It carried the standard
 			// gen_ai.agent.name key until issue #32; see attr's GenAIAgentName doc
 			// comment for why a per-invocation task label had to come off it.
-			attr.KV{Key: attr.SubagentTask, Value: tc.TaskName},
-		)
+			{Key: attr.SubagentTask, Value: tc.TaskName},
+		}
+		extra = append(extra, contentItemAttrs(tc.Ordinal, tc.ItemID, tc.CapturedAt, tc.Provenance)...)
+		attrs := s.guard.With(base, extra...)
 		otelAttrs := toAttrs(attrs)
 		// gen_ai.operation.name: constant per call, and not registered as a Field for
 		// the same reason it is not one on the response span - it is this emitter's
@@ -524,7 +543,7 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 		if tc.Status != "" {
 			otelAttrs = append(otelAttrs, attribute.String(traceAttrToolCallState, tc.Status))
 		}
-		sid := hashSpanID("tool_call", respKey, strconv.Itoa(i), tc.CallID, tc.Name)
+		sid := hashSpanID(t.ThreadID, tc.CallID)
 		// Span name per the spec's own guidance for each operation: "execute_tool
 		// {gen_ai.tool.name}" / "invoke_agent {gen_ai.agent.name}" - the latter uses
 		// TaskName (the spawned agent's own name), not tc.Name (which would just say
@@ -551,6 +570,65 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 		_, span := s.startChild(ctx, parent, name, sid, respStart, otelAttrs, trace.SpanKindInternal)
 		span.End(trace.WithTimestamp(end))
 	}
+	s.emitCrossResponseToolResults(ctx, parent, raw, respKey, t, respStart, respEnd)
+}
+
+// emitCrossResponseToolResults records a result after its originating tool-call span
+// ended. Same-response results remain an attribute on that call span above. A later
+// response cannot amend an ended span, so it becomes a child of the receiving
+// response and links back to the deterministic origin span instead.
+func (s *Sink) emitCrossResponseToolResults(ctx context.Context, parent trace.SpanContext, raw []attr.KV, respKey string, t *turn.Turn, respStart, respEnd time.Time) {
+	base := attr.Only(raw, attr.GenAIResponseID, attr.ThreadID, attr.GenAIRequestModel, attr.Status)
+	for i, output := range t.ToolOutputs {
+		if output.OriginMatch != "exact" || output.OriginResponseID == "" || output.OriginResponseID == t.ResponseID {
+			continue
+		}
+		extra := []attr.KV{
+			{Key: attr.ToolName, Value: output.OriginToolName},
+			{Key: attr.ToolCallID, Value: output.CallID},
+			{Key: attr.ToolCallResult, Value: output.Text},
+			{Key: attr.ToolOriginResponseID, Value: output.OriginResponseID},
+			{Key: attr.ToolOriginMatch, Value: output.OriginMatch},
+		}
+		extra = append(extra, contentItemAttrs(output.Ordinal, output.ItemID, output.CapturedAt, output.Provenance)...)
+		attrs := s.guard.With(base, extra...)
+		origin := trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: traceID(t), SpanID: hashSpanID(t.ThreadID, output.CallID), TraceFlags: trace.FlagsSampled,
+		})
+		id := hashSpanID("tool_result", respKey, strconv.Itoa(i), output.CallID, output.ItemID, strconv.Itoa(output.Ordinal))
+		_, span := s.startLinkedChild(ctx, parent, "tool_result", id, respStart, toAttrs(attrs), trace.SpanKindInternal,
+			[]trace.Link{{SpanContext: origin, Attributes: []attribute.KeyValue{attribute.String(traceAttrLinkKind, "origin_tool_call")}}})
+		span.End(trace.WithTimestamp(respEnd))
+	}
+}
+
+// contentItemAttrs attaches archive-observation identity to an individual content
+// span. These values are not execution timing or actor identity; CapturedAt remains
+// distinct from the span's response-time bounds.
+func contentItemAttrs(ordinal int, itemID string, capturedAt time.Time, provenance string) []attr.KV {
+	if provenance == "" {
+		provenance = "unknown"
+	}
+	return []attr.KV{
+		{Key: attr.ContentOrdinal, Value: strconv.Itoa(ordinal)},
+		{Key: attr.ContentItemID, Value: itemID},
+		{Key: attr.ContentCapturedAt, Value: capturedAt.UTC().Format(time.RFC3339Nano)},
+		{Key: attr.ContentProvenance, Value: provenance},
+	}
+}
+
+// startLinkedChild is startChild's linked variant. It keeps the receiving response
+// as the parent while adding a non-parenting reference to an already-ended origin
+// tool call, so the result does not rewrite history.
+func (s *Sink) startLinkedChild(ctx context.Context, parent trace.SpanContext, name string, sid trace.SpanID, start time.Time, attrs []attribute.KeyValue, kind trace.SpanKind, links []trace.Link) (context.Context, trace.Span) {
+	childCtx := trace.ContextWithSpanContext(ctx, parent)
+	pinned := withPinnedIDs(childCtx, trace.TraceID{}, sid)
+	return s.tracer.Start(pinned, name,
+		trace.WithTimestamp(start),
+		trace.WithSpanKind(kind),
+		trace.WithAttributes(attrs...),
+		trace.WithLinks(links...),
+	)
 }
 
 // toolOperationName picks execute_tool or invoke_agent per the GenAI convention's own
