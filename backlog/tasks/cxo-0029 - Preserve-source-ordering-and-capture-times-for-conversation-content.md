@@ -1,11 +1,11 @@
 ---
 id: CXO-0029
 title: Preserve source ordering and capture times for conversation content
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-05 16:57'
-updated_date: '2026-09-05 20:33'
+updated_date: '2026-09-05 21:46'
 labels: []
 dependencies: []
 references:
@@ -30,16 +30,16 @@ Scope is the observable conversation timeline. An archive capture timestamp is n
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Exported content has deterministic source-order information sufficient to interleave messages, tool calls, tool results and agent messages within the source request/response rather than grouping solely by type.
-- [ ] #2 Input capture order is preserved in Agent Observability where its supported message roles allow it; Loki consumers have an explicit tie-breaker when content shares a timestamp.
-- [ ] #3 Output item capture timestamps and available item identifiers are retained as log/span metadata, with timestamp provenance distinguishing observation time from server response completion and historical authorship.
-- [ ] #4 Replayed history and file-boundary recovery preserve the existing deduplication contract without fabricating original times; identifiers and ordinals never become metric dimensions.
-- [ ] #5 A documented example and focused regression evidence demonstrate interleaved input and multiple output items without leaking real conversation bodies.
+- [x] #1 Exported content has deterministic source-order information sufficient to interleave messages, tool calls, tool results and agent messages within the source request/response rather than grouping solely by type.
+- [x] #2 Input capture order is preserved in Agent Observability where its supported message roles allow it; Loki consumers have an explicit tie-breaker when content shares a timestamp.
+- [x] #3 Output item capture timestamps and available item identifiers are retained as log/span metadata, with timestamp provenance distinguishing observation time from server response completion and historical authorship.
+- [x] #4 Replayed history and file-boundary recovery preserve the existing deduplication contract without fabricating original times; identifiers and ordinals never become metric dimensions.
+- [x] #5 A documented example and focused regression evidence demonstrate interleaved input and multiple output items without leaking real conversation bodies.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -53,3 +53,9 @@ Wave 2: commit root-owned seams first; frozen owned lanes implement with synthet
 <!-- SECTION:NOTES:BEGIN -->
 Clean main e8e97fd directly descends from c567894 and equals origin/main. CI 33988760737 and release-please 33988761017 succeeded. D8 holds; traces and agento11y remain disabled.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Wave 2 delivered at aca5e5de0bcd4ba6f5fd72dfaa6caef3a6c7fb71. Synthetic reducer and sink tests verify exact ItemID-to-ordinal mapping, capture times, replay and supported role interleaving. Loki tie-break metadata and documented scoped query verified; disabled sink behavior source-level only. just check passed at that source SHA; CI 33993480890 success. Watchtower deployed that SHA healthy, restart count 0. Publish 33993481221 failed signing after successful manifest push; run-level publication completion remains open. The single D20 corpus gate was canceled (exit 143), so corpus confidence is not proven. Final tracker closeout is local under the one-push contract.
+<!-- SECTION:FINAL_SUMMARY:END -->

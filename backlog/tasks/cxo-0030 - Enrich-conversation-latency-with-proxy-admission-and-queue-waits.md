@@ -1,11 +1,11 @@
 ---
 id: CXO-0030
 title: Enrich conversation latency with proxy admission and queue waits
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-05 16:57'
-updated_date: '2026-09-05 20:33'
+updated_date: '2026-09-05 21:46'
 labels: []
 dependencies:
   - CXO-0001
@@ -32,16 +32,16 @@ This extends optional per-conversation enrichment; it must not duplicate the sta
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Matched turn logs and response spans expose the three named proxy wait measurements separately from upstream engine queue/critical-path measurements.
-- [ ] #2 Proxy wait distributions are available using existing bounded cohort dimensions, include measured zeros, and exclude missing values from observations; a coverage count or ratio makes sparse population visible.
-- [ ] #3 Documentation states units, measurement anchors and possible overlap; no composite end-to-end total is asserted by summing fields without demonstrated non-overlap.
-- [ ] #4 Optional Postgres behavior and the indexed response-ID / bounded cached archive-ID join contract remain intact; retries/replay do not multiply one row within the existing delivery semantics.
-- [ ] #5 An operator can inspect proxy wait alongside model wait for the same response through a documented query or existing latency view; live acceptance uses enabled enrichment and reports absent fields honestly.
+- [x] #1 Matched turn logs and response spans expose the three named proxy wait measurements separately from upstream engine queue/critical-path measurements.
+- [x] #2 Proxy wait distributions are available using existing bounded cohort dimensions, include measured zeros, and exclude missing values from observations; a coverage count or ratio makes sparse population visible.
+- [x] #3 Documentation states units, measurement anchors and possible overlap; no composite end-to-end total is asserted by summing fields without demonstrated non-overlap.
+- [x] #4 Optional Postgres behavior and the indexed response-ID / bounded cached archive-ID join contract remain intact; retries/replay do not multiply one row within the existing delivery semantics.
+- [x] #5 An operator can inspect proxy wait alongside model wait for the same response through a documented query or existing latency view; live acceptance uses enabled enrichment and reports absent fields honestly.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -55,3 +55,9 @@ Wave 2: commit root-owned seams first; frozen owned lanes implement with synthet
 <!-- SECTION:NOTES:BEGIN -->
 Clean main e8e97fd directly descends from c567894 and equals origin/main. CI 33988760737 and release-please 33988761017 succeeded. D8 holds; traces and agento11y remain disabled.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Wave 2 delivered at aca5e5de0bcd4ba6f5fd72dfaa6caef3a6c7fb71. NULL/zero/present enrichment and exact metric attribute/replay tests pass. Live response_create_gate histogram has 4 series; queue and bridge_queue absent coverage increases. Dashboard generation 14 matches committed spec and panel 67 rendered/visually checked. Two-minute post-deploy cost increase 1.6304492080183701 and db_hit increase 56.00386935824657. just check passed at that source SHA; CI 33993480890 success. Watchtower deployed that SHA healthy, restart count 0. Publish 33993481221 failed signing after successful manifest push; run-level publication completion remains open. The single D20 corpus gate was canceled (exit 143), so corpus confidence is not proven. Final tracker closeout is local under the one-push contract.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -4,11 +4,11 @@ title: >-
   Adopt the 2026-09-05 wire additions: turn_trigger, safety-buffering reasons,
   reasoning context, access programs, and the unnamed keepalive and
   response.metadata events
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-05 17:24'
-updated_date: '2026-09-05 20:33'
+updated_date: '2026-09-05 21:46'
 labels: []
 dependencies: []
 references:
@@ -44,15 +44,15 @@ Cardinality checks the same scan makes necessary:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 turn_trigger's distinct values are inventoried content-free over the synced corpus and the field is adopted with the class that inventory justifies; the attribute is registered in internal/attr before any sink uses it and appears on the turn Loki record and span
-- [ ] #2 keepalive and the bare response.metadata event are named in internal/frame and no longer reported UNHANDLED by a full scan; safety_buffering.reasons, reasoning.context, parallel_tool_calls and access_programs are either adopted as span/Loki fields or explicitly listed as deliberate omissions in docs/signals.md
-- [ ] #3 Distinct tool names emitted from the corpus are measured; ToolName's cap and Observed list, and GenAIRequestModel's Observed list (gpt-5.5, gpt-6-astra), are updated so no live label is silently capped, with the measurement recorded in the notes
-- [ ] #4 The embedded baseline is refreshed from a full unsampled scan only if this task changes what the decoder handles, and TestSignature_CarriesNoConversationContent passes
+- [x] #1 turn_trigger's distinct values are inventoried content-free over the synced corpus and the field is adopted with the class that inventory justifies; the attribute is registered in internal/attr before any sink uses it and appears on the turn Loki record and span
+- [x] #2 keepalive and the bare response.metadata event are named in internal/frame and no longer reported UNHANDLED by a full scan; safety_buffering.reasons, reasoning.context, parallel_tool_calls and access_programs are either adopted as span/Loki fields or explicitly listed as deliberate omissions in docs/signals.md
+- [x] #3 Distinct tool names emitted from the corpus are measured; ToolName's cap and Observed list, and GenAIRequestModel's Observed list (gpt-5.5, gpt-6-astra), are updated so no live label is silently capped, with the measurement recorded in the notes
+- [x] #4 The embedded baseline is refreshed from a full unsampled scan only if this task changes what the decoder handles, and TestSignature_CarriesNoConversationContent passes
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -66,3 +66,9 @@ Wave 2: commit root-owned seams first; frozen owned lanes implement with synthet
 <!-- SECTION:NOTES:BEGIN -->
 Clean main e8e97fd directly descends from c567894 and equals origin/main. CI 33988760737 and release-please 33988761017 succeeded. D8 holds; traces and agento11y remain disabled.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Wave 2 delivered at aca5e5de0bcd4ba6f5fd72dfaa6caef3a6c7fb71. Full content-free inventory: 70 files, 9962295 lines; one trigger enum, 11 tool names (cap64 retained), models Observed updated. Decoder names keepalive/response.metadata. Full unsampled baseline refresh: 21 named events, zero undecodable, baseline byte-identical; signature test and sampled probe pass. access_programs.cyber omitted because frozen Turn seam lacks a field; namespace deferred. just check passed at that source SHA; CI 33993480890 success. Watchtower deployed that SHA healthy, restart count 0. Publish 33993481221 failed signing after successful manifest push; run-level publication completion remains open. The single D20 corpus gate was canceled (exit 143), so corpus confidence is not proven. Final tracker closeout is local under the one-push contract.
+<!-- SECTION:FINAL_SUMMARY:END -->

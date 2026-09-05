@@ -1,11 +1,11 @@
 ---
 id: CXO-0028
 title: Correlate tool results with invocations across response boundaries
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-05 16:57'
-updated_date: '2026-09-05 20:33'
+updated_date: '2026-09-05 21:46'
 labels: []
 dependencies: []
 references:
@@ -30,16 +30,16 @@ The useful outcome is navigation from a tool result to the originating call and 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 For a call followed by a result in a later response, Loki result metadata identifies the originating invocation and response when the archive provides an unambiguous match.
-- [ ] #2 When Tempo is enabled, users can follow the relationship from the invocation to its later result without incorrectly attaching the result to an unrelated current-response call or assuming an ended span can be amended.
-- [ ] #3 Correlation is scoped to the conversation, bounded in time and memory, and handles file boundaries, replay, duplicate results and missing calls explicitly; missing results do not imply tool failure.
-- [ ] #4 Result content remains available as input to the receiving response, under existing capture limits; no exact execution duration or success status is invented from capture timestamps or item status.
-- [ ] #5 Focused evidence covers a normal cross-response pair, repeated history, reused call identifiers in different threads, and unmatched boundary records.
+- [x] #1 For a call followed by a result in a later response, Loki result metadata identifies the originating invocation and response when the archive provides an unambiguous match.
+- [x] #2 When Tempo is enabled, users can follow the relationship from the invocation to its later result without incorrectly attaching the result to an unrelated current-response call or assuming an ended span can be amended.
+- [x] #3 Correlation is scoped to the conversation, bounded in time and memory, and handles file boundaries, replay, duplicate results and missing calls explicitly; missing results do not imply tool failure.
+- [x] #4 Result content remains available as input to the receiving response, under existing capture limits; no exact execution duration or success status is invented from capture timestamps or item status.
+- [x] #5 Focused evidence covers a normal cross-response pair, repeated history, reused call identifiers in different threads, and unmatched boundary records.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -53,3 +53,9 @@ Wave 2: commit root-owned seams first; frozen owned lanes implement with synthet
 <!-- SECTION:NOTES:BEGIN -->
 Clean main e8e97fd directly descends from c567894 and equals origin/main. CI 33988760737 and release-please 33988761017 succeeded. D8 holds; traces and agento11y remain disabled.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Wave 2 delivered at aca5e5de0bcd4ba6f5fd72dfaa6caef3a6c7fb71. Synthetic correlation/state tests cover cross-response, duplicate/replay, thread scope, expiry, cap and v5 compatibility; synthetic trace links pass (source-level, traces disabled). Three post-deploy Loki tool_output records reported exact origins. Frozen 512-per-thread/24h design has no global thread cap. just check passed at that source SHA; CI 33993480890 success. Watchtower deployed that SHA healthy, restart count 0. Publish 33993481221 failed signing after successful manifest push; run-level publication completion remains open. The single D20 corpus gate was canceled (exit 143), so corpus confidence is not proven. Final tracker closeout is local under the one-push contract.
+<!-- SECTION:FINAL_SUMMARY:END -->

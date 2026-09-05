@@ -1,11 +1,11 @@
 ---
 id: CXO-0027
 title: Preserve plaintext function-call arguments across content sinks
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-05 16:57'
-updated_date: '2026-09-05 20:33'
+updated_date: '2026-09-05 21:46'
 labels: []
 dependencies: []
 references:
@@ -31,15 +31,15 @@ Some nested argument values are opaque encrypted messages, including collaborati
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Plaintext JSON arguments from completed function_call items appear in enabled Loki, Tempo and Agent Observability content paths wherever those sinks already expose tool inputs; existing custom-tool behavior remains covered.
-- [ ] #2 Opaque encrypted argument values remain excluded, including values nested in collaboration calls; the exported representation makes any omission explicit and remains valid JSON where a sink requires JSON.
-- [ ] #3 Capture limits and truncation or omission indicators remain explicit; original input length is retained and argument bodies never become metric labels.
-- [ ] #4 Focused regression coverage distinguishes ordinary function calls, mixed plaintext/encrypted arguments and custom tools; signal documentation accurately states content coverage.
+- [x] #1 Plaintext JSON arguments from completed function_call items appear in enabled Loki, Tempo and Agent Observability content paths wherever those sinks already expose tool inputs; existing custom-tool behavior remains covered.
+- [x] #2 Opaque encrypted argument values remain excluded, including values nested in collaboration calls; the exported representation makes any omission explicit and remains valid JSON where a sink requires JSON.
+- [x] #3 Capture limits and truncation or omission indicators remain explicit; original input length is retained and argument bodies never become metric labels.
+- [x] #4 Focused regression coverage distinguishes ordinary function calls, mixed plaintext/encrypted arguments and custom tools; signal documentation accurately states content coverage.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -53,3 +53,9 @@ Wave 2: commit root-owned seams first; frozen owned lanes implement with synthet
 <!-- SECTION:NOTES:BEGIN -->
 Clean main e8e97fd directly descends from c567894 and equals origin/main. CI 33988760737 and release-please 33988761017 succeeded. D8 holds; traces and agento11y remain disabled.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Wave 2 delivered at aca5e5de0bcd4ba6f5fd72dfaa6caef3a6c7fb71. Synthetic reducer and sink race tests cover recursive encrypted-value omission, valid JSON, original byte length, bounds and custom tools. Post-deploy Loki function input observed. Tempo and Agent Observability proof is source-level; both remain disabled. just check passed at that source SHA; CI 33993480890 success. Watchtower deployed that SHA healthy, restart count 0. Publish 33993481221 failed signing after successful manifest push; run-level publication completion remains open. The single D20 corpus gate was canceled (exit 143), so corpus confidence is not proven. Final tracker closeout is local under the one-push contract.
+<!-- SECTION:FINAL_SUMMARY:END -->

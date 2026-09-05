@@ -1,11 +1,11 @@
 ---
 id: CXO-0031
 title: Attach structured upstream error diagnostics to conversation records
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-05 16:57'
-updated_date: '2026-09-05 20:33'
+updated_date: '2026-09-05 21:46'
 labels: []
 dependencies:
   - CXO-0001
@@ -32,16 +32,16 @@ Scope is populated structured fields: upstream_status_code, upstream_error_code 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Matched conversation logs and response spans retain upstream HTTP status, upstream error code and upstream transport distinctly from the existing proxy and archive status/error fields.
-- [ ] #2 The existing bounded archive-ID cache path can correlate early errors without response IDs; unavailable or ambiguous matches remain explicitly missing and never trigger unindexed per-turn scans.
-- [ ] #3 Users can locate affected conversations by these structured diagnostics through a documented Loki query or existing error view, including a proxy-versus-upstream-code mismatch.
-- [ ] #4 Absent fields remain absent; arbitrary error strings and identifiers do not become unrestricted metric labels, and freeform private database bodies are excluded.
-- [ ] #5 Focused validation covers differing upstream/proxy codes, archive-only joins and missing fields; live delivery evidence is distinguished from historical SQL population.
+- [x] #1 Matched conversation logs and response spans retain upstream HTTP status, upstream error code and upstream transport distinctly from the existing proxy and archive status/error fields.
+- [x] #2 The existing bounded archive-ID cache path can correlate early errors without response IDs; unavailable or ambiguous matches remain explicitly missing and never trigger unindexed per-turn scans.
+- [x] #3 Users can locate affected conversations by these structured diagnostics through a documented Loki query or existing error view, including a proxy-versus-upstream-code mismatch.
+- [x] #4 Absent fields remain absent; arbitrary error strings and identifiers do not become unrestricted metric labels, and freeform private database bodies are excluded.
+- [x] #5 Focused validation covers differing upstream/proxy codes, archive-only joins and missing fields; live delivery evidence is distinguished from historical SQL population.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -55,3 +55,9 @@ Wave 2: commit root-owned seams first; frozen owned lanes implement with synthet
 <!-- SECTION:NOTES:BEGIN -->
 Clean main e8e97fd directly descends from c567894 and equals origin/main. CI 33988760737 and release-please 33988761017 succeeded. D8 holds; traces and agento11y remain disabled.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Wave 2 delivered at aca5e5de0bcd4ba6f5fd72dfaa6caef3a6c7fb71. Synthetic enrichment and sink tests cover differing codes, archive-only joins and absence; upstream diagnostics confined to turn body/response span. Live upstream error query returned empty: not observed in window, no historical SQL re-query. Postgres integration test skipped without DSN; runtime db_hit/cost movement verified. just check passed at that source SHA; CI 33993480890 success. Watchtower deployed that SHA healthy, restart count 0. Publish 33993481221 failed signing after successful manifest push; run-level publication completion remains open. The single D20 corpus gate was canceled (exit 143), so corpus confidence is not proven. Final tracker closeout is local under the one-push contract.
+<!-- SECTION:FINAL_SUMMARY:END -->
