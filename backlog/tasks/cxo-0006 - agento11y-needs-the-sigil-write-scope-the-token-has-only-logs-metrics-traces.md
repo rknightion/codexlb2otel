@@ -1,13 +1,13 @@
 ---
 id: CXO-0006
 title: 'agento11y needs the sigil:write scope; the token has only logs/metrics/traces'
-status: Parked
-assignee: []
+status: Done
+assignee:
+  - '@codex'
 created_date: '2026-08-14 16:59'
-updated_date: '2026-09-05 17:21'
+updated_date: '2026-09-05 18:59'
 labels:
   - from-gh-issue
-  - blocked-on-human
 dependencies: []
 priority: medium
 type: bug
@@ -48,16 +48,22 @@ accident.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 sigil:write added to the access policy (or a token minted from the stack's grafana-agento11y-app plugin, Connection tab, with sigil/metrics/traces/logs write), and the deployed .env updated
-- [ ] #2 agento11y.enabled flipped to true in config.example.yaml, redeployed, and the assertion in TestLoad_ExampleConfigIsDeployable updated
-- [ ] #3 Generations actually arrive, confirmed with gcx agento11y generations list - a 2xx is not enough, ExportGenerations can accept the request and still refuse individual generations, which is why accountResults parses the per-generation verdicts
+- [x] #1 Generations actually arrive, confirmed with gcx agento11y generations list - a 2xx is not enough, ExportGenerations can accept the request and still refuse individual generations, which is why accountResults parses the per-generation verdicts
+- [x] #2 Production configuration enables Agent Observability generations and OTLP traces using the approved credential; public example defaults remain disabled for users without credentials.
+- [x] #3 The deployed Agent Observability credential supports generation ingestion, proven by accepted genuine generations and cloud read-back; reuse of the existing working credential is authorized.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
-- [ ] #2 go build ./... succeeds
+- [x] #1 make check passes: gofmt -l . reports nothing, go vet ./... clean, go test ./... green
+- [x] #2 go build ./... succeeds
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Verify the authorized credential without printing it; deploy it to the existing production env file; enable generation and trace sinks without resetting checkpoints; recreate only the exporter; verify genuine generation and matching trace arrival. Record production evidence and preserve unrelated work.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
@@ -71,4 +77,16 @@ the verification call - is ordinary work and is on the acceptance criteria.
 Final v0.4.0 deployment recheck: Camden still has agento11y.enabled=false and otlp.traces.enabled=false. No approved sigil:write credential appeared during the run, so no config was changed and no generation arrival is claimed. Resume boundary remains a deployed token carrying sigil:write; then enable, deploy, and verify individual accepted generations.
 
 2026-09-05 decision (Rob, wave 2 pre-flight): leave agento11y AND otlp traces disabled for wave 2. No sigil:write token will be minted before that wave. Stays Parked; resume boundary unchanged.
+
+2026-09-05 updated decision from Rob: enable conversations and traces now; reuse the proven Claude Personal Agent Observability credential. This supersedes the earlier Wave 2 disablement. Scope is the production configuration; public example defaults remain safe for users without credentials.
+
+Acceptance criterion 2 updated to the authorized production scope. This is a deployment configuration repair, with no application logic change; safe public example defaults and their test remain unchanged. Skipped new tests and CodeRabbit for declarative configuration; validated Compose and live cloud delivery instead.
+
+Production restored on 2026-09-05 at 18:56 UTC. Reused the explicitly authorized working credential without minting or rescoping a policy. Both sinks enabled; Compose validated and only exporter recreated, checkpoint retained. Genuine codex and codex/subagent catalog timestamps advanced to today. Direct generation read-back linked to the same Tempo trace/span, streamText with SPAN_KIND_CLIENT and STATUS_CODE_OK. Container healthy with zero restarts. Historical replay was not attempted. The credential criterion now explicitly permits the user-authorized existing credential rather than requiring unnecessary token minting.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Restored production Agent Observability conversations and OTLP traces using the authorized existing credential. Genuine codex and codex/subagent generations arrived after restart; a direct generation read linked to an identical Tempo trace/span with SPAN_KIND_CLIENT and STATUS_CODE_OK. Container healthy with zero restarts. Compose validation and dry-run passed. Repository just check and just build passed (the historical make-check DoD is satisfied by the current just task surface). No application source or public example defaults changed. Archive checkpoint preserved; no historical backfill performed.
+<!-- SECTION:FINAL_SUMMARY:END -->
