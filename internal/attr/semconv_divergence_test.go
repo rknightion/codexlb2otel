@@ -28,6 +28,11 @@ const idJustification = "codex-lb's own internal identifier or lifecycle detail;
 // 2026-08-07), not assumed - see the matching const's own doc comment in names.go for
 // the fuller version of each.
 var semconvJustified = map[string]string{
+	TurnTrigger:            "Codex goal continuation trigger has no GenAI equivalent",
+	SafetyBufferingReasons: "provider safety buffering reason enum has no GenAI equivalent",
+	ReasoningContext:       "provider reasoning history scope is distinct from reasoning effort",
+	ParallelToolCalls:      "provider parallel tool-call request option has no GenAI equivalent",
+
 	SelfObsResult:     "exporter observation coverage and lookup outcomes, not model outcomes",
 	ContentOrdinal:    "archive observation and content order, not original authorship or execution time",
 	ContentItemID:     "archive observation and content order, not original authorship or execution time",

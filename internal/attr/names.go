@@ -732,3 +732,11 @@ const (
 	ContentCapturedAt = "codexlb.content.captured_at"
 	ContentProvenance = "codexlb.content.provenance"
 )
+
+// Content-only bounded September wire metadata; never metric dimensions or labels.
+const (
+	TurnTrigger            = "codexlb.turn_trigger"
+	SafetyBufferingReasons = "codexlb.safety_buffering.reasons"
+	ReasoningContext       = "codexlb.reasoning.context"
+	ParallelToolCalls      = "codexlb.parallel_tool_calls"
+)

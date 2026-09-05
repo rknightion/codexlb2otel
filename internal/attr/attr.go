@@ -24,6 +24,7 @@ import (
 	"maps"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/rknightion/codexlb2otel/internal/correlation"
@@ -123,6 +124,10 @@ type Field struct {
 // are sparse - a probe is never a subagent turn, xhigh never appears on a prewarm. The
 // caps below are what make the theoretical product irrelevant.
 var registry = []Field{
+	{Key: TurnTrigger, Class: Bounded, Cap: 8, ContentOnly: true, Observed: []string{"goal"}, Of: func(t *turn.Turn) string { return t.TurnTrigger }},
+	{Key: SafetyBufferingReasons, Class: Bounded, Cap: 8, ContentOnly: true, Observed: []string{"probes"}, Of: func(t *turn.Turn) string { return strings.Join(t.SafetyReasons, ",") }},
+	{Key: ReasoningContext, Class: Bounded, Cap: 4, ContentOnly: true, Observed: []string{"all_turns", "current_turn"}, Of: func(t *turn.Turn) string { return t.ReasoningCtx }},
+	{Key: ParallelToolCalls, Class: Bounded, Cap: 4, ContentOnly: true, Observed: []string{"true", "false"}, Of: func(t *turn.Turn) string { return strconv.FormatBool(t.ParallelTools) }},
 	{Key: SelfObsResult, Class: Bounded, Cap: 16},
 	{Key: ContentOrdinal, Class: Identity, ContentOnly: true},
 	{Key: ContentItemID, Class: Identity, ContentOnly: true},
@@ -146,7 +151,7 @@ var registry = []Field{
 
 	// --- bounded: metric attributes, and promotable to labels ---
 	{Key: GenAIRequestModel, Class: Bounded, Cap: 32,
-		Observed: []string{"gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.3-codex-spark", "gpt-5.6-sol-wm", "gpt-5.4-mini", "gpt-5.6-luna"},
+		Observed: []string{"gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.3-codex-spark", "gpt-5.6-sol-wm", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.5", "gpt-6-astra"},
 		Of:       func(t *turn.Turn) string { return t.Model }},
 	{Key: GenAIResponseModel, Class: Bounded, Cap: 32,
 		Of: func(t *turn.Turn) string {
@@ -277,13 +282,13 @@ var registry = []Field{
 		Of: func(t *turn.Turn) string { return t.PromptCacheDiagnostic }},
 
 	// --- caller-supplied: registered so Guard.With caps them, see Field.Of ---
-	// The full measured catalogue as of the 2026-08-07 corpus: nine names across
-	// 1.84M records, against a cap of 64. The margin is the point - a tool name is
+	// The full measured catalogue as of the 2026-09-05 corpus: eleven names across
+	// 70 archives, against a cap of 64. The margin is the point - a tool name is
 	// whatever the model's catalogue happens to contain, so this is the one bounded
 	// field with no upstream guarantee of being bounded at all.
 	{Key: ToolName, Class: Bounded, Cap: 64,
 		Observed: []string{"exec", "spawn_agent", "wait_agent", "list_agents", "send_message",
-			"followup_task", "interrupt_agent", "request_user_input", "wait"}},
+			"followup_task", "interrupt_agent", "request_user_input", "wait", "request_user_input_async", "sleep"}},
 	{Key: GenAITokenType, Class: Bounded, Cap: 8,
 		Observed: []string{TokenInput, TokenOutput, TokenReasoning, TokenCacheRead, TokenCacheWrite}},
 	// One value, ever - but registered rather than hardcoded at the call site so it

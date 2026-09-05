@@ -6,9 +6,9 @@ import (
 )
 
 func TestWave2DiagnosticsNeverBecomeDimensions(t *testing.T) {
-	tn := &turn.Turn{UpstreamStatusCode: 503, UpstreamErrorCode: "overloaded", UpstreamTransport: "http"}
+	tn := &turn.Turn{TurnTrigger: "goal", SafetyReasons: []string{"probes"}, ReasoningCtx: "all_turns", ParallelTools: true, UpstreamStatusCode: 503, UpstreamErrorCode: "overloaded", UpstreamTransport: "http"}
 	g := NewGuard()
-	for _, key := range []string{"codexlb.upstream.status_code", "codexlb.upstream.error_code", "codexlb.upstream.transport", "codexlb.tool.origin_match"} {
+	for _, key := range []string{TurnTrigger, SafetyBufferingReasons, ReasoningContext, ParallelToolCalls, "codexlb.upstream.status_code", "codexlb.upstream.error_code", "codexlb.upstream.transport", "codexlb.tool.origin_match"} {
 		if ValidateLabels([]string{key}) == nil {
 			t.Errorf("label allowed: %s", key)
 		}
@@ -18,7 +18,7 @@ func TestWave2DiagnosticsNeverBecomeDimensions(t *testing.T) {
 			}
 		}
 	}
-	for _, key := range []string{"codexlb.upstream.status_code", "codexlb.upstream.error_code", "codexlb.upstream.transport"} {
+	for _, key := range []string{TurnTrigger, SafetyBufferingReasons, ReasoningContext, ParallelToolCalls, "codexlb.upstream.status_code", "codexlb.upstream.error_code", "codexlb.upstream.transport"} {
 		found := false
 		for _, kv := range g.SpanAttrs(tn) {
 			if kv.Key == key {
