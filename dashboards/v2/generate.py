@@ -1059,9 +1059,11 @@ the selected window does not contain both fast and normal samples for the same c
 # ---------------------------------------------------------------------------
 def tab_latency():
     p = []
-    p.append(panel("Proxy wait by kind (p95)", [
+    p.append(panel("Proxy wait by kind (p50/p95)", [
+        q(f'histogram_quantile(0.50, sum by (le, codexlb_proxy_wait_kind) (rate({prom("codexlb.proxy.wait", "_bucket")}'
+          f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "p50 {{codexlb_proxy_wait_kind}}"),
         q(f'histogram_quantile(0.95, sum by (le, codexlb_proxy_wait_kind) (rate({prom("codexlb.proxy.wait", "_bucket")}'
-          f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "{{codexlb_proxy_wait_kind}}"),
+          f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "p95 {{codexlb_proxy_wait_kind}}", "B"),
     ], unit="s", opts=LEG,
         desc="Separately observed proxy waits, including measured zeros. Missing values do not enter the histogram; these waits are never summed into end-to-end latency."))
     p.append(panel("Proxy wait coverage", [
@@ -1069,6 +1071,21 @@ def tab_latency():
           f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval]))', "{{codexlb_proxy_wait_kind}} / {{codexlb_selfobs_result}}"),
     ], unit="ops", opts=LEG,
         desc="One present or absent observation per wait kind per response. Absence is coverage information, never a measured zero."))
+    p.append(panel(
+        "Proxy wait vs model response wait (same cohort)", [
+            q(f'histogram_quantile(0.95, sum by (le, codexlb_proxy_wait_kind, gen_ai_request_model, codexlb_family) '
+              f'(rate({prom("codexlb.proxy.wait", "_bucket")}{sel(filt=F_DURATION)}[$__rate_interval])))',
+              "proxy {{codexlb_proxy_wait_kind}} p95 {{gen_ai_request_model}} / {{codexlb_family}}"),
+            q(f'histogram_quantile(0.95, sum by (le, gen_ai_request_model, codexlb_family) '
+              f'(rate({prom("gen_ai.client.operation.duration", "_bucket")}{sel(filt=F_DURATION)}[$__rate_interval])))',
+              "model response p95 {{gen_ai_request_model}} / {{codexlb_family}}", "B"),
+        ], unit="s", opts=LEG,
+        desc="Proxy wait and total model response duration are compared at the shared model and family cohort, "
+             "with each proxy wait kind retained separately. Queue wait covers account selection, admission, "
+             "and failed failover attempts outside the successful attempt's latency anchor; response-create gate "
+             "and bridge queue waits are inside the HTTP bridge. The model comparator is response.created to "
+             "response.completed, not an engine queue measurement. These are separate observations and are never "
+             "added into an end-to-end total."))
     p.append(text_panel("How to read this tab", """
 The critical path decomposes one response into **pre-inference → engine wall → sampling and stream**,
 plus whatever is left over. Each stage is a histogram in its own right, so a slow turn can be attributed
@@ -1375,6 +1392,37 @@ def tab_errors():
         desc="Errors concentrated on one model are a different problem from errors spread "
              "across all of them."))
     p.append(panel(
+        "Upstream status code distribution (Loki)", [
+            logq('sum by (upstream_status_code) (count_over_time({service_name="codexlb2otel", '
+                 'codexlb_record_type="turn"} | json upstream_status_code="upstream_status_code" '
+                 '| upstream_status_code != "" [$__auto]))', "{{upstream_status_code}}"),
+        ], unit="short", opts=LEG, fieldcfg=BARS,
+        desc="HTTP status values attached by the upstream request log. The status is parsed from turn "
+             "JSON in Loki and is intentionally absent from all metric dimensions."))
+    p.append(panel(
+        "Upstream error code distribution (Loki)", [
+            logq('sum by (upstream_error_code) (count_over_time({service_name="codexlb2otel", '
+                 'codexlb_record_type="turn"} | json upstream_error_code="upstream_error_code" '
+                 '| upstream_error_code != "" [$__auto]))', "{{upstream_error_code}}"),
+        ], unit="short", opts=LEG, fieldcfg=BARS,
+        desc="Bounded upstream error codes from turn JSON. Empty and unavailable values are excluded, "
+             "and arbitrary database error bodies never become labels."))
+    mismatch = ('{service_name="codexlb2otel", codexlb_record_type="turn"} '
+                '| json proxy_error_code="proxy_error_code", '
+                'upstream_error_code="upstream_error_code", '
+                'upstream_status_code="upstream_status_code" '
+                '| proxy_error_code != "" | upstream_error_code != "" '
+                '| label_format code_match="{{if eq .proxy_error_code .upstream_error_code}}match{{else}}mismatch{{end}}" '
+                '| code_match="mismatch"')
+    p.append(panel(
+        "Proxy vs upstream error-code mismatches", [
+            logq('sort_desc(sum by (proxy_error_code, upstream_error_code, upstream_status_code) '
+                 f'(count_over_time({mismatch}[$__range])))', fmt="instant"),
+        ], "table", opts=TABLE_OPTS,
+        desc="Only rows where the bounded proxy and upstream error codes differ. The upstream HTTP "
+             "status is retained as context when present; equal codes are filtered out by the derived "
+             "code_match label."))
+    p.append(panel(
         "Transport events", [
             q(f'sum by (codexlb_frame_type, codexlb_close_code, codexlb_family) '
               f'(rate({prom("codexlb.transport_events")}{sel(filt=F_ACCT)}[$__rate_interval]))',
@@ -1422,6 +1470,43 @@ Lines older than `loki.max_line_age` (3h) are dropped **here**, deliberately, ra
 to Loki to discard silently behind a 204. Catching up on a backlog therefore produces a
 `too_old` rejection count on the Pipeline tab and a gap here - that is the design working, not a fault.
 """))
+    tool_call_stream = f'{{service_name="codexlb2otel", codexlb_record_type="{rec("tool_call")}"}}'
+    tool_output_stream = f'{{service_name="codexlb2otel", codexlb_record_type="{rec("tool_output")}"}}'
+    content_stream = ('{service_name="codexlb2otel", '
+                     'codexlb_record_type=~"prompt|instructions|message|agent_message|tool_call|tool_output"}')
+    input_presence = (f'100 * sum by (kind) (count_over_time({tool_call_stream} '
+                      '| json kind="kind", input="input" | kind != "" | input != "" [$__range])) / '
+                      f'sum by (kind) (count_over_time({tool_call_stream} '
+                      '| json kind="kind" | kind != "" [$__range]))')
+    p.append(panel(
+        "Tool-call input presence by kind", [
+            logq(input_presence, "{{kind}}", fmt="instant"),
+        ], "bargauge", unit="percent", minv=0, maxv=100,
+        opts={"displayMode": "gradient", "orientation": "horizontal", "showUnfilled": True,
+              "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}},
+        desc="The percentage of tool_call records with a non-empty parsed input field, grouped by kind. "
+             "Absent input remains absent and is counted only in the denominator."))
+    p.append(panel(
+        "Tool-result origin match", [
+            logq(f'sum by (origin_match) (count_over_time({tool_output_stream} '
+                 '| json origin_match="origin_match" '
+                 '| origin_match=~"exact|ambiguous|none" [$__range]))', "{{origin_match}}", fmt="instant"),
+        ], "barchart", unit="short",
+        opts={"orientation": "horizontal", "showValue": "auto", "legend": {"showLegend": False}},
+        desc="Tool results grouped by their bounded correlation outcome: exact, ambiguous, or none. "
+             "A missing result is not a tool failure."))
+    ordering = (f'{content_stream} | gen_ai_response_id != "" | gen_ai_response_id="$id" '
+                '| json ordinal="ordinal" | ordinal != "" '
+                '| label_format ordinal_value="{{.ordinal}}" | unwrap ordinal '
+                '[$__range]')
+    p.append(panel(
+        "Conversation order by ordinal (example)", [
+            logq(f'sort(max by (ordinal_value) (max_over_time({ordering})))', fmt="instant"),
+        ], "table", opts=TABLE_OPTS,
+        desc="Set the Lookup ID to one response ID. This instant Loki metric view then scopes to that "
+             "Turn and sorts its parsed ordinal samples ascending. Loki cannot sort raw log rows by a "
+             "parsed field; use the ordinal metadata on the Conversation Logs records when opening the "
+             "corresponding lines."))
     p.append(panel(
         "Record volume by type", [
             logq('sum by (codexlb_record_type) (count_over_time({service_name="codexlb2otel", '
@@ -1468,9 +1553,18 @@ to Loki to discard silently behind a 204. Catching up on a backlog therefore pro
                  '| json request_id="request_id", response_id="response_id", thread_id="thread_id" '
                  '| (request_id!="" and request_id="$id") or '
                  '(response_id!="" and response_id="$id") or '
-                 '(thread_id!="" and thread_id="$id")'),
+             '(thread_id!="" and thread_id="$id")'),
         ], "logs", opts=LOGS_OPTS,
         desc="Exact lookup across every record kind by request_id, response_id, or thread_id. Leave $id blank until an identifier is pasted."))
+    p.append(panel(
+        "Lookup by upstream error code", [
+            logq('{service_name="codexlb2otel", codexlb_record_type="turn"} '
+                 '| json upstream_error_code="upstream_error_code" '
+                 '| upstream_error_code != "" '
+                 '| upstream_error_code="$upstream_error_code"'),
+        ], "logs", opts=LOGS_OPTS,
+        desc="Exact lookup across enriched turn records by the bounded upstream error code. Leave "
+             "$upstream_error_code blank until a code is pasted."))
     return p
 
 
@@ -1834,7 +1928,11 @@ def build():
             family_var(),
             {"kind": "TextVariable", "spec": {
                 "name": "id", "label": "Lookup ID", "skipUrlSync": False,
-                "hide": "dontHide", "description": "Exact request, response, or thread ID for the Lookup panel.",
+                "hide": "dontHide", "description": "Exact request, response, or thread ID for lookup panels; use a response ID for the ordinal example.",
+                "query": "", "current": {"text": "", "value": ""}}},
+            {"kind": "TextVariable", "spec": {
+                "name": "upstream_error_code", "label": "Upstream error code", "skipUrlSync": False,
+                "hide": "dontHide", "description": "Exact bounded upstream error code for the Conversation Logs lookup panel.",
                 "query": "", "current": {"text": "", "value": ""}}},
             {"kind": "TextVariable", "spec": {
                 "name": "search", "label": "Log search", "skipUrlSync": False,
@@ -1899,6 +1997,15 @@ def verify(spec):
                           if metric in expr and 'codexlb_family=~"$family"' not in expr]
         if missing_family:
             problems.append(f"{len(missing_family)} {metric} query or queries omit the family selector")
+
+    # Proxy wait is a frozen pair: each metric must have a real query in a reachable
+    # panel. Keep this explicit even though the general metric inventory check below
+    # also catches a missing `prom()` call, so a future refactor cannot accidentally
+    # satisfy coverage through an orphaned or non-query reference.
+    for metric in ("codexlb.proxy.wait", "codexlb.proxy.wait_coverage"):
+        wire_name = PROM_NAME[metric]
+        if not any(wire_name in expr for expr in exprs):
+            problems.append(f"required proxy metric {wire_name} has no panel")
 
     id_lookups = [expr for expr in exprs if 'request_id="$id"' in expr]
     for expr in id_lookups:
