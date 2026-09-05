@@ -44,6 +44,7 @@ func (s *Sink) record(ctx context.Context, t *turn.Turn) {
 	s.recordCounts(ctx, t, base)
 	s.recordTokens(ctx, t, base)
 	s.recordCost(ctx, t, base)
+	s.recordProxyWait(ctx, t, base)
 	s.recordEngineCalls(ctx, t, base)
 	s.recordToolCalls(ctx, t, base)
 	s.recordToolCallsPerOperation(ctx, t, base)
@@ -189,6 +190,42 @@ func (s *Sink) recordCost(ctx context.Context, t *turn.Turn, base []attr.KV) {
 		return
 	}
 	s.inst.costUSD.Add(ctx, *t.CostUSD, otelmetric.WithAttributes(toOtel(costAttrs(base))...))
+}
+
+// proxyWaitMeasurement is one of codex-lb's three independently nullable wait
+// columns. A non-nil pointer is a present measurement, including an explicit zero;
+// nil means no observation and never becomes a zero-valued histogram sample.
+type proxyWaitMeasurement struct {
+	kind string
+	ms   *int
+}
+
+func proxyWaitMeasurements(t *turn.Turn) []proxyWaitMeasurement {
+	return []proxyWaitMeasurement{
+		{kind: "queue", ms: t.ProxyQueueWaitMS},
+		{kind: "response_create_gate", ms: t.ProxyResponseCreateGateWaitMS},
+		{kind: "bridge_queue", ms: t.ProxyBridgeQueueWaitMS},
+	}
+}
+
+// recordProxyWait emits one histogram observation for every present wait and one
+// coverage observation for every wait kind, including absent values. Its response-ID
+// replay guard follows cost's existing bound and empty-ID fallback, with independent
+// membership so a missing cost cannot suppress a later valid charge.
+func (s *Sink) recordProxyWait(ctx context.Context, t *turn.Turn, base []attr.KV) {
+	if !s.firstProxyWaitResponse(t.ResponseID) {
+		return
+	}
+	for _, wait := range proxyWaitMeasurements(t) {
+		result := "absent"
+		if wait.ms != nil {
+			result = "present"
+			attrs := proxyWaitAttrs(s.guard, base, wait.kind)
+			s.inst.proxyWait.Record(ctx, msToS(float64(*wait.ms)), otelmetric.WithAttributes(toOtel(attrs)...))
+		}
+		coverageAttrs := proxyWaitCoverageAttrs(s.guard, base, wait.kind, result)
+		s.inst.proxyWaitCoverage.Add(ctx, 1, otelmetric.WithAttributes(toOtel(coverageAttrs)...))
+	}
 }
 
 // recordEngineCalls prefers critical_path.engine_calls, which is genuinely
@@ -552,6 +589,16 @@ func attributeSetsForTurn(t *turn.Turn, guard *attr.Guard, base []attr.KV) []Ins
 	if t.CostUSD != nil {
 		add(attr.MetricCostUSD, costAttrs(base))
 	}
+	for _, wait := range proxyWaitMeasurements(t) {
+		result := "present"
+		if wait.ms == nil {
+			result = "absent"
+		}
+		add(attr.MetricProxyWaitCoverage, proxyWaitCoverageAttrs(guard, base, wait.kind, result))
+		if wait.ms != nil {
+			add(attr.MetricProxyWait, proxyWaitAttrs(guard, base, wait.kind))
+		}
+	}
 
 	calls := t.EngineCallsDelta
 	if t.CriticalPath.Coverage != "" {
@@ -721,6 +768,26 @@ func costAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
 		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
 		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName)
+}
+
+// proxyWaitAttrs is deliberately narrower than the shared metric base. A proxy wait
+// answers a cohort latency question using only the frozen model/request/thread/family
+// dimensions; account, status, tier, error and every other bounded field are dropped
+// with attr.Only because they belong to the other instruments' questions and would
+// multiply eleven histogram buckets without a proxy-wait query contract.
+func proxyWaitAttrs(guard *attr.Guard, base []attr.KV, kind string) []attr.KV {
+	attrs := attr.Only(base, attr.Family, attr.RequestKind, attr.GenAIRequestModel, attr.ThreadSource)
+	return guard.With(attrs, attr.KV{Key: attr.ProxyWaitKind, Value: kind})
+}
+
+// proxyWaitCoverageAttrs keeps only family from the turn-derived base and adds the
+// two fixed coverage dimensions. SelfObsResult describes whether the nullable wait
+// column was present; its two closed values are routed through the shared guard along
+// with ProxyWaitKind so every emitted dimension has the same cap enforcement.
+func proxyWaitCoverageAttrs(guard *attr.Guard, base []attr.KV, kind, result string) []attr.KV {
+	return guard.With(attr.Only(base, attr.Family),
+		attr.KV{Key: attr.ProxyWaitKind, Value: kind},
+		attr.KV{Key: attr.SelfObsResult, Value: result})
 }
 
 // imageGenTokenAttrs is a token counter, so it carries family and API key name for

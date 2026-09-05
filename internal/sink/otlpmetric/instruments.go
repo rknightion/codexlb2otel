@@ -14,18 +14,20 @@ import (
 // fields directly on Sink so newInstruments can build and error-check them in one
 // place instead of eighteen repeated `if err != nil` blocks inline in the constructor.
 type instruments struct {
-	tokens          otelmetric.Int64Counter
-	responses       otelmetric.Int64Counter
-	turns           otelmetric.Int64Counter
-	engineCalls     otelmetric.Int64Counter
-	toolCalls       otelmetric.Int64Counter
-	webSearch       otelmetric.Int64Counter
-	imageGenTokens  otelmetric.Int64Counter
-	errors          otelmetric.Int64Counter
-	transportEvents otelmetric.Int64Counter
-	safetyBuffering otelmetric.Int64Counter
-	baselineResets  otelmetric.Int64Counter
-	costUSD         otelmetric.Float64Counter
+	tokens            otelmetric.Int64Counter
+	responses         otelmetric.Int64Counter
+	turns             otelmetric.Int64Counter
+	engineCalls       otelmetric.Int64Counter
+	toolCalls         otelmetric.Int64Counter
+	webSearch         otelmetric.Int64Counter
+	imageGenTokens    otelmetric.Int64Counter
+	errors            otelmetric.Int64Counter
+	transportEvents   otelmetric.Int64Counter
+	safetyBuffering   otelmetric.Int64Counter
+	baselineResets    otelmetric.Int64Counter
+	costUSD           otelmetric.Float64Counter
+	proxyWait         otelmetric.Float64Histogram
+	proxyWaitCoverage otelmetric.Int64Counter
 
 	// tokenUsage is the convention-named parallel to tokens - see names.go's
 	// MetricTokenUsage doc comment for why both exist rather than one replacing the
@@ -104,6 +106,14 @@ var agentO11yTokenBoundaries = []float64{
 	65536, 262144, 1048576, 4194304, 16777216, 67108864,
 }
 
+// proxyWaitBoundaries are the frozen seconds buckets for each independently
+// measured codex-lb admission or bridge wait. They intentionally start above zero:
+// a measured zero still belongs in the histogram's count and sum, while a missing
+// pointer is represented only by proxyWaitCoverage.
+var proxyWaitBoundaries = []float64{
+	0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5,
+}
+
 const defaultHistogramBoundaries = 15
 
 // PrometheusSeriesMultiplier returns the number of Prometheus wire series for one
@@ -118,6 +128,8 @@ func PrometheusSeriesMultiplier(instrument string) int {
 		return len(agentO11yDurationBoundaries) + 3
 	case attr.MetricEngineServiceMinusIapiTBT:
 		return len(negativeCapableTBTBoundaries) + 3
+	case attr.MetricProxyWait:
+		return len(proxyWaitBoundaries) + 3
 	case attr.MetricToolCallsPerOperation,
 		attr.MetricTurnDuration, attr.MetricEngineWall, attr.MetricHarnessUnblocked,
 		attr.MetricPreInference, attr.MetricSamplingStream, attr.MetricClientToolPause,
@@ -231,6 +243,20 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 			"codex-lb enrichment supplied an explicit cost value."),
 		otelmetric.WithUnit("{USD}"))
 	must(attr.MetricCostUSD, err)
+
+	i.proxyWait, err = meter.Float64Histogram(attr.MetricProxyWait,
+		otelmetric.WithDescription("Proxy admission and queue waits, recorded separately by "+
+			"wait kind. Each observation is a response's own wait in seconds; the three "+
+			"kinds must not be summed into an end-to-end total."),
+		otelmetric.WithUnit("s"),
+		otelmetric.WithExplicitBucketBoundaries(proxyWaitBoundaries...))
+	must(attr.MetricProxyWait, err)
+
+	i.proxyWaitCoverage, err = meter.Int64Counter(attr.MetricProxyWaitCoverage,
+		otelmetric.WithDescription("Proxy wait observations by wait kind, including a "+
+			"count for each missing measurement so sparse enrichment remains visible."),
+		otelmetric.WithUnit("{observation}"))
+	must(attr.MetricProxyWaitCoverage, err)
 
 	// MetricAttrsRejected is intentionally an ObservableCounter, not something Emit
 	// increments: the guard already keeps a monotonic running total per field (see
