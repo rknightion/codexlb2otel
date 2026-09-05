@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"testing"
 	"time"
 
@@ -190,32 +191,28 @@ func addWave2Event(t *testing.T, r *Reducer, request string, at time.Time, event
 
 func assertMonotonicWave2(t *testing.T, turn *Turn) {
 	t.Helper()
-	var ordinals []int
+	got := map[string]int{}
 	for _, item := range turn.Prompts {
-		ordinals = append(ordinals, item.Ordinal)
+		got[item.ItemID] = item.Ordinal
 	}
 	for _, item := range turn.ToolOutputs {
-		ordinals = append(ordinals, item.Ordinal)
+		got[item.ItemID] = item.Ordinal
 	}
 	for _, item := range turn.Messages {
-		ordinals = append(ordinals, item.Ordinal)
+		got[item.ItemID] = item.Ordinal
 	}
 	for _, item := range turn.ToolCalls {
-		ordinals = append(ordinals, item.Ordinal)
+		got[item.ItemID] = item.Ordinal
 	}
 	for _, item := range turn.AgentMessages {
-		ordinals = append(ordinals, item.Ordinal)
+		got[item.ItemID] = item.Ordinal
 	}
-	for i := 1; i <= len(ordinals); i++ {
-		found := false
-		for _, ordinal := range ordinals {
-			if ordinal == i {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("ordinal %d missing from %#v", i, ordinals)
-		}
+	want := map[string]int{
+		"":               1, // Instructions have no wire item ID.
+		"item-message-a": 2, "item-output-a": 3, "item-message-b": 4,
+		"item-agent": 5, "item-output-b": 6, "item-call": 7, "item-message-output": 8,
+	}
+	if !maps.Equal(got, want) {
+		t.Fatalf("item ordinals = %#v, want %#v", got, want)
 	}
 }

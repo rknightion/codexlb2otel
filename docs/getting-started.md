@@ -68,9 +68,9 @@ loosening the archive's permissions.
 1. Enable OTLP metrics and confirm series arrive.
 2. Review [Security](security.md), choose `loki.record_types`, then enable Loki.
 3. Treat traces and Agent Observability as separate optional sinks for deployments that explicitly
-   need them and have the required scopes. Camden keeps both disabled permanently because native
-   per-profile Codex integration owns Agent Observability there; source-level trace-link tests do
-   not imply live signal delivery.
+   need them and have the required scopes. Camden keeps traces disabled by its settled deployment
+   decision. Agent Observability remains disabled because native per-profile Codex integration owns
+   that observation path. Source-level trace-link tests do not imply live signal delivery.
 
 See [Configuration](configuration.md) for secret indirection and [Troubleshooting](troubleshooting.md)
 for empty-output and delivery failures.
