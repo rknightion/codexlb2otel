@@ -27,13 +27,15 @@ type State struct {
 	PrevSeen map[string]time.Time  `json:"prev_seen,omitempty"`
 	Seq      map[string]int        `json:"seq"`
 	SeqSeen  map[string]time.Time  `json:"seq_seen,omitempty"`
+	Calls    callIndex             `json:"calls"`
 }
 
-// stateVersion 4 adds per-entry archive timestamps. State eviction is deliberately
+// stateVersion 5 persists the pending tool-call correlation index. Version 4 adds
+// per-entry archive timestamps. State eviction is deliberately
 // age-based, anchored to the newest archive event timestamp seen for the series, not
 // the wall clock. Without persisting that anchor, a restart would either evict every
 // restored baseline immediately or keep all of them forever.
-const stateVersion = 4
+const stateVersion = 5
 
 // cumulativeWire is the checkpoint's on-disk shape for cumulative. A named struct
 // rather than an inline literal in both Marshal and Unmarshal, because the inline
@@ -125,6 +127,7 @@ func (r *Reducer) Snapshot() State {
 		PrevSeen: make(map[string]time.Time, len(r.prev)),
 		Seq:      make(map[string]int, len(r.seq)),
 		SeqSeen:  make(map[string]time.Time, len(r.seq)),
+		Calls:    r.calls.snapshot(),
 	}
 	for k, v := range r.prev {
 		s.Prev[k] = v
@@ -158,7 +161,7 @@ func (r *Reducer) Restore(s State) {
 // snapshots that predate persisted timestamps. That keeps the first pass after an
 // upgrade from evicting restored state solely because the checkpoint format was old.
 func (r *Reducer) RestoreAt(s State, loadedAt time.Time) {
-	if s.Version != stateVersion && s.Version != 3 {
+	if s.Version != stateVersion && s.Version != 4 && s.Version != 3 {
 		return
 	}
 	if s.Prev != nil {
@@ -169,7 +172,8 @@ func (r *Reducer) RestoreAt(s State, loadedAt time.Time) {
 	}
 	r.lastSeen = make(map[string]time.Time, len(r.prev))
 	r.seqSeen = make(map[string]time.Time, len(r.seq))
-	if s.Version == stateVersion {
+	r.calls = callIndex{}
+	if s.Version >= 4 {
 		for k, ts := range s.PrevSeen {
 			if _, ok := r.prev[k]; ok && !ts.IsZero() {
 				r.lastSeen[k] = ts
@@ -179,6 +183,9 @@ func (r *Reducer) RestoreAt(s State, loadedAt time.Time) {
 			if _, ok := r.seq[thread]; ok && !ts.IsZero() {
 				r.seqSeen[thread] = ts
 			}
+		}
+		if s.Version == stateVersion {
+			r.calls = s.Calls.snapshot()
 		}
 		return
 	}
