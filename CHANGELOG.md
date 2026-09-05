@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.5.0](https://github.com/rknightion/codexlb2otel/compare/v0.4.0...v0.5.0) (2026-09-05)
+
+
+### Features
+
+* adopt September trigger and passive wire events ([651ec43](https://github.com/rknightion/codexlb2otel/commit/651ec43e7fe95af45c1bfa071895741288b8faa5))
+* emit ordered content and cross-response tool links ([f2c0112](https://github.com/rknightion/codexlb2otel/commit/f2c0112aa05de199e9eb7fb2f88fbcdf5cf034a6))
+* enrich turns with proxy waits and upstream diagnostics ([9709b08](https://github.com/rknightion/codexlb2otel/commit/9709b0839d14ecd1a7cad2569e07c293889f9dcb))
+* freeze wave 2 content and proxy enrichment seams ([64f339a](https://github.com/rknightion/codexlb2otel/commit/64f339ac6061413670825c208a1a1b9a6aa0c9c3))
+* persist bounded cross-response tool correlation ([57c1cc1](https://github.com/rknightion/codexlb2otel/commit/57c1cc1c9ac7b48e7b0e9330df9abd3bdab16811))
+* preserve redacted function arguments and capture order ([4f4122c](https://github.com/rknightion/codexlb2otel/commit/4f4122c263e662cecbecf0dbad65f2f892de2a22))
+* record nullable proxy wait distributions and coverage ([9995ccb](https://github.com/rknightion/codexlb2otel/commit/9995ccb2cb8285283e7209ca60ba338ee4d29992))
+* visualize proxy waits and conversation content fidelity ([765fd6f](https://github.com/rknightion/codexlb2otel/commit/765fd6f6f940564ec6472248fc22d79debc36507))
+* wire bounded September metadata from corpus inventory ([e1cab9c](https://github.com/rknightion/codexlb2otel/commit/e1cab9cd02cad6fdfc0bf921462c843916a3e7e5))
+* wire content metadata and proxy metric contracts ([47c98e4](https://github.com/rknightion/codexlb2otel/commit/47c98e403998d3088180534e612773016bbd7524))
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.119 ([#74](https://github.com/rknightion/codexlb2otel/issues/74)) ([e9ef808](https://github.com/rknightion/codexlb2otel/commit/e9ef8084c2bd1e434d6932e160459dc2dc8666a1))
+* keep upstream diagnostics out of Loki content metadata ([848d773](https://github.com/rknightion/codexlb2otel/commit/848d773fdbdd92997a3106030bb512c8fc31d0b5))
+* refresh the archive drift baseline from a full 70-archive scan ([088d7a1](https://github.com/rknightion/codexlb2otel/commit/088d7a1ee4e097c528e2ac3ca7800e3fb64c80ab))
+* scope upstream diagnostics to their response span ([a354d96](https://github.com/rknightion/codexlb2otel/commit/a354d96b423e26df3e2e4ac5e5e2570b5e545221))
+
 ## [0.4.0](https://github.com/rknightion/codexlb2otel/compare/v0.3.0...v0.4.0) (2026-09-04)
 
 
