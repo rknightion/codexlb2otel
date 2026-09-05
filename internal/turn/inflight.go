@@ -42,8 +42,9 @@ type InFlight struct {
 	// the closest thing the wire carries to "what it is doing". Empty while it is still
 	// reasoning or writing prose.
 	LastToolCall string `json:"last_tool_call,omitempty"`
-	// LastToolInput is that call's arguments, already truncated by the reducer's
-	// MaxToolOutputChars. Content - a caller with content disabled must not surface it.
+	// LastToolInput is that call's captured arguments, redacted and bounded by the
+	// reducer's existing MaxToolOutputChars tool-content limit. Content - a caller
+	// with content disabled must not surface it.
 	LastToolInput string `json:"last_tool_input,omitempty"`
 	// SpawnedTask is the child task name when the last call was a spawn, so a live view
 	// can show a subagent starting before that subagent's own first response exists.

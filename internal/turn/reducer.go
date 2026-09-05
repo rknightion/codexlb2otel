@@ -325,6 +325,7 @@ type clientMetadata struct {
 // mismatched field, so a single unexpected shape silently discarded every prompt,
 // the model and the input count for that entire turn. That happened.
 type inputItem struct {
+	ID      string          `json:"id"`
 	Type    string          `json:"type"`
 	Role    string          `json:"role"`
 	CallID  string          `json:"call_id"`
@@ -474,6 +475,7 @@ func (r *Reducer) applyCreate(t *Turn, ev frame.Event) {
 		if r.opts.MaxPromptChars > 0 && r.seen.add("instructions", t.InstructionsHash) {
 			text, _ := truncate(c.Instructions, r.opts.MaxPromptChars)
 			t.Prompts = append(t.Prompts, Prompt{
+				Ordinal: r.nextContentOrdinal(t), CapturedAt: t.LastTS, Provenance: "unknown",
 				Role: "instructions", Chars: len(c.Instructions), Text: text,
 			})
 		}
@@ -601,6 +603,7 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 			}
 			text, _ := truncate(body, r.opts.MaxPromptChars)
 			t.Prompts = append(t.Prompts, Prompt{
+				Ordinal: r.nextContentOrdinal(t), ItemID: it.ID, CapturedAt: t.LastTS, Provenance: "replayed",
 				Role: it.Role, Chars: len(body), Text: text,
 				Images: images, ImageMIME: imageMIME,
 			})
@@ -614,7 +617,7 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 			if !r.seen.add(t.ThreadID, "agentmsg", it.Author, it.Recipient, body) {
 				continue
 			}
-			am := AgentMessage{Author: it.Author, Recipient: it.Recipient, Chars: len(body)}
+			am := AgentMessage{Ordinal: r.nextContentOrdinal(t), ItemID: it.ID, CapturedAt: t.LastTS, Provenance: "replayed", Author: it.Author, Recipient: it.Recipient, Chars: len(body)}
 			if r.opts.MaxPromptChars > 0 {
 				am.Text, _ = truncate(body, r.opts.MaxPromptChars)
 			}
@@ -644,6 +647,7 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 			r.calls.advance(t.LastTS)
 			origin, match := r.calls.lookup(t.ThreadID, it.CallID)
 			t.ToolOutputs = append(t.ToolOutputs, ToolOutput{
+				Ordinal: r.nextContentOrdinal(t), ItemID: it.ID, CapturedAt: t.LastTS, Provenance: "replayed",
 				CallID: it.CallID, Chars: len(body), Truncated: cut, Text: text,
 				OriginResponseID: origin.ResponseID, OriginTurnID: origin.TurnID,
 				OriginToolName: origin.ToolName, OriginMatch: match,
@@ -860,6 +864,7 @@ func (r *Reducer) applyInProgress(t *Turn, ev frame.Event) {
 
 type outputItemEvent struct {
 	Item struct {
+		ID        string `json:"id"`
 		Type      string `json:"type"`
 		Name      string `json:"name"`
 		CallID    string `json:"call_id"`
@@ -891,20 +896,37 @@ func (r *Reducer) applyOutputItem(t *Turn, ev frame.Event) {
 	it := e.Item
 	t.ItemCounts[it.Type]++
 	if it.Type == "custom_tool_call" || it.Type == "function_call" {
-		r.calls.advance(t.LastTS)
-		r.calls.record(t.ThreadID, it.CallID, callRef{ResponseID: t.ResponseID, TurnID: t.TurnID, ToolName: it.Name, CapturedAt: t.LastTS})
+		key := it.CallID
+		if key == "" {
+			key = it.Name + "\x00" + it.Input + "\x00" + it.Arguments
+		}
+		responseKey := t.ResponseID
+		if responseKey == "" {
+			responseKey = t.RequestID
+		}
+		// A replayed output-item event must neither append a second call nor reopen a
+		// correlation entry that a prior result consumed. A call ID reused by a
+		// separate response remains observable so correlation can classify it as
+		// ambiguous instead of silently choosing one origin.
+		if !r.seen.add(t.ThreadID, "call", responseKey, key) {
+			return
+		}
 	}
 
 	switch it.Type {
 	case "custom_tool_call":
 		t.ToolCalls = append(t.ToolCalls, ToolCall{
+			Ordinal: r.nextContentOrdinal(t), ItemID: it.ID, CapturedAt: t.LastTS, Provenance: "live",
 			Kind: "custom", Name: it.Name, CallID: it.CallID,
 			Status: it.Status, InputChars: len(it.Input), Input: it.Input,
 		})
 	case "function_call":
+		input, omitted, truncated := redactFunctionArguments(it.Arguments, r.opts.MaxToolOutputChars)
 		tc := ToolCall{
+			Ordinal: r.nextContentOrdinal(t), ItemID: it.ID, CapturedAt: t.LastTS, Provenance: "live",
 			Kind: "function", Name: it.Name, CallID: it.CallID,
-			Status: it.Status, InputChars: len(it.Arguments),
+			Status: it.Status, InputChars: len(it.Arguments), Input: input,
+			InputOmitted: omitted, InputTruncated: truncated,
 		}
 		var a spawnArgs
 		if json.Unmarshal([]byte(it.Arguments), &a) == nil {
@@ -918,11 +940,21 @@ func (r *Reducer) applyOutputItem(t *Turn, ev frame.Event) {
 				body += c.Text
 			}
 		}
-		t.Messages = append(t.Messages, Message{Phase: it.Phase, Chars: len(body), Text: body})
+		t.Messages = append(t.Messages, Message{Ordinal: r.nextContentOrdinal(t), ItemID: it.ID, CapturedAt: t.LastTS, Provenance: "live", Phase: it.Phase, Chars: len(body), Text: body})
 	case "reasoning":
 		// Content is Fernet-encrypted by OpenAI and cannot be read. Size only.
 		t.ReasoningEnc += len(it.Encrypted)
 	}
+	if it.Type == "custom_tool_call" || it.Type == "function_call" {
+		r.calls.advance(t.LastTS)
+		r.calls.record(t.ThreadID, it.CallID, callRef{ResponseID: t.ResponseID, TurnID: t.TurnID, ToolName: it.Name, CapturedAt: t.LastTS})
+	}
+}
+
+// nextContentOrdinal creates one capture-order sequence across the content slices
+// without expanding Turn's shared checkpointed contract.
+func (r *Reducer) nextContentOrdinal(t *Turn) int {
+	return len(t.Prompts) + len(t.Messages) + len(t.ToolCalls) + len(t.ToolOutputs) + len(t.AgentMessages) + 1
 }
 
 type timingEvent struct {
