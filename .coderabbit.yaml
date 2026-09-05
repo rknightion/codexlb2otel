@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Product-specific additions to the central CodeRabbit defaults.
+# Keep inheritance enabled; shared review policy lives in the owner/coderabbit repository.
+inheritance: true
+reviews:
+  path_filters:
+  - '!dashboards/v2/.metrics_from_code.txt'
+  - '!dashboards/v2/codexlb2otel-full.json'
+  path_instructions:
+  - path: internal/**/*.go
+    instructions: >-
+      Preserve append-only archive semantics, gzip-member boundaries and archive-order reduction across
+      rotations. A sampled probe detects common drift but cannot prove a rare shape absent; only the explicit
+      full-corpus path supports exhaustive claims. Keep Postgres enrichment optional so a missing DSN,
+      timeout or query error does not stop archive ingestion or other sinks, and bound lookup caches and
+      concurrency.
+  - path: internal/fixture/**/*.go
+    instructions: >-
+      Conversation archives contain personal data and must never become tracked fixtures. Preserve tracked-file
+      and ignore guards. corpus.sig.json records shape only and must not retain prompts, messages, tool
+      input/output, identifiers or example values.
+  - path: dashboards/v2/generate.py
+    instructions: >-
+      Keep dashboard queries aligned with metric names derived from internal/attr/names.go and with Loki/Tempo
+      record semantics. Do not infer absence from the generated sidecar alone or expose conversation content
+      in labels, annotations or examples.
+knowledge_base:
+  linked_repositories:
+  - repository: rknightion/codex-lb
+    instructions: >-
+      Use codex-lb's current archive writer, frame schema, gzip rotation/member behaviour and request-log
+      identifiers when reviewing decoder or reducer compatibility. Treat codex-lb as the producer of proxy
+      internals; codexlb2otel must not invent a second source of truth.
