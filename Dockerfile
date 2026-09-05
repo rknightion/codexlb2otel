@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.26
+# syntax=docker/dockerfile:1.27
 #
 # Multi-stage build for codexlb2otel (issue #10). Packaging only - see the issue's
 # 2026-08-07 binding decision: this image is NOT deployed by this change, and
