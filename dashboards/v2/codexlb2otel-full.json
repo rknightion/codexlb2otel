@@ -4926,6 +4926,138 @@
         "kind": "Panel",
         "spec": {
           "id": 66,
+          "title": "Proxy wait by kind (p95)",
+          "description": "Separately observed proxy waits, including measured zeros. Missing values do not enter the histogram; these waits are never summed into end-to-end latency.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "histogram_quantile(0.95, sum by (le, codexlb_proxy_wait_kind) (rate(codexlb_proxy_wait_seconds_bucket{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval])))",
+                        "legendFormat": "{{codexlb_proxy_wait_kind}}"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "s"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-67": {
+        "kind": "Panel",
+        "spec": {
+          "id": 67,
+          "title": "Proxy wait coverage",
+          "description": "One present or absent observation per wait kind per response. Absence is coverage information, never a measured zero.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum by (codexlb_proxy_wait_kind, codexlb_selfobs_result) (rate(codexlb_proxy_wait_coverage_total{job=\"codexlb2otel\", codexlb_family=~\"$family\"}[$__rate_interval]))",
+                        "legendFormat": "{{codexlb_proxy_wait_kind}} / {{codexlb_selfobs_result}}"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "ops"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-68": {
+        "kind": "Panel",
+        "spec": {
+          "id": 68,
           "title": "How to read this tab",
           "description": "",
           "links": [],
@@ -4954,10 +5086,10 @@
           }
         }
       },
-      "panel-67": {
+      "panel-69": {
         "kind": "Panel",
         "spec": {
-          "id": 67,
+          "id": 69,
           "title": "Critical path stages (p95)",
           "description": "Stacked p95 by stage. Stacking quantiles is not arithmetically exact - p95s do not sum - but it is the fastest way to see WHICH stage moved, which is the question this panel exists to answer. Use the mean panel below when you need the sum to be honest.",
           "links": [],
@@ -5085,10 +5217,10 @@
           }
         }
       },
-      "panel-68": {
+      "panel-70": {
         "kind": "Panel",
         "spec": {
-          "id": 68,
+          "id": 70,
           "title": "Critical path stages (mean, additive)",
           "description": "Means DO sum, so this stack is a true decomposition. Split by critical_path_coverage so a partial attribution cannot masquerade as a complete one.",
           "links": [],
@@ -5197,10 +5329,10 @@
           }
         }
       },
-      "panel-69": {
+      "panel-71": {
         "kind": "Panel",
         "spec": {
-          "id": 69,
+          "id": 71,
           "title": "Engine wall by family",
           "description": "Time the upstream engine was working, as it reported it. The low-level histogram retains family for probe exclusion but omits model to stay within the measured active-series budget; use operation duration for model cohorts.",
           "links": [],
@@ -5301,10 +5433,10 @@
           }
         }
       },
-      "panel-70": {
+      "panel-72": {
         "kind": "Panel",
         "spec": {
-          "id": 70,
+          "id": 72,
           "title": "Service vs IAPI inference",
           "description": "Two measurements of the same inference from different layers. A widening gap is overhead between them, not a slower model.",
           "links": [],
@@ -5386,10 +5518,10 @@
           }
         }
       },
-      "panel-71": {
+      "panel-73": {
         "kind": "Panel",
         "spec": {
-          "id": 71,
+          "id": 73,
           "title": "Service vs IAPI sampling",
           "description": "Same pairing for the sampling phase - generating tokens once the prompt is processed.",
           "links": [],
@@ -5471,10 +5603,10 @@
           }
         }
       },
-      "panel-72": {
+      "panel-74": {
         "kind": "Panel",
         "spec": {
-          "id": 72,
+          "id": 74,
           "title": "Time between tokens",
           "description": "TBT is what streaming feels like. The service-minus-iapi gap is transport and queueing between the two layers - if that is what is large, the model is not the problem.",
           "links": [],
@@ -5575,10 +5707,10 @@
           }
         }
       },
-      "panel-73": {
+      "panel-75": {
         "kind": "Panel",
         "spec": {
-          "id": 73,
+          "id": 75,
           "title": "Time to first token (gen_ai semconv)",
           "description": "TTFT dominates perceived responsiveness far more than total duration does.",
           "links": [],
@@ -5679,10 +5811,10 @@
           }
         }
       },
-      "panel-74": {
+      "panel-76": {
         "kind": "Panel",
         "spec": {
-          "id": 74,
+          "id": 76,
           "title": "Time to first token by REQUESTED service tier",
           "description": "Whether priority processing is worth having. Grouped by what the client ASKED for, because what the server reports having served is not a usable answer: across every response after the 2026-08-08 cutover the request said priority and the response said default, never once priority. So this panel, and the mean below, are the measurement - the served label is not. The series with no tier is the pre-cutover baseline, absent rather than empty; once every request asks for a tier it stops advancing and the comparison becomes historical rather than live.",
           "links": [],
@@ -5783,10 +5915,10 @@
           }
         }
       },
-      "panel-75": {
+      "panel-77": {
         "kind": "Panel",
         "spec": {
-          "id": 75,
+          "id": 77,
           "title": "Turn duration mean by requested service tier",
           "description": "The mean, not a quantile, and end-to-end rather than to-first-token: a tier change should move the whole distribution, and comparing two p95s across a changeover conflates the shift with whatever else moved in the window. Read it alongside the TTFT panel above - TTFT is where a queueing change shows up first and largest.",
           "links": [],
@@ -5849,10 +5981,10 @@
           }
         }
       },
-      "panel-76": {
+      "panel-78": {
         "kind": "Panel",
         "spec": {
-          "id": 76,
+          "id": 78,
           "title": "Response duration, with stages excluded",
           "description": "The same response with different components subtracted. Differences between these lines ARE the components - this is how you attribute latency without trusting a single computed breakdown.",
           "links": [],
@@ -5972,10 +6104,10 @@
           }
         }
       },
-      "panel-77": {
+      "panel-79": {
         "kind": "Panel",
         "spec": {
-          "id": 77,
+          "id": 79,
           "title": "gen_ai client operation duration (by status)",
           "description": "The OTel GenAI standard latency histogram, split by outcome. Errors that are FAST and errors that are SLOW are different failures.",
           "links": [],
@@ -6076,10 +6208,10 @@
           }
         }
       },
-      "panel-78": {
+      "panel-80": {
         "kind": "Panel",
         "spec": {
-          "id": 78,
+          "id": 80,
           "title": "Engine wall heatmap",
           "description": "The distribution rather than its summary. Bimodality - two bands - means two populations of request, which a p95 line hides completely. A single narrow vertical band is the backlog-replay artifact described on the Overview tab, not a real burst: every bucket was filled during one catch-up pass.",
           "links": [],
@@ -6165,10 +6297,10 @@
           }
         }
       },
-      "panel-79": {
+      "panel-81": {
         "kind": "Panel",
         "spec": {
-          "id": 79,
+          "id": 81,
           "title": "Client tool pause",
           "description": "Time the model spent waiting on a CLIENT-side tool - the harness, not the provider. Expected empty on this capture. When it is not empty, this is latency you own and can actually fix.",
           "links": [],
@@ -6231,10 +6363,10 @@
           }
         }
       },
-      "panel-80": {
+      "panel-82": {
         "kind": "Panel",
         "spec": {
-          "id": 80,
+          "id": 82,
           "title": "Tool call rate by tool",
           "description": "Which tools the agent actually reaches for.",
           "links": [],
@@ -6305,10 +6437,10 @@
           }
         }
       },
-      "panel-81": {
+      "panel-83": {
         "kind": "Panel",
         "spec": {
-          "id": 81,
+          "id": 83,
           "title": "Tool calls in range",
           "description": "Same data ranked. The long tail is usually more interesting than the head.",
           "links": [],
@@ -6363,10 +6495,10 @@
           }
         }
       },
-      "panel-82": {
+      "panel-84": {
         "kind": "Panel",
         "spec": {
-          "id": 82,
+          "id": 84,
           "title": "Tool calls per operation",
           "description": "How many tools one response invokes. A rising p99 is an agent looping - it costs tokens and latency without necessarily failing, so nothing else alerts.",
           "links": [],
@@ -6467,10 +6599,10 @@
           }
         }
       },
-      "panel-83": {
+      "panel-85": {
         "kind": "Panel",
         "spec": {
-          "id": 83,
+          "id": 85,
           "title": "Tool call records",
           "description": "Individual tool invocations with arguments, bounded at 16KB per call. Truncation is marked inline with the original length.",
           "links": [],
@@ -6525,10 +6657,10 @@
           }
         }
       },
-      "panel-84": {
+      "panel-86": {
         "kind": "Panel",
         "spec": {
-          "id": 84,
+          "id": 86,
           "title": "Tool output records",
           "description": "What came back. Paired with the call above by turn and thread id.",
           "links": [],
@@ -6583,10 +6715,10 @@
           }
         }
       },
-      "panel-85": {
+      "panel-87": {
         "kind": "Panel",
         "spec": {
-          "id": 85,
+          "id": 87,
           "title": "Subagent activity",
           "description": "Turns attributable to a subagent rather than the top-level thread. Only the instructions record carries subagent lineage, which is why this is derived from turns rather than counted directly.",
           "links": [],
@@ -6652,10 +6784,10 @@
           }
         }
       },
-      "panel-86": {
+      "panel-88": {
         "kind": "Panel",
         "spec": {
-          "id": 86,
+          "id": 88,
           "title": "Instructions records (agent lineage)",
           "description": "The only record carrying parent_thread_id, parent_turn_id, forked_from_thread_id and subagent_kind - the agent tree lives here. instructions_hash lets you tell a prompt change from a prompt reuse.",
           "links": [],
@@ -6710,10 +6842,10 @@
           }
         }
       },
-      "panel-87": {
+      "panel-89": {
         "kind": "Panel",
         "spec": {
-          "id": 87,
+          "id": 89,
           "title": "Agent messages",
           "description": "What the agent said, as opposed to what it did.",
           "links": [],
@@ -6768,10 +6900,10 @@
           }
         }
       },
-      "panel-88": {
+      "panel-90": {
         "kind": "Panel",
         "spec": {
-          "id": 88,
+          "id": 90,
           "title": "Agent-message topology",
           "description": "Author to recipient edges from agent-message records. This is the message topology rather than an inferred tree.",
           "links": [],
@@ -6826,10 +6958,10 @@
           }
         }
       },
-      "panel-89": {
+      "panel-91": {
         "kind": "Panel",
         "spec": {
-          "id": 89,
+          "id": 91,
           "title": "Parent and child threads",
           "description": "Parent and child thread pairs from the instruction record that establishes agent lineage.",
           "links": [],
@@ -6884,10 +7016,10 @@
           }
         }
       },
-      "panel-90": {
+      "panel-92": {
         "kind": "Panel",
         "spec": {
-          "id": 90,
+          "id": 92,
           "title": "Primary window utilisation",
           "description": "Percent of the account's primary rate-limit window consumed. This is reported BY the provider in the frames, not inferred here.",
           "links": [],
@@ -6969,10 +7101,10 @@
           }
         }
       },
-      "panel-91": {
+      "panel-93": {
         "kind": "Panel",
         "spec": {
-          "id": 91,
+          "id": 93,
           "title": "Secondary window utilisation",
           "description": "The independently reported secondary limit window. Its plan type is retained so unlike accounts are never averaged together.",
           "links": [],
@@ -7054,10 +7186,10 @@
           }
         }
       },
-      "panel-92": {
+      "panel-94": {
         "kind": "Panel",
         "spec": {
-          "id": 92,
+          "id": 94,
           "title": "Per-model window utilisation",
           "description": "Some models carry their own window. This one can be exhausted while the primary window above still looks healthy - that mismatch is exactly the case worth watching.",
           "links": [],
@@ -7139,10 +7271,10 @@
           }
         }
       },
-      "panel-93": {
+      "panel-95": {
         "kind": "Panel",
         "spec": {
-          "id": 93,
+          "id": 95,
           "title": "Time until window reset",
           "description": "Sawtooth is healthy - it should fall to zero and jump back. A flat line means the value has stopped being refreshed and everything above it is stale.",
           "links": [],
@@ -7205,10 +7337,10 @@
           }
         }
       },
-      "panel-94": {
+      "panel-96": {
         "kind": "Panel",
         "spec": {
-          "id": 94,
+          "id": 96,
           "title": "Current utilisation",
           "description": "At-a-glance headroom per account.",
           "links": [],
@@ -7288,10 +7420,10 @@
           }
         }
       },
-      "panel-95": {
+      "panel-97": {
         "kind": "Panel",
         "spec": {
-          "id": 95,
+          "id": 97,
           "title": "Traffic by plan type and service tier",
           "description": "Plan governs the limits; tier governs the queue. Both change what a given latency number means.",
           "links": [],
@@ -7349,10 +7481,10 @@
           }
         }
       },
-      "panel-96": {
+      "panel-98": {
         "kind": "Panel",
         "spec": {
-          "id": 96,
+          "id": 98,
           "title": "Requested vs served service tier",
           "description": "What was asked for against what the platform says it served. These do NOT agree and are not expected to: measured over the 332 responses following the 2026-08-08 priority cutover, every request asked priority and every response reported default (321) or auto (9). Whether that is the platform declining to serve priority or simply not reporting it is not answerable from the capture, so both sides are carried and this panel shows the disagreement rather than resolving it. The latency tab is where the question of whether it MATTERS gets answered.",
           "links": [],
@@ -7410,10 +7542,10 @@
           }
         }
       },
-      "panel-97": {
+      "panel-99": {
         "kind": "Panel",
         "spec": {
-          "id": 97,
+          "id": 99,
           "title": "Engine calls by account",
           "description": "Upstream invocations attributed to each account - the thing the rate limits above are actually counting.",
           "links": [],
@@ -7484,10 +7616,10 @@
           }
         }
       },
-      "panel-98": {
+      "panel-100": {
         "kind": "Panel",
         "spec": {
-          "id": 98,
+          "id": 100,
           "title": "Error rate by type and code",
           "description": "Errors carried in the archive - the provider's and the harness's, not this exporter's. For the exporter's own health use the Pipeline tab.",
           "links": [],
@@ -7568,10 +7700,10 @@
           }
         }
       },
-      "panel-99": {
+      "panel-101": {
         "kind": "Panel",
         "spec": {
-          "id": 99,
+          "id": 101,
           "title": "Errors by model and status",
           "description": "Errors concentrated on one model are a different problem from errors spread across all of them.",
           "links": [],
@@ -7629,10 +7761,10 @@
           }
         }
       },
-      "panel-100": {
+      "panel-102": {
         "kind": "Panel",
         "spec": {
-          "id": 100,
+          "id": 102,
           "title": "Transport events",
           "description": "WebSocket-level events - connection open, close, error - split by close code. A close-code storm here explains latency and error spikes that look inexplicable at the response layer.",
           "links": [],
@@ -7700,10 +7832,10 @@
           }
         }
       },
-      "panel-101": {
+      "panel-103": {
         "kind": "Panel",
         "spec": {
-          "id": 101,
+          "id": 103,
           "title": "Safety buffering events",
           "description": "The provider held the stream back for a safety check. Directly visible to the user as a stall, and invisible in every latency histogram that measures the engine rather than the stream.",
           "links": [],
@@ -7771,10 +7903,10 @@
           }
         }
       },
-      "panel-102": {
+      "panel-104": {
         "kind": "Panel",
         "spec": {
-          "id": 102,
+          "id": 104,
           "title": "Error records",
           "description": "Full error records including error_message and error_code, with the thread and turn ids needed to find what the user was doing at the time.",
           "links": [],
@@ -7829,10 +7961,10 @@
           }
         }
       },
-      "panel-103": {
+      "panel-105": {
         "kind": "Panel",
         "spec": {
-          "id": 103,
+          "id": 105,
           "title": "Transport records",
           "description": "Individual transport frames with transport_event and frame_type.",
           "links": [],
@@ -7887,10 +8019,10 @@
           }
         }
       },
-      "panel-104": {
+      "panel-106": {
         "kind": "Panel",
         "spec": {
-          "id": 104,
+          "id": 106,
           "title": "Conversation records",
           "description": "",
           "links": [],
@@ -7919,10 +8051,10 @@
           }
         }
       },
-      "panel-105": {
+      "panel-107": {
         "kind": "Panel",
         "spec": {
-          "id": 105,
+          "id": 107,
           "title": "Record volume by type",
           "description": "All nine types stacked. Ratios between them are stable in normal operation, so a change in shape is a change in how the agent is being used.",
           "links": [],
@@ -7994,10 +8126,10 @@
           }
         }
       },
-      "panel-106": {
+      "panel-108": {
         "kind": "Panel",
         "spec": {
-          "id": 106,
+          "id": 108,
           "title": "Record volume by family",
           "description": "websocket vs unknown. A rising unknown share means frames are arriving in a shape the classifier does not recognise - worth investigating before it becomes a silent gap.",
           "links": [],
@@ -8066,10 +8198,10 @@
           }
         }
       },
-      "panel-107": {
+      "panel-109": {
         "kind": "Panel",
         "spec": {
-          "id": 107,
+          "id": 109,
           "title": "User prompts",
           "description": "What was actually asked. Carries the same thread/session/window metadata as everything else, so any line here pivots straight into the matching turn.",
           "links": [],
@@ -8124,10 +8256,10 @@
           }
         }
       },
-      "panel-108": {
+      "panel-110": {
         "kind": "Panel",
         "spec": {
-          "id": 108,
+          "id": 110,
           "title": "Messages",
           "description": "Conversation messages carrying full token accounting per line.",
           "links": [],
@@ -8182,10 +8314,10 @@
           }
         }
       },
-      "panel-109": {
+      "panel-111": {
         "kind": "Panel",
         "spec": {
-          "id": 109,
+          "id": 111,
           "title": "All records, live",
           "description": "Everything, filtered by the tab variables. The catch-all view for when you do not yet know which record type holds the answer.",
           "links": [],
@@ -8240,10 +8372,10 @@
           }
         }
       },
-      "panel-110": {
+      "panel-112": {
         "kind": "Panel",
         "spec": {
-          "id": 110,
+          "id": 112,
           "title": "Search all record content",
           "description": "Case-insensitive regex over line content, driven by the $search variable at the top. Leave it as . to match everything.",
           "links": [],
@@ -8298,10 +8430,10 @@
           }
         }
       },
-      "panel-111": {
+      "panel-113": {
         "kind": "Panel",
         "spec": {
-          "id": 111,
+          "id": 113,
           "title": "Lookup by request, response, or thread ID",
           "description": "Exact lookup across every record kind by request_id, response_id, or thread_id. Leave $id blank until an identifier is pasted.",
           "links": [],
@@ -8356,10 +8488,10 @@
           }
         }
       },
-      "panel-112": {
+      "panel-114": {
         "kind": "Panel",
         "spec": {
-          "id": 112,
+          "id": 114,
           "title": "Trace structure",
           "description": "",
           "links": [],
@@ -8388,10 +8520,10 @@
           }
         }
       },
-      "panel-113": {
+      "panel-115": {
         "kind": "Panel",
         "spec": {
-          "id": 113,
+          "id": 115,
           "title": "Slowest turns",
           "description": "Root spans over 30 seconds. Click a trace id to open the waterfall and see which critical-path child owns the time.",
           "links": [],
@@ -8449,10 +8581,10 @@
           }
         }
       },
-      "panel-114": {
+      "panel-116": {
         "kind": "Panel",
         "spec": {
-          "id": 114,
+          "id": 116,
           "title": "Recent turns",
           "description": "Every logical turn as a trace, newest first.",
           "links": [],
@@ -8510,10 +8642,10 @@
           }
         }
       },
-      "panel-115": {
+      "panel-117": {
         "kind": "Panel",
         "spec": {
-          "id": 115,
+          "id": 117,
           "title": "Tool execution spans",
           "description": "One span per tool call, carrying the bounded arguments. The 16KB bound is applied at a rune boundary, so a truncated argument is still valid UTF-8.",
           "links": [],
@@ -8571,10 +8703,10 @@
           }
         }
       },
-      "panel-116": {
+      "panel-118": {
         "kind": "Panel",
         "spec": {
-          "id": 116,
+          "id": 118,
           "title": "Agent invocation spans",
           "description": "Spawn-agent calls as their own GenAI operation, including the child agent name and bounded task metadata.",
           "links": [],
@@ -8632,10 +8764,10 @@
           }
         }
       },
-      "panel-117": {
+      "panel-119": {
         "kind": "Panel",
         "spec": {
-          "id": 117,
+          "id": 119,
           "title": "Model call spans",
           "description": "The inference spans. Span name is `<operation> <model>`, so the model is greppable without opening the span, and the operation says whether the response streamed. Named generateText/streamText rather than the GenAI convention's `chat` because that is the vocabulary Grafana agent observability recognises - see attr's GenAIOperationGenerateText (#32).",
           "links": [],
@@ -8693,10 +8825,10 @@
           }
         }
       },
-      "panel-118": {
+      "panel-120": {
         "kind": "Panel",
         "spec": {
-          "id": 118,
+          "id": 120,
           "title": "Critical path spans",
           "description": "The stage spans on their own, for when you want to compare one stage across many turns rather than all stages within one turn.",
           "links": [],
@@ -8754,10 +8886,10 @@
           }
         }
       },
-      "panel-119": {
+      "panel-121": {
         "kind": "Panel",
         "spec": {
-          "id": 119,
+          "id": 121,
           "title": "Errored turns",
           "description": "Traces whose root span carries error status. Empty is the expected state.",
           "links": [],
@@ -8815,10 +8947,10 @@
           }
         }
       },
-      "panel-120": {
+      "panel-122": {
         "kind": "Panel",
         "spec": {
-          "id": 120,
+          "id": 122,
           "title": "This tab is about the exporter, not the agent",
           "description": "",
           "links": [],
@@ -8847,10 +8979,10 @@
           }
         }
       },
-      "panel-121": {
+      "panel-123": {
         "kind": "Panel",
         "spec": {
-          "id": 121,
+          "id": 123,
           "title": "Ingest lag",
           "description": "Sustained growth means the tailer is falling behind the writer. Healthy is around the poll interval.",
           "links": [],
@@ -8930,10 +9062,10 @@
           }
         }
       },
-      "panel-122": {
+      "panel-124": {
         "kind": "Panel",
         "spec": {
-          "id": 122,
+          "id": 124,
           "title": "Read throughput",
           "description": "Compressed archive bytes consumed per second. Spikes on startup as the backlog is worked through, then settles to the write rate.",
           "links": [],
@@ -8996,10 +9128,10 @@
           }
         }
       },
-      "panel-123": {
+      "panel-125": {
         "kind": "Panel",
         "spec": {
-          "id": 123,
+          "id": 125,
           "title": "Decode pipeline",
           "description": "The three stages of reduction. Lines far exceeding turns is normal - many frames reduce to one turn.",
           "links": [],
@@ -9100,10 +9232,10 @@
           }
         }
       },
-      "panel-124": {
+      "panel-126": {
         "kind": "Panel",
         "spec": {
-          "id": 124,
+          "id": 126,
           "title": "Partial member reads",
           "description": "A gzip member cut off mid-write at the tail of the file. This is the NORMAL steady state of tailing a file being appended to, and a healthy rate here is the signal that ingestion is keeping up. Deliberately never conflated with decode errors below.",
           "links": [],
@@ -9171,10 +9303,10 @@
           }
         }
       },
-      "panel-125": {
+      "panel-127": {
         "kind": "Panel",
         "spec": {
-          "id": 125,
+          "id": 127,
           "title": "Data faults",
           "description": "A complete-but-corrupt gzip member, or a line that would not parse. Unlike partial reads above, these are real faults: counted, dropped, and the checkpoint moves past them so one bad byte cannot wedge the pipeline.",
           "links": [],
@@ -9274,10 +9406,10 @@
           }
         }
       },
-      "panel-126": {
+      "panel-128": {
         "kind": "Panel",
         "spec": {
-          "id": 126,
+          "id": 128,
           "title": "Archive files",
           "description": "Watched should track the retention window. Replacements count a file recreated at the same name as different content - real behaviour, caught by fingerprinting the head rather than trusting the path.",
           "links": [],
@@ -9378,10 +9510,10 @@
           }
         }
       },
-      "panel-127": {
+      "panel-129": {
         "kind": "Panel",
         "spec": {
-          "id": 127,
+          "id": 129,
           "title": "Current file offset",
           "description": "How far into the live archive file the checkpoint has advanced. Sawtooth as each hour's file rolls over.",
           "links": [],
@@ -9444,10 +9576,10 @@
           }
         }
       },
-      "panel-128": {
+      "panel-130": {
         "kind": "Panel",
         "spec": {
-          "id": 128,
+          "id": 130,
           "title": "Reducer state",
           "description": "Open responses growing without bound means completion frames are not arriving. Persisted series and threads are never pruned by design, so slow growth is expected and fast growth is not. Evictions are in-flight responses given up on - measured against the archive's watermark, not the wall clock, so a backlog does not evict everything on the first pass.",
           "links": [],
@@ -9567,10 +9699,10 @@
           }
         }
       },
-      "panel-129": {
+      "panel-131": {
         "kind": "Panel",
         "spec": {
-          "id": 129,
+          "id": 131,
           "title": "Sink backlog",
           "description": "Lines buffered and not yet pushed, per sink. Should hover near zero and return to it.",
           "links": [],
@@ -9633,10 +9765,10 @@
           }
         }
       },
-      "panel-130": {
+      "panel-132": {
         "kind": "Panel",
         "spec": {
-          "id": 130,
+          "id": 132,
           "title": "Sink rejections (rate)",
           "description": "Deliveries refused, BY REASON - the reason matters far more than the count. too_old is the Loki max_line_age guard dropping backlog locally rather than letting Loki discard it behind a 204, and is expected while catching up. unauthorized or bad_request is a config fault that will NOT fix itself and holds the checkpoint until someone intervenes.",
           "links": [],
@@ -9704,10 +9836,10 @@
           }
         }
       },
-      "panel-131": {
+      "panel-133": {
         "kind": "Panel",
         "spec": {
-          "id": 131,
+          "id": 133,
           "title": "Sink rejections in range",
           "description": "The rate panel goes flat once rejections stop. This panel counts only rejections that occurred inside the selected range and handles process counter resets.",
           "links": [],
@@ -9781,10 +9913,10 @@
           }
         }
       },
-      "panel-132": {
+      "panel-134": {
         "kind": "Panel",
         "spec": {
-          "id": 132,
+          "id": 134,
           "title": "Enrichment lookups by result",
           "description": "Postgres enrichment outcomes: cache_hit, db_hit, miss, error, or disabled.",
           "links": [],
@@ -9847,10 +9979,10 @@
           }
         }
       },
-      "panel-133": {
+      "panel-135": {
         "kind": "Panel",
         "spec": {
-          "id": 133,
+          "id": 135,
           "title": "Enrichment cache hit rate",
           "description": "Cache hits as a share of every enrichment attempt. Disabled enrichment is included so a configuration change remains visible.",
           "links": [],
@@ -9917,10 +10049,10 @@
           }
         }
       },
-      "panel-134": {
+      "panel-136": {
         "kind": "Panel",
         "spec": {
-          "id": 134,
+          "id": 136,
           "title": "Enrichment lookup latency",
           "description": "Database-attempt lookup latency. Cache hits and disabled enrichment deliberately have no synthetic zero observation.",
           "links": [],
@@ -10002,10 +10134,10 @@
           }
         }
       },
-      "panel-135": {
+      "panel-137": {
         "kind": "Panel",
         "spec": {
-          "id": 135,
+          "id": 137,
           "title": "Enrichment cache entries",
           "description": "Response rows currently held by the enrichment LRU.",
           "links": [],
@@ -10068,10 +10200,10 @@
           }
         }
       },
-      "panel-136": {
+      "panel-138": {
         "kind": "Panel",
         "spec": {
-          "id": 136,
+          "id": 138,
           "title": "Breaking archive drift findings",
           "description": "Current breaking differences from the embedded archive baseline.",
           "links": [],
@@ -10145,10 +10277,10 @@
           }
         }
       },
-      "panel-137": {
+      "panel-139": {
         "kind": "Panel",
         "spec": {
-          "id": 137,
+          "id": 139,
           "title": "Exporter log stream",
           "description": "codexlb2otel's OWN stdout, collected by the docker integration - a different stream from the conversation records it pushes. This is where a flush failure or a config fault says so in words.",
           "links": [],
@@ -11307,6 +11439,32 @@
                           "name": "panel-79"
                         }
                       }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 59,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-80"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 67,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-81"
+                        }
+                      }
                     }
                   ]
                 }
@@ -11330,7 +11488,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-80"
+                          "name": "panel-82"
                         }
                       }
                     },
@@ -11343,7 +11501,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-81"
+                          "name": "panel-83"
                         }
                       }
                     },
@@ -11354,32 +11512,6 @@
                         "y": 8,
                         "width": 12,
                         "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-82"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 8,
-                        "width": 12,
-                        "height": 10,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-83"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 18,
-                        "width": 12,
-                        "height": 10,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-84"
@@ -11390,12 +11522,38 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
+                        "y": 8,
+                        "width": 12,
+                        "height": 10,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-85"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 18,
+                        "width": 12,
+                        "height": 10,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-86"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
                         "y": 18,
                         "width": 12,
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-85"
+                          "name": "panel-87"
                         }
                       }
                     },
@@ -11408,7 +11566,7 @@
                         "height": 11,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-86"
+                          "name": "panel-88"
                         }
                       }
                     },
@@ -11421,7 +11579,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-87"
+                          "name": "panel-89"
                         }
                       }
                     },
@@ -11434,7 +11592,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-88"
+                          "name": "panel-90"
                         }
                       }
                     },
@@ -11447,7 +11605,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-89"
+                          "name": "panel-91"
                         }
                       }
                     }
@@ -11473,7 +11631,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-90"
+                          "name": "panel-92"
                         }
                       }
                     },
@@ -11486,32 +11644,6 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-91"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 8,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-92"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 8,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
                           "name": "panel-93"
                         }
                       }
@@ -11520,7 +11652,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 16,
+                        "y": 8,
                         "width": 12,
                         "height": 8,
                         "element": {
@@ -11533,7 +11665,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
-                        "y": 16,
+                        "y": 8,
                         "width": 12,
                         "height": 8,
                         "element": {
@@ -11546,7 +11678,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 24,
+                        "y": 16,
                         "width": 12,
                         "height": 8,
                         "element": {
@@ -11559,12 +11691,38 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
-                        "y": 24,
+                        "y": 16,
                         "width": 12,
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-97"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 24,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-98"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 24,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-99"
                         }
                       }
                     }
@@ -11590,7 +11748,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-98"
+                          "name": "panel-100"
                         }
                       }
                     },
@@ -11603,32 +11761,6 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-99"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 8,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-100"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 8,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
                           "name": "panel-101"
                         }
                       }
@@ -11637,9 +11769,9 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 16,
+                        "y": 8,
                         "width": 12,
-                        "height": 11,
+                        "height": 8,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-102"
@@ -11650,12 +11782,38 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
+                        "y": 8,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-103"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
                         "y": 16,
                         "width": 12,
                         "height": 11,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-103"
+                          "name": "panel-104"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 16,
+                        "width": 12,
+                        "height": 11,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-105"
                         }
                       }
                     }
@@ -11681,32 +11839,6 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-104"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 7,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-105"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 7,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
                           "name": "panel-106"
                         }
                       }
@@ -11715,9 +11847,9 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 15,
+                        "y": 7,
                         "width": 12,
-                        "height": 10,
+                        "height": 8,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-107"
@@ -11728,12 +11860,38 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
+                        "y": 7,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-108"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
                         "y": 15,
                         "width": 12,
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-108"
+                          "name": "panel-109"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 15,
+                        "width": 12,
+                        "height": 10,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-110"
                         }
                       }
                     },
@@ -11746,7 +11904,7 @@
                         "height": 12,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-109"
+                          "name": "panel-111"
                         }
                       }
                     },
@@ -11759,7 +11917,7 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-110"
+                          "name": "panel-112"
                         }
                       }
                     },
@@ -11772,7 +11930,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-111"
+                          "name": "panel-113"
                         }
                       }
                     }
@@ -11798,32 +11956,6 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-112"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 7,
-                        "width": 12,
-                        "height": 9,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-113"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 7,
-                        "width": 12,
-                        "height": 9,
-                        "element": {
-                          "kind": "ElementReference",
                           "name": "panel-114"
                         }
                       }
@@ -11832,7 +11964,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 16,
+                        "y": 7,
                         "width": 12,
                         "height": 9,
                         "element": {
@@ -11845,7 +11977,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
-                        "y": 16,
+                        "y": 7,
                         "width": 12,
                         "height": 9,
                         "element": {
@@ -11858,7 +11990,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 25,
+                        "y": 16,
                         "width": 12,
                         "height": 9,
                         "element": {
@@ -11871,7 +12003,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
-                        "y": 25,
+                        "y": 16,
                         "width": 12,
                         "height": 9,
                         "element": {
@@ -11884,12 +12016,38 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
+                        "y": 25,
+                        "width": 12,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-119"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 25,
+                        "width": 12,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-120"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
                         "y": 34,
                         "width": 12,
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-119"
+                          "name": "panel-121"
                         }
                       }
                     }
@@ -11915,32 +12073,6 @@
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-120"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 7,
-                        "width": 8,
-                        "height": 7,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-121"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 8,
-                        "y": 7,
-                        "width": 8,
-                        "height": 7,
-                        "element": {
-                          "kind": "ElementReference",
                           "name": "panel-122"
                         }
                       }
@@ -11948,7 +12080,7 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 16,
+                        "x": 0,
                         "y": 7,
                         "width": 8,
                         "height": 7,
@@ -11961,9 +12093,9 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 0,
-                        "y": 14,
-                        "width": 12,
+                        "x": 8,
+                        "y": 7,
+                        "width": 8,
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
@@ -11974,9 +12106,9 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 12,
-                        "y": 14,
-                        "width": 12,
+                        "x": 16,
+                        "y": 7,
+                        "width": 8,
                         "height": 7,
                         "element": {
                           "kind": "ElementReference",
@@ -11988,9 +12120,9 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 21,
+                        "y": 14,
                         "width": 12,
-                        "height": 8,
+                        "height": 7,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-126"
@@ -12001,7 +12133,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
-                        "y": 21,
+                        "y": 14,
                         "width": 12,
                         "height": 7,
                         "element": {
@@ -12014,9 +12146,9 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 29,
+                        "y": 21,
                         "width": 12,
-                        "height": 9,
+                        "height": 8,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-128"
@@ -12027,7 +12159,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
-                        "y": 29,
+                        "y": 21,
                         "width": 12,
                         "height": 7,
                         "element": {
@@ -12040,12 +12172,38 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
+                        "y": 29,
+                        "width": 12,
+                        "height": 9,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-130"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 29,
+                        "width": 12,
+                        "height": 7,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-131"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
                         "y": 38,
                         "width": 12,
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-130"
+                          "name": "panel-132"
                         }
                       }
                     },
@@ -12058,7 +12216,7 @@
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-131"
+                          "name": "panel-133"
                         }
                       }
                     },
@@ -12071,32 +12229,6 @@
                         "height": 10,
                         "element": {
                           "kind": "ElementReference",
-                          "name": "panel-132"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 0,
-                        "y": 56,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
-                          "name": "panel-133"
-                        }
-                      }
-                    },
-                    {
-                      "kind": "GridLayoutItem",
-                      "spec": {
-                        "x": 12,
-                        "y": 56,
-                        "width": 12,
-                        "height": 8,
-                        "element": {
-                          "kind": "ElementReference",
                           "name": "panel-134"
                         }
                       }
@@ -12105,7 +12237,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 64,
+                        "y": 56,
                         "width": 12,
                         "height": 8,
                         "element": {
@@ -12118,7 +12250,7 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 12,
-                        "y": 64,
+                        "y": 56,
                         "width": 12,
                         "height": 8,
                         "element": {
@@ -12131,12 +12263,38 @@
                       "kind": "GridLayoutItem",
                       "spec": {
                         "x": 0,
-                        "y": 72,
+                        "y": 64,
                         "width": 12,
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-137"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 64,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-138"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 72,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-139"
                         }
                       }
                     }

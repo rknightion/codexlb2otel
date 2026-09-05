@@ -718,3 +718,17 @@ const (
 	UpstreamErrorCode           = "codexlb.upstream.error_code"
 	UpstreamTransport           = "codexlb.upstream.transport"
 )
+
+// Proxy waits are separate observations; never summed into an end-to-end total.
+const (
+	MetricProxyWait         = "codexlb.proxy.wait"          // histogram, s
+	MetricProxyWaitCoverage = "codexlb.proxy.wait_coverage" // counter, {observation}
+)
+
+// Content order and timestamps describe archive observation, never execution time.
+const (
+	ContentOrdinal    = "codexlb.content.ordinal"
+	ContentItemID     = "codexlb.content.item_id"
+	ContentCapturedAt = "codexlb.content.captured_at"
+	ContentProvenance = "codexlb.content.provenance"
+)

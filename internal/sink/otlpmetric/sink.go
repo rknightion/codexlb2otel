@@ -55,9 +55,11 @@ type Sink struct {
 	selfObsRegistered bool
 	selfInst          selfInstruments
 
-	costMu        sync.Mutex
-	costResponses map[string]struct{}
-	costOrder     []string
+	costMu             sync.Mutex
+	costResponses      map[string]struct{}
+	costOrder          []string
+	proxyWaitResponses map[string]struct{}
+	proxyWaitOrder     []string
 }
 
 // New builds a Sink that exports over real OTLP HTTP to cfg.Endpoint, authenticating
@@ -141,6 +143,30 @@ func (s *Sink) firstCostResponse(responseID string) bool {
 	if len(s.costOrder) > costResponseLimit {
 		delete(s.costResponses, s.costOrder[0])
 		s.costOrder = s.costOrder[1:]
+	}
+	return true
+}
+
+// firstProxyWaitResponse has the same bound and retry semantics as the cost guard,
+// but independent membership: an absent-cost observation must not consume a later
+// valid charge. Empty response IDs retain the existing non-deduplicable fallback.
+func (s *Sink) firstProxyWaitResponse(responseID string) bool {
+	if responseID == "" {
+		return true
+	}
+	s.costMu.Lock()
+	defer s.costMu.Unlock()
+	if s.proxyWaitResponses == nil {
+		s.proxyWaitResponses = make(map[string]struct{})
+	}
+	if _, seen := s.proxyWaitResponses[responseID]; seen {
+		return false
+	}
+	s.proxyWaitResponses[responseID] = struct{}{}
+	s.proxyWaitOrder = append(s.proxyWaitOrder, responseID)
+	if len(s.proxyWaitOrder) > costResponseLimit {
+		delete(s.proxyWaitResponses, s.proxyWaitOrder[0])
+		s.proxyWaitOrder = s.proxyWaitOrder[1:]
 	}
 	return true
 }

@@ -19,6 +19,8 @@ codexlb.errors
 codexlb.harness_unblocked
 codexlb.image_gen_tokens
 codexlb.pre_inference
+codexlb.proxy.wait
+codexlb.proxy.wait_coverage
 codexlb.rate_limit.model_used_percent
 codexlb.rate_limit.reset_after
 codexlb.rate_limit.secondary_used_percent

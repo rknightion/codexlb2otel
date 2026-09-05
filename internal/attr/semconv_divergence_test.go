@@ -28,6 +28,12 @@ const idJustification = "codex-lb's own internal identifier or lifecycle detail;
 // 2026-08-07), not assumed - see the matching const's own doc comment in names.go for
 // the fuller version of each.
 var semconvJustified = map[string]string{
+	SelfObsResult:     "exporter observation coverage and lookup outcomes, not model outcomes",
+	ContentOrdinal:    "archive observation and content order, not original authorship or execution time",
+	ContentItemID:     "archive observation and content order, not original authorship or execution time",
+	ContentCapturedAt: "archive observation and content order, not original authorship or execution time",
+	ContentProvenance: "archive observation and content order, not original authorship or execution time",
+
 	ToolOriginMatch:             "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
 	ToolOriginResponseID:        "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
 	ProxyWaitKind:               "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",

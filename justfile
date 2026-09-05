@@ -211,3 +211,31 @@ _golangci-lint:
 _govulncheck:
     mkdir -p '{{ tools }}'
     GOBIN='{{ tools }}' go install golang.org/x/vuln/cmd/govulncheck@{{ govulncheck_version }}
+
+# verify relative file links in the project documentation (anchors excluded)
+[group('check')]
+[script('python3')]
+docs-links:
+    from pathlib import Path
+    import re
+    from urllib.parse import unquote, urlsplit
+
+    files = [Path('README.md'), Path('AGENTS.md'), *Path('docs').rglob('*.md')]
+    broken = []
+    checked = 0
+    for source in files:
+        text = re.sub(r'```.*?```', '', source.read_text(), flags=re.S)
+        for target in re.findall(r'!?\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)', text):
+            target = target.strip('<>')
+            parsed = urlsplit(target)
+            if parsed.scheme or parsed.netloc or not parsed.path:
+                continue
+            path = unquote(parsed.path)
+            resolved = Path(path.lstrip('/')) if path.startswith('/') else source.parent / path
+            checked += 1
+            if not resolved.exists():
+                broken.append(f'{source}: {target}')
+    if broken:
+        print('\n'.join(broken))
+        raise SystemExit(1)
+    print(f'PASS: {checked} relative file links across {len(files)} Markdown files; anchors not checked')

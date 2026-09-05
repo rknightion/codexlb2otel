@@ -123,6 +123,12 @@ type Field struct {
 // are sparse - a probe is never a subagent turn, xhigh never appears on a prewarm. The
 // caps below are what make the theoretical product irrelevant.
 var registry = []Field{
+	{Key: SelfObsResult, Class: Bounded, Cap: 16},
+	{Key: ContentOrdinal, Class: Identity, ContentOnly: true},
+	{Key: ContentItemID, Class: Identity, ContentOnly: true},
+	{Key: ContentCapturedAt, Class: Identity, ContentOnly: true},
+	{Key: ContentProvenance, Class: Identity, ContentOnly: true},
+
 	{Key: ToolOriginMatch, Class: Bounded, Cap: 4, ContentOnly: true, Observed: []string{"exact", "ambiguous", "none"}},
 	{Key: ToolOriginResponseID, Class: Identity, ContentOnly: true},
 	{Key: ProxyWaitKind, Class: Bounded, Cap: 4, Observed: []string{"queue", "response_create_gate", "bridge_queue"}},
@@ -481,7 +487,10 @@ func ValidateLabels(keys []string) error {
 			return fmt.Errorf("loki label %q is not an attribute this service emits; "+
 				"see internal/attr for the full set", k)
 		}
-		if f.ContentOnly || f.Class != Bounded {
+		if f.ContentOnly {
+			return fmt.Errorf("loki label %q is restricted to content metadata", k)
+		}
+		if f.Class != Bounded {
 			return fmt.Errorf("loki label %q is %s, not bounded: promoting it would key "+
 				"a Loki stream per distinct value", k, f.Class)
 		}

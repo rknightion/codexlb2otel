@@ -38,6 +38,7 @@ JOB = 'job="codexlb2otel"'
 # read from the Go source so the generator runs anywhere; verify() diffs it against
 # .metrics_from_code.txt, which IS extracted from the source, so drift fails loudly.
 ALL_METRICS = [
+    "codexlb.proxy.wait", "codexlb.proxy.wait_coverage",
     "codexlb.archive_drift_findings", "codexlb.attributes_rejected", "codexlb.baseline_resets", "codexlb.client_tool_pause",
     "codexlb.cost_usd",
     "codexlb.credits.balance", "codexlb.credits.unlimited", "codexlb.engine_calls",
@@ -75,6 +76,8 @@ ALL_METRICS = [
 # client-tool pause recorded, no sink rejection since the last restart); they still get
 # panels, because "no data" and "no panel" are different answers.
 PROM_NAME = {
+    "codexlb.proxy.wait": "codexlb_proxy_wait_seconds",
+    "codexlb.proxy.wait_coverage": "codexlb_proxy_wait_coverage_total",
     "codexlb.archive_drift_findings": "codexlb_archive_drift_findings",
     "codexlb.attributes_rejected": "codexlb_attributes_rejected_total",
     "codexlb.baseline_resets": "codexlb_baseline_resets_total",
@@ -1056,6 +1059,16 @@ the selected window does not contain both fast and normal samples for the same c
 # ---------------------------------------------------------------------------
 def tab_latency():
     p = []
+    p.append(panel("Proxy wait by kind (p95)", [
+        q(f'histogram_quantile(0.95, sum by (le, codexlb_proxy_wait_kind) (rate({prom("codexlb.proxy.wait", "_bucket")}'
+          f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval])))', "{{codexlb_proxy_wait_kind}}"),
+    ], unit="s", opts=LEG,
+        desc="Separately observed proxy waits, including measured zeros. Missing values do not enter the histogram; these waits are never summed into end-to-end latency."))
+    p.append(panel("Proxy wait coverage", [
+        q(f'sum by (codexlb_proxy_wait_kind, codexlb_selfobs_result) (rate({prom("codexlb.proxy.wait_coverage")}'
+          f'{sel(filt=F_FAMILY_ONLY)}[$__rate_interval]))', "{{codexlb_proxy_wait_kind}} / {{codexlb_selfobs_result}}"),
+    ], unit="ops", opts=LEG,
+        desc="One present or absent observation per wait kind per response. Absence is coverage information, never a measured zero."))
     p.append(text_panel("How to read this tab", """
 The critical path decomposes one response into **pre-inference → engine wall → sampling and stream**,
 plus whatever is left over. Each stage is a histogram in its own right, so a slow turn can be attributed
