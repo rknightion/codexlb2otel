@@ -3,7 +3,7 @@ module github.com/rknightion/codexlb2otel
 go 1.27.0
 
 require (
-	github.com/OpenRouterTeam/go-sdk v0.7.105
+	github.com/OpenRouterTeam/go-sdk v0.7.119
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
