@@ -49,6 +49,15 @@ func TestParseEventAcceptsSSEDataEnvelope(t *testing.T) {
 	}
 }
 
+func TestKnownEventTypesIncludePassiveEvents(t *testing.T) {
+	known := KnownEventTypes()
+	for _, eventType := range []string{EvKeepalive, EvBareResponseMetadata} {
+		if !known[eventType] {
+			t.Errorf("KnownEventTypes() does not name %q", eventType)
+		}
+	}
+}
+
 func TestPayloadErrorEnvelopeBecomesProtocolError(t *testing.T) {
 	var rec Record
 	blob := `{"kind":"responses","direction":"server_to_codex","transport":"http",` +

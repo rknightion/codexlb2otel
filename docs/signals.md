@@ -145,3 +145,9 @@ populate the generation store.
 The attribute catalogue marks which fields may become metric dimensions or Loki labels. IDs and
 content-shaped values stay out of those bounded sets. Startup validation rejects unsupported Loki
 labels instead of creating an unbounded stream topology.
+
+## Deliberate omissions
+
+`response.access_programs.cyber` is not emitted in this wave. The frozen `Turn` contract has no
+field for it, so adopting it would require a shared-type change outside this lane. Tool namespaces
+remain deferred under the existing tool-name cap decision.

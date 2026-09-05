@@ -227,6 +227,7 @@ type TurnMeta struct {
 	ParentTurnID        string `json:"parent_turn_id"`
 	ForkedFromThreadID  string `json:"forked_from_thread_id"`
 	SubagentKind        string `json:"subagent_kind"`
+	TurnTrigger         string `json:"turn_trigger"`
 	TurnStartedAtUnixMs int64  `json:"turn_started_at_unix_ms"`
 }
 
@@ -370,15 +371,17 @@ func sseData(eventStream []byte) (json.RawMessage, bool) {
 // Event type discriminators. The delta types dominate by volume and carry no
 // per-frame value beyond their count.
 const (
-	EvResponseCreate     = "response.create"
-	EvResponseCreated    = "response.created"
-	EvResponseInProgress = "response.in_progress"
-	EvResponseCompleted  = "response.completed"
-	EvOutputItemAdded    = "response.output_item.added"
-	EvOutputItemDone     = "response.output_item.done"
-	EvRateLimits         = "codex.rate_limits"
-	EvResponseMetadata   = "codex.response.metadata"
-	EvWebsocketTiming    = "responsesapi.websocket_timing"
+	EvResponseCreate       = "response.create"
+	EvResponseCreated      = "response.created"
+	EvResponseInProgress   = "response.in_progress"
+	EvResponseCompleted    = "response.completed"
+	EvOutputItemAdded      = "response.output_item.added"
+	EvOutputItemDone       = "response.output_item.done"
+	EvRateLimits           = "codex.rate_limits"
+	EvResponseMetadata     = "codex.response.metadata"
+	EvBareResponseMetadata = "response.metadata"
+	EvKeepalive            = "keepalive"
+	EvWebsocketTiming      = "responsesapi.websocket_timing"
 
 	// EvError terminates a response without a response.completed frame. Observed
 	// carrying upstream overload, the 60-minute websocket connection cap, and
@@ -413,6 +416,7 @@ func KnownEventTypes() map[string]bool {
 var knownEvents = []string{
 	EvResponseCreate, EvResponseCreated, EvResponseInProgress, EvResponseCompleted,
 	EvOutputItemAdded, EvOutputItemDone, EvRateLimits, EvResponseMetadata,
+	EvBareResponseMetadata, EvKeepalive,
 	EvWebsocketTiming, EvError,
 	EvOutputTextDelta, EvCustomToolInputDelta, EvFunctionArgsDelta,
 	EvCustomToolInputDone, EvFunctionArgsDone, EvOutputTextDone,

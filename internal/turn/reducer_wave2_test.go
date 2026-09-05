@@ -108,6 +108,17 @@ func TestReducerWave2_ReusedCallIDRemainsAmbiguous(t *testing.T) {
 	}
 }
 
+func TestReducerWave2_ErrorEventsTolerateSequenceNumber(t *testing.T) {
+	r := New()
+	done := addWave2Event(t, r, "req-error", time.Date(2026, 9, 5, 15, 0, 0, 0, time.UTC), `{"type":"error","sequence_number":7,"error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"synthetic"}}`)
+	if done == nil {
+		t.Fatal("error event did not close the turn")
+	}
+	if done.Status != StatusError || done.ErrorType != "service_unavailable_error" || done.ErrorCode != "server_is_overloaded" || done.ErrorMessage != "synthetic" {
+		t.Fatalf("error turn = %+v", done)
+	}
+}
+
 func TestReducerWave2_ContentOrderingAndReplayProvenance(t *testing.T) {
 	r := New()
 	base := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)

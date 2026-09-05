@@ -522,6 +522,7 @@ func (r *Reducer) applyClientMetadata(t *Turn, cm clientMetadata) {
 	t.RequestKind = m.RequestKind
 	t.ThreadSource = m.ThreadSource
 	t.Sandbox = m.Sandbox
+	t.TurnTrigger = m.TurnTrigger
 	t.ForkedFromThreadID = m.ForkedFromThreadID
 	if m.SubagentKind != "" {
 		t.SubagentKind = m.SubagentKind

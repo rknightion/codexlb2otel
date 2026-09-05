@@ -787,9 +787,9 @@ func TestReducer_InterleavedMemoryKeepsItsOwnBaseline(t *testing.T) {
 
 func TestReducer_DecodesSeptemberWireFields(t *testing.T) {
 	r := New()
-	meta := `{"thread_id":"thread-september","root_turn_id":"root-turn","agent_name":"l8_wire_adoption","sandbox_mode":"workspace-write","window_number":7}`
+	meta := `{"thread_id":"thread-september","root_turn_id":"root-turn","agent_name":"l8_wire_adoption","sandbox_mode":"workspace-write","window_number":7,"turn_trigger":"goal"}`
 	events := []string{
-		`{"type":"response.create","model":"gpt-5.6-terra","client_metadata":{"thread_id":"thread-september","x-codex-turn-metadata":` + strconvQuote(meta) + `}}`,
+		`{"type":"response.create","model":"gpt-5.6-terra","reasoning":{"context":"all_turns"},"parallel_tool_calls":true,"client_metadata":{"thread_id":"thread-september","x-codex-turn-metadata":` + strconvQuote(meta) + `}}`,
 		`{"type":"response.created","response":{"id":"resp-september","prompt_cache_options":{"mode":"in_memory","ttl":"30m"}}}`,
 		`{"type":"response.in_progress","response":{"prompt_cache_diagnostics":{"type":"hit"}}}`,
 		`{"type":"response.output_text.delta","safety_buffering":{"retry_model":"gpt-5.4-mini","reasons":["policy"],"use_cases":["coding"]}}`,
@@ -823,6 +823,9 @@ func TestReducer_DecodesSeptemberWireFields(t *testing.T) {
 	}
 	if got.SafetyRetryModel != "gpt-5.4-mini" || !got.SafetyBuffering {
 		t.Errorf("safety buffering = retry %q enabled %t", got.SafetyRetryModel, got.SafetyBuffering)
+	}
+	if got.TurnTrigger != "goal" || got.ReasoningCtx != "all_turns" || !got.ParallelTools || len(got.SafetyReasons) != 1 || got.SafetyReasons[0] != "policy" {
+		t.Errorf("bounded September metadata = trigger %q reasoning context %q parallel %t safety reasons %#v", got.TurnTrigger, got.ReasoningCtx, got.ParallelTools, got.SafetyReasons)
 	}
 	if got.AttributionInputTokens != 8 || got.AttributionOutputTokens != 9 || got.AttributionCachedTokens != 12 || got.AttributionCacheWriteTokens != 17 {
 		t.Errorf("attribution sums = input %d output %d cached %d cache write %d", got.AttributionInputTokens, got.AttributionOutputTokens, got.AttributionCachedTokens, got.AttributionCacheWriteTokens)
