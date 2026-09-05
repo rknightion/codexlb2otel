@@ -1,11 +1,11 @@
 ---
 id: CXO-0024
 title: Classify the live breaking archive drift findings
-status: Parked
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-04 19:32'
-updated_date: '2026-09-04 22:30'
+updated_date: '2026-09-05 17:35'
 labels: []
 dependencies: []
 priority: high
@@ -23,8 +23,8 @@ The Wave 1 in-process probe first ran on camden at 2026-09-04T19:23Z and immedia
 <!-- AC:BEGIN -->
 - [x] #1 A full scan of the current live archive enumerates both breaking findings without copying archive content into the repository or tracker
 - [x] #2 Each breaking finding is classified as decoder-impacting or baseline-only, with a regression test for every required decoder change
-- [ ] #3 Any accepted baseline is produced only by a full scan and TestSignature_CarriesNoConversationContent passes
-- [ ] #4 After deployment, codexlb_archive_drift_findings with severity breaking reports zero on m7kni
+- [x] #3 Any accepted baseline is produced only by a full scan and TestSignature_CarriesNoConversationContent passes
+- [x] #4 After deployment, codexlb_archive_drift_findings with severity breaking reports zero on m7kni
 <!-- AC:END -->
 
 ## Definition of Done
@@ -46,10 +46,14 @@ Full live classification on 2026-09-04 used a 0600 temporary snapshot outside th
 CodeRabbit completed review_completed with two minor findings. Fixed the valid parser edge case by supporting an initial UTF-8 BOM plus CR-only and CRLF SSE line endings, with fail-first regressions; focused races and just check passed afterward. Left the unrelated missing language identifier on CXO-0026's imported Markdown fence because it is cosmetic tracker formatting and does not affect execution or evidence.
 
 Final v0.4.0 deployment recheck: codexlb_archive_drift_findings now reports breaking=1, new=37, and info=99 on m7kni. The remaining breaking finding is the already-classified, decoder-supported payload.error object shape absent from the embedded baseline. No baseline was changed. Resume still requires explicit authorization for a full unsampled baseline update, content-free signature verification, publication, deployment, and live breaking=0 proof.
+
+2026-09-05: baseline refreshed at commit 088d7a1 from a full unsampled scan of 70 archives (9.4 GB compressed, 25.0 GB decompressed, 9,962,295 lines, 0 undecodable): 0 breaking, 215 new findings against the 2026-09-03 baseline, all accepted (authorised by Rob). TestSignature_CarriesNoConversationContent and just check green; a sampled re-scan against the new baseline reports 0 breaking, 0 new, 23 info. Publish run 33981055454 failed once at 'Sign the published image' with an empty digest reference (transient: the digest-capture step produced nothing), re-run of the failed job succeeded at the same SHA. camden deployed revision 088d7a1 via watchtower, healthy, restart count 0. Live m7kni after the deploy: codexlb_archive_drift_findings breaking=0, new=0, info=47.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Classified both live breaking findings from a full 22-file unsampled Camden snapshot and fixed both decoder blind spots with fail-first synthetic regressions. The shared parser now decodes HTTP SSE event envelopes and structured HTTP payload.error failures; the profiler uses the same event parser. Focused race tests and just check pass, and a second full scan removed the unparsed-payload breaking finding. Parked with one supported-but-unbaselined object{error} shape because this follow-up run lacks explicit authority to update the embedded baseline. Resume by authorizing a full unsampled baseline update, verify TestSignature_CarriesNoConversationContent, publish and deploy, then prove severity=breaking is zero on m7kni.
+
+Classified both live breaking findings from a full Camden snapshot, fixed the two decoder blind spots (HTTP SSE envelopes and payload.error objects) with fail-first regressions, and closed the loop on 2026-09-05 by refreshing the embedded baseline from a full unsampled 70-archive scan and deploying it (088d7a1): the live breaking gauge reads 0 at the deployed revision, with the content-free signature test and just check green.
 <!-- SECTION:FINAL_SUMMARY:END -->
