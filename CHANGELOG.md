@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/rknightion/codexlb2otel/compare/v0.4.0...v0.4.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.119 ([#74](https://github.com/rknightion/codexlb2otel/issues/74)) ([e9ef808](https://github.com/rknightion/codexlb2otel/commit/e9ef8084c2bd1e434d6932e160459dc2dc8666a1))
+* refresh the archive drift baseline from a full 70-archive scan ([088d7a1](https://github.com/rknightion/codexlb2otel/commit/088d7a1ee4e097c528e2ac3ca7800e3fb64c80ab))
+
 ## [0.4.0](https://github.com/rknightion/codexlb2otel/compare/v0.3.0...v0.4.0) (2026-09-04)
 
 
