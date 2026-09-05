@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-14 16:59'
-updated_date: '2026-09-05 18:59'
+updated_date: '2026-09-05 19:29'
 labels:
   - from-gh-issue
 dependencies: []
@@ -83,6 +83,8 @@ Final v0.4.0 deployment recheck: Camden still has agento11y.enabled=false and ot
 Acceptance criterion 2 updated to the authorized production scope. This is a deployment configuration repair, with no application logic change; safe public example defaults and their test remain unchanged. Skipped new tests and CodeRabbit for declarative configuration; validated Compose and live cloud delivery instead.
 
 Production restored on 2026-09-05 at 18:56 UTC. Reused the explicitly authorized working credential without minting or rescoping a policy. Both sinks enabled; Compose validated and only exporter recreated, checkpoint retained. Genuine codex and codex/subagent catalog timestamps advanced to today. Direct generation read-back linked to the same Tempo trace/span, streamText with SPAN_KIND_CLIENT and STATUS_CODE_OK. Container healthy with zero restarts. Historical replay was not attempted. The credential criterion now explicitly permits the user-authorized existing credential rather than requiring unnecessary token minting.
+
+2026-09-05 later architecture decision supersedes the proxy restoration: Rob requested official per-profile Codex Agent Observability integration with full capture, including Nonproxy. Production agento11y.enabled and otlp.traces.enabled are now false again; metrics/Loki remain enabled. Native integration is tracked in neutral harness task HRN-0015. All four profiles installed and probed; manual Codex hook trust remains required before native live-turn proof. This task retains the historical restoration evidence and is not the owner of the replacement integration.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
