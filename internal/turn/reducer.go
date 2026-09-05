@@ -20,9 +20,10 @@ import (
 // deltas. Both must survive a process restart or the first turn after one produces
 // a bogus delta - see Snapshot/Restore.
 type Reducer struct {
-	open map[string]*Turn      // request_id -> in-flight turn
-	prev map[string]cumulative // series key -> last cumulative snapshot
-	seq  map[string]int        // thread_id -> logical turn counter
+	calls callIndex
+	open  map[string]*Turn      // request_id -> in-flight turn
+	prev  map[string]cumulative // series key -> last cumulative snapshot
+	seq   map[string]int        // thread_id -> logical turn counter
 	// seqSeen is the newest archive event timestamp that advanced each thread's
 	// logical-turn sequence. It belongs to the Reducer so snapshot and eviction do
 	// not need process-global sidecars keyed by reducer pointers.
@@ -640,8 +641,12 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 				continue
 			}
 			text, cut := truncate(body, r.opts.MaxToolOutputChars)
+			r.calls.advance(t.LastTS)
+			origin, match := r.calls.lookup(t.ThreadID, it.CallID)
 			t.ToolOutputs = append(t.ToolOutputs, ToolOutput{
 				CallID: it.CallID, Chars: len(body), Truncated: cut, Text: text,
+				OriginResponseID: origin.ResponseID, OriginTurnID: origin.TurnID,
+				OriginToolName: origin.ToolName, OriginMatch: match,
 			})
 
 		// additional_tools is the ONLY input item type observed carrying a tool
@@ -885,6 +890,10 @@ func (r *Reducer) applyOutputItem(t *Turn, ev frame.Event) {
 	}
 	it := e.Item
 	t.ItemCounts[it.Type]++
+	if it.Type == "custom_tool_call" || it.Type == "function_call" {
+		r.calls.advance(t.LastTS)
+		r.calls.record(t.ThreadID, it.CallID, callRef{ResponseID: t.ResponseID, TurnID: t.TurnID, ToolName: it.Name, CapturedAt: t.LastTS})
+	}
 
 	switch it.Type {
 	case "custom_tool_call":

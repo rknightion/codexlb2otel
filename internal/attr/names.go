@@ -705,3 +705,16 @@ const (
 	TokenCacheRead  = "cache_read"
 	TokenCacheWrite = "cache_write"
 )
+
+// Wave 2 proxy and invocation metadata have no GenAI equivalents.
+const (
+	ToolOriginMatch             = "codexlb.tool.origin_match"
+	ToolOriginResponseID        = "codexlb.tool.origin_response_id"
+	ProxyWaitKind               = "codexlb.proxy.wait_kind"
+	ProxyQueueWait              = "codexlb.proxy.queue_wait"
+	ProxyResponseCreateGateWait = "codexlb.proxy.response_create_gate_wait"
+	ProxyBridgeQueueWait        = "codexlb.proxy.bridge_queue_wait"
+	UpstreamStatusCode          = "codexlb.upstream.status_code"
+	UpstreamErrorCode           = "codexlb.upstream.error_code"
+	UpstreamTransport           = "codexlb.upstream.transport"
+)

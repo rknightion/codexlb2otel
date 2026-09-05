@@ -28,6 +28,16 @@ const idJustification = "codex-lb's own internal identifier or lifecycle detail;
 // 2026-08-07), not assumed - see the matching const's own doc comment in names.go for
 // the fuller version of each.
 var semconvJustified = map[string]string{
+	ToolOriginMatch:             "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
+	ToolOriginResponseID:        "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
+	ProxyWaitKind:               "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
+	ProxyQueueWait:              "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
+	ProxyResponseCreateGateWait: "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
+	ProxyBridgeQueueWait:        "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
+	UpstreamStatusCode:          "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
+	UpstreamErrorCode:           "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
+	UpstreamTransport:           "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
+
 	// --- pipeline concepts the convention has no notion of ---
 	Status: "answers pipeline-observed-completion, not model finish reason - see the " +
 		"Status const's own doc comment for the corpus evidence and why this is a " +

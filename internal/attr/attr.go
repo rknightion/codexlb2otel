@@ -71,8 +71,10 @@ const (
 
 // Field is one attribute this service knows how to emit.
 type Field struct {
-	Key   string
-	Class Class
+	// ContentOnly excludes this field from metric dimensions and Loki labels.
+	ContentOnly bool
+	Key         string
+	Class       Class
 	// Cap bounds distinct values at runtime. Ignored for Identity and Sensitive, which
 	// are never indexed by value in the first place.
 	Cap int
@@ -121,6 +123,21 @@ type Field struct {
 // are sparse - a probe is never a subagent turn, xhigh never appears on a prewarm. The
 // caps below are what make the theoretical product irrelevant.
 var registry = []Field{
+	{Key: ToolOriginMatch, Class: Bounded, Cap: 4, ContentOnly: true, Observed: []string{"exact", "ambiguous", "none"}},
+	{Key: ToolOriginResponseID, Class: Identity, ContentOnly: true},
+	{Key: ProxyWaitKind, Class: Bounded, Cap: 4, Observed: []string{"queue", "response_create_gate", "bridge_queue"}},
+	{Key: ProxyQueueWait, Class: Identity, ContentOnly: true},
+	{Key: ProxyResponseCreateGateWait, Class: Identity, ContentOnly: true},
+	{Key: ProxyBridgeQueueWait, Class: Identity, ContentOnly: true},
+	{Key: UpstreamStatusCode, Class: Bounded, Cap: 16, ContentOnly: true, Of: func(t *turn.Turn) string {
+		if t.UpstreamStatusCode == 0 {
+			return ""
+		}
+		return strconv.Itoa(t.UpstreamStatusCode)
+	}},
+	{Key: UpstreamErrorCode, Class: Bounded, Cap: 32, ContentOnly: true, Of: func(t *turn.Turn) string { return t.UpstreamErrorCode }},
+	{Key: UpstreamTransport, Class: Bounded, Cap: 8, ContentOnly: true, Of: func(t *turn.Turn) string { return t.UpstreamTransport }},
+
 	// --- bounded: metric attributes, and promotable to labels ---
 	{Key: GenAIRequestModel, Class: Bounded, Cap: 32,
 		Observed: []string{"gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.3-codex-spark", "gpt-5.6-sol-wm", "gpt-5.4-mini", "gpt-5.6-luna"},
@@ -464,7 +481,7 @@ func ValidateLabels(keys []string) error {
 			return fmt.Errorf("loki label %q is not an attribute this service emits; "+
 				"see internal/attr for the full set", k)
 		}
-		if f.Class != Bounded {
+		if f.ContentOnly || f.Class != Bounded {
 			return fmt.Errorf("loki label %q is %s, not bounded: promoting it would key "+
 				"a Loki stream per distinct value", k, f.Class)
 		}
@@ -568,7 +585,7 @@ func (g *Guard) MetricAttrs(t *turn.Turn) []KV {
 		KV{GenAIOperation, OperationName(t)},
 	)
 	for _, f := range registry {
-		if f.Class != Bounded || f.Of == nil {
+		if f.ContentOnly || f.Class != Bounded || f.Of == nil {
 			continue
 		}
 		if v := g.value(f, f.Of(t)); v != "" {
@@ -596,7 +613,7 @@ func (g *Guard) Labels(t *turn.Turn, serviceName, recordType string, promoted []
 		out = append(out, KV{RecordType, recordType})
 	}
 	for _, f := range registry {
-		if f.Class != Bounded || f.Of == nil || !want[f.Key] {
+		if f.ContentOnly || f.Class != Bounded || f.Of == nil || !want[f.Key] {
 			continue
 		}
 		if v := g.value(f, f.Of(t)); v != "" {

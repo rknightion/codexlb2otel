@@ -61,14 +61,21 @@ type Turn struct {
 	// Postgres enrichment fields. CostUSD is a pointer because an explicitly computed
 	// zero cost is different from a lookup miss. The proxy fields are codex-lb's view
 	// of the same response and are carried to Loki and Tempo, not re-derived here.
-	CostUSD                   *float64 `json:"cost_usd,omitempty"`
-	APIKeyID                  string   `json:"api_key_id,omitempty"`
-	APIKeyName                string   `json:"api_key_name,omitempty"`
-	ProxyStatus               string   `json:"proxy_status,omitempty"`
-	ProxyErrorCode            string   `json:"proxy_error_code,omitempty"`
-	ProxyFailurePhase         string   `json:"proxy_failure_phase,omitempty"`
-	ProxyResponseCreatedMS    float64  `json:"proxy_response_created_ms,omitempty"`
-	ProxyFirstUpstreamEventMS float64  `json:"proxy_first_upstream_event_ms,omitempty"`
+	ProxyQueueWaitMS              *int     `json:"proxy_queue_wait_ms,omitempty"`
+	ProxyResponseCreateGateWaitMS *int     `json:"proxy_response_create_gate_wait_ms,omitempty"`
+	ProxyBridgeQueueWaitMS        *int     `json:"proxy_bridge_queue_wait_ms,omitempty"`
+	UpstreamStatusCode            int      `json:"upstream_status_code,omitempty"`
+	UpstreamErrorCode             string   `json:"upstream_error_code,omitempty"`
+	UpstreamTransport             string   `json:"upstream_transport,omitempty"`
+	TurnTrigger                   string   `json:"turn_trigger,omitempty"`
+	CostUSD                       *float64 `json:"cost_usd,omitempty"`
+	APIKeyID                      string   `json:"api_key_id,omitempty"`
+	APIKeyName                    string   `json:"api_key_name,omitempty"`
+	ProxyStatus                   string   `json:"proxy_status,omitempty"`
+	ProxyErrorCode                string   `json:"proxy_error_code,omitempty"`
+	ProxyFailurePhase             string   `json:"proxy_failure_phase,omitempty"`
+	ProxyResponseCreatedMS        float64  `json:"proxy_response_created_ms,omitempty"`
+	ProxyFirstUpstreamEventMS     float64  `json:"proxy_first_upstream_event_ms,omitempty"`
 
 	// Low cardinality - safe as metric attributes.
 	Model     string `json:"model,omitempty"`
@@ -366,20 +373,30 @@ func (c CriticalPath) Complete() bool { return c.Coverage == "complete" }
 // these reconstruct the actual multi-agent communication topology - which exists
 // nowhere else in the capture.
 type AgentMessage struct {
-	Author    string `json:"author,omitempty"`
-	Recipient string `json:"recipient,omitempty"`
-	Chars     int    `json:"chars"`
-	Text      string `json:"text,omitempty"`
+	Ordinal    int       `json:"ordinal"`
+	ItemID     string    `json:"item_id,omitempty"`
+	CapturedAt time.Time `json:"captured_at,omitempty"`
+	Provenance string    `json:"provenance,omitempty"`
+	Author     string    `json:"author,omitempty"`
+	Recipient  string    `json:"recipient,omitempty"`
+	Chars      int       `json:"chars"`
+	Text       string    `json:"text,omitempty"`
 }
 
 // ToolCall is one tool invocation the model made.
 type ToolCall struct {
-	Kind       string `json:"kind"` // custom | function
-	Name       string `json:"name"`
-	CallID     string `json:"call_id,omitempty"`
-	Status     string `json:"status,omitempty"`
-	InputChars int    `json:"input_chars"`
-	Input      string `json:"input,omitempty"`
+	InputOmitted   int       `json:"input_omitted,omitempty"`
+	InputTruncated bool      `json:"input_truncated,omitempty"`
+	Ordinal        int       `json:"ordinal"`
+	ItemID         string    `json:"item_id,omitempty"`
+	CapturedAt     time.Time `json:"captured_at,omitempty"`
+	Provenance     string    `json:"provenance,omitempty"`
+	Kind           string    `json:"kind"` // custom | function
+	Name           string    `json:"name"`
+	CallID         string    `json:"call_id,omitempty"`
+	Status         string    `json:"status,omitempty"`
+	InputChars     int       `json:"input_chars"`
+	Input          string    `json:"input,omitempty"`
 
 	// Populated for spawn_agent, describing the child agent.
 	TaskName  string `json:"task_name,omitempty"`
@@ -389,9 +406,13 @@ type ToolCall struct {
 
 // Message is an assistant message emitted during the response.
 type Message struct {
-	Phase string `json:"phase,omitempty"`
-	Chars int    `json:"chars"`
-	Text  string `json:"text,omitempty"`
+	Ordinal    int       `json:"ordinal"`
+	ItemID     string    `json:"item_id,omitempty"`
+	CapturedAt time.Time `json:"captured_at,omitempty"`
+	Provenance string    `json:"provenance,omitempty"`
+	Phase      string    `json:"phase,omitempty"`
+	Chars      int       `json:"chars"`
+	Text       string    `json:"text,omitempty"`
 }
 
 // Prompt is an input-side message: what the user or the harness asked for.
@@ -400,9 +421,13 @@ type Message struct {
 // on every turn, so each is emitted only on the first response that carries it.
 // Without this the archive records only the model's half of the conversation.
 type Prompt struct {
-	Role  string `json:"role"` // user | developer | assistant
-	Chars int    `json:"chars"`
-	Text  string `json:"text,omitempty"`
+	Ordinal    int       `json:"ordinal"`
+	ItemID     string    `json:"item_id,omitempty"`
+	CapturedAt time.Time `json:"captured_at,omitempty"`
+	Provenance string    `json:"provenance,omitempty"`
+	Role       string    `json:"role"` // user | developer | assistant
+	Chars      int       `json:"chars"`
+	Text       string    `json:"text,omitempty"`
 	// Images counts image parts on this message. The images themselves are never
 	// carried: they arrive as base64 data URIs measured at up to 784 KB each, and a
 	// Loki line over the limit is discarded whole rather than truncated, so inlining
@@ -421,10 +446,18 @@ type Prompt struct {
 // Text is truncated: these carry whole command outputs and are the single largest
 // content source in the archive. Chars always records the untruncated length.
 type ToolOutput struct {
-	CallID    string `json:"call_id,omitempty"`
-	Chars     int    `json:"chars"`
-	Truncated bool   `json:"truncated,omitempty"`
-	Text      string `json:"text,omitempty"`
+	OriginResponseID string    `json:"origin_response_id,omitempty"`
+	OriginTurnID     string    `json:"origin_turn_id,omitempty"`
+	OriginToolName   string    `json:"origin_tool_name,omitempty"`
+	OriginMatch      string    `json:"origin_match"`
+	Ordinal          int       `json:"ordinal"`
+	ItemID           string    `json:"item_id,omitempty"`
+	CapturedAt       time.Time `json:"captured_at,omitempty"`
+	Provenance       string    `json:"provenance,omitempty"`
+	CallID           string    `json:"call_id,omitempty"`
+	Chars            int       `json:"chars"`
+	Truncated        bool      `json:"truncated,omitempty"`
+	Text             string    `json:"text,omitempty"`
 }
 
 // cumulative snapshots the logical-turn counters so the next response can be diffed

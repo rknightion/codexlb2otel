@@ -1,10 +1,11 @@
 ---
 id: CXO-0031
 title: Attach structured upstream error diagnostics to conversation records
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-05 16:57'
-updated_date: '2026-09-05 16:59'
+updated_date: '2026-09-05 20:33'
 labels: []
 dependencies:
   - CXO-0001
@@ -42,3 +43,15 @@ Scope is populated structured fields: upstream_status_code, upstream_error_code 
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 2: commit root-owned seams first; frozen owned lanes implement with synthetic tests; integrate, just check, one corpus confidence gate and CodeRabbit; one push; watchtower-only deploy observation and m7kni proof; reconcile acceptance by evidence layer.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Clean main e8e97fd directly descends from c567894 and equals origin/main. CI 33988760737 and release-please 33988761017 succeeded. D8 holds; traces and agento11y remain disabled.
+<!-- SECTION:NOTES:END -->
