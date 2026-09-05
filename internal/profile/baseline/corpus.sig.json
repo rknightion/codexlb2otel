@@ -1,14 +1,14 @@
 {
   "version": 3,
   "coverage": {
-    "files": 58,
-    "file_bytes": 7581642505,
-    "read_bytes": 7581642505,
+    "files": 70,
+    "file_bytes": 10079485031,
+    "read_bytes": 10079485031,
     "sampled": false
   },
   "storage": {
     "multi_member": true,
-    "lines_per_member": 1.22,
+    "lines_per_member": 1.23,
     "filename_patterns": [
       "N-N-NTN.jsonl.gz"
     ],
@@ -23,7 +23,7 @@
       "text:not-a-string"
     ],
     "undecodable_line_share": 0,
-    "unparsed_payload_share": 0.0223
+    "unparsed_payload_share": 0
   },
   "record": {
     "keys": [
@@ -161,6 +161,7 @@
         "codex.rate_limits",
         "codex.response.metadata",
         "error",
+        "keepalive",
         "response.completed",
         "response.content_part.added",
         "response.content_part.done",
@@ -171,6 +172,7 @@
         "response.function_call_arguments.delta",
         "response.function_call_arguments.done",
         "response.in_progress",
+        "response.metadata",
         "response.output_item.added",
         "response.output_item.done",
         "response.output_text.delta",
@@ -264,7 +266,8 @@
             "bool"
           ],
           "values": [
-            "false"
+            "false",
+            "true"
           ]
         },
         "header.x-codex-turn-metadata{}.node_repl_disabled": {
@@ -356,6 +359,14 @@
         "header.x-codex-turn-metadata{}.turn_started_at_unix_ms": {
           "types": [
             "number"
+          ]
+        },
+        "header.x-codex-turn-metadata{}.turn_trigger": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "goal"
           ]
         },
         "header.x-codex-turn-metadata{}.window_id": {
@@ -602,6 +613,7 @@
             "string"
           ],
           "values": [
+            "W/\"6014aa02628a37bc4c697e51e9ede072\"",
             "W/\"796bcb5a04b039f45c70b61798ff2aec\"",
             "W/\"7aab8774608793f66cebc9fcca613561\"",
             "W/\"813645c2d5c52994b9518c36f731f646\"",
@@ -632,6 +644,7 @@
           ],
           "values": [
             "previous_response_not_found",
+            "server_is_overloaded",
             "websocket_connection_limit_reached"
           ]
         },
@@ -654,7 +667,13 @@
             "string"
           ],
           "values": [
-            "invalid_request_error"
+            "invalid_request_error",
+            "service_unavailable_error"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
           ]
         },
         "status": {
@@ -672,12 +691,43 @@
         }
       }
     },
+    "keepalive": {
+      "magnitude": 0,
+      "paths": {
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "keepalive"
+          ]
+        }
+      }
+    },
     "response.completed": {
       "magnitude": 4,
       "paths": {
         "response": {
           "types": [
             "object"
+          ]
+        },
+        "response.access_programs": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.access_programs.cyber": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "standard"
           ]
         },
         "response.background": {
@@ -752,9 +802,11 @@
             "string"
           ],
           "values": [
+            "gpt-5.5",
             "gpt-5.6-luna",
             "gpt-5.6-sol",
-            "gpt-5.6-terra"
+            "gpt-5.6-terra",
+            "gpt-6-astra"
           ]
         },
         "response.moderation": {
@@ -780,7 +832,8 @@
             "bool"
           ],
           "values": [
-            "false"
+            "false",
+            "true"
           ]
         },
         "response.presence_penalty": {
@@ -856,7 +909,8 @@
             "string"
           ],
           "values": [
-            "all_turns"
+            "all_turns",
+            "current_turn"
           ]
         },
         "response.reasoning.effort": {
@@ -960,6 +1014,26 @@
           ]
         },
         "response.text.format.schema.properties.raw_memory.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.recap": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.recap.maxLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.recap.minLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.recap.type": {
           "types": [
             "string"
           ]
@@ -1127,6 +1201,14 @@
             "string"
           ]
         },
+        "response.tools[].execution": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "client"
+          ]
+        },
         "response.tools[].format": {
           "types": [
             "json-schema"
@@ -1137,11 +1219,23 @@
             "string"
           ],
           "values": [
+            "apply_patch",
+            "clock",
             "collaboration",
+            "create_goal",
             "exec",
+            "exec_command",
             "functions",
+            "get_goal",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "mcp__codex_app",
+            "read_mcp_resource",
             "request_user_input",
-            "wait"
+            "update_goal",
+            "view_image",
+            "wait",
+            "write_stdin"
           ]
         },
         "response.tools[].output_schema": {
@@ -1152,6 +1246,36 @@
         "response.tools[].parameters": {
           "types": [
             "json-schema"
+          ]
+        },
+        "response.tools[].return_token_budget": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "default"
+          ]
+        },
+        "response.tools[].search_content_types": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].search_content_types[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "image",
+            "text"
+          ]
+        },
+        "response.tools[].search_context_size": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "medium"
           ]
         },
         "response.tools[].strict": {
@@ -1187,15 +1311,37 @@
             "string"
           ],
           "values": [
+            "automation_update",
+            "capture_screen_context",
+            "create_thread",
+            "end_realtime_voice_call",
             "exec",
             "followup_task",
+            "fork_thread",
+            "get_handoff_status",
+            "handoff_thread",
             "interrupt_agent",
             "list_agents",
+            "list_archived_threads",
+            "list_projects",
+            "list_threads",
+            "load_workspace_dependencies",
+            "navigate_to_codex_page",
+            "open_in_codex",
+            "read_thread",
+            "read_thread_terminal",
             "request_user_input",
+            "request_user_input_async",
             "send_message",
+            "send_message_to_thread",
+            "set_thread_archived",
+            "set_thread_pinned",
+            "set_thread_title",
+            "sleep",
             "spawn_agent",
             "wait",
-            "wait_agent"
+            "wait_agent",
+            "wait_threads"
           ]
         },
         "response.tools[].tools[].output_schema": {
@@ -1232,7 +1378,45 @@
           "values": [
             "custom",
             "function",
-            "namespace"
+            "namespace",
+            "tool_search",
+            "web_search"
+          ]
+        },
+        "response.tools[].user_location": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].user_location.city": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].user_location.country": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "US"
+          ]
+        },
+        "response.tools[].user_location.region": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].user_location.timezone": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].user_location.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "approximate"
           ]
         },
         "response.top_logprobs": {
@@ -1380,6 +1564,14 @@
         "safety_buffering.reasons": {
           "types": [
             "array"
+          ]
+        },
+        "safety_buffering.reasons[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "probes"
           ]
         },
         "safety_buffering.retry_model": {
@@ -1691,7 +1883,8 @@
             "bool"
           ],
           "values": [
-            "false"
+            "false",
+            "true"
           ]
         },
         "client_metadata.x-codex-turn-metadata{}.node_repl_disabled": {
@@ -2069,9 +2262,11 @@
             "string"
           ],
           "values": [
+            "gpt-5.5",
             "gpt-5.6-luna",
             "gpt-5.6-sol",
-            "gpt-5.6-terra"
+            "gpt-5.6-terra",
+            "gpt-6-astra"
           ]
         },
         "parallel_tool_calls": {
@@ -2079,7 +2274,8 @@
             "bool"
           ],
           "values": [
-            "false"
+            "false",
+            "true"
           ]
         },
         "previous_response_id": {
@@ -2173,6 +2369,26 @@
             "string"
           ]
         },
+        "text.format.schema.properties.recap": {
+          "types": [
+            "object"
+          ]
+        },
+        "text.format.schema.properties.recap.maxLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "text.format.schema.properties.recap.minLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "text.format.schema.properties.recap.type": {
+          "types": [
+            "string"
+          ]
+        },
         "text.format.schema.properties.rollout_slug": {
           "types": [
             "object"
@@ -2256,6 +2472,170 @@
             "auto"
           ]
         },
+        "tools": {
+          "types": [
+            "array"
+          ]
+        },
+        "tools[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "tools[].description": {
+          "types": [
+            "string"
+          ]
+        },
+        "tools[].execution": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "client"
+          ]
+        },
+        "tools[].external_web_access": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "true"
+          ]
+        },
+        "tools[].format": {
+          "types": [
+            "json-schema"
+          ]
+        },
+        "tools[].name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "apply_patch",
+            "collaboration",
+            "create_goal",
+            "exec_command",
+            "get_goal",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "mcp__codex_app",
+            "read_mcp_resource",
+            "request_user_input",
+            "update_goal",
+            "view_image",
+            "write_stdin"
+          ]
+        },
+        "tools[].parameters": {
+          "types": [
+            "json-schema"
+          ]
+        },
+        "tools[].search_content_types": {
+          "types": [
+            "array"
+          ]
+        },
+        "tools[].search_content_types[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "image",
+            "text"
+          ]
+        },
+        "tools[].strict": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "tools[].tools": {
+          "types": [
+            "array"
+          ]
+        },
+        "tools[].tools[]": {
+          "types": [
+            "object"
+          ]
+        },
+        "tools[].tools[].description": {
+          "types": [
+            "string"
+          ]
+        },
+        "tools[].tools[].name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "automation_update",
+            "capture_screen_context",
+            "create_thread",
+            "end_realtime_voice_call",
+            "followup_task",
+            "fork_thread",
+            "get_handoff_status",
+            "handoff_thread",
+            "interrupt_agent",
+            "list_agents",
+            "list_archived_threads",
+            "list_projects",
+            "list_threads",
+            "load_workspace_dependencies",
+            "navigate_to_codex_page",
+            "open_in_codex",
+            "read_thread",
+            "read_thread_terminal",
+            "send_message",
+            "send_message_to_thread",
+            "set_thread_archived",
+            "set_thread_pinned",
+            "set_thread_title",
+            "spawn_agent",
+            "wait_agent",
+            "wait_threads"
+          ]
+        },
+        "tools[].tools[].parameters": {
+          "types": [
+            "json-schema"
+          ]
+        },
+        "tools[].tools[].strict": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "tools[].tools[].type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "function"
+          ]
+        },
+        "tools[].type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "custom",
+            "function",
+            "namespace",
+            "tool_search",
+            "web_search"
+          ]
+        },
         "type": {
           "types": [
             "string"
@@ -2272,6 +2652,19 @@
         "response": {
           "types": [
             "object"
+          ]
+        },
+        "response.access_programs": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.access_programs.cyber": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "standard"
           ]
         },
         "response.background": {
@@ -2346,9 +2739,11 @@
             "string"
           ],
           "values": [
+            "gpt-5.5",
             "gpt-5.6-luna",
             "gpt-5.6-sol",
-            "gpt-5.6-terra"
+            "gpt-5.6-terra",
+            "gpt-6-astra"
           ]
         },
         "response.moderation": {
@@ -2374,7 +2769,8 @@
             "bool"
           ],
           "values": [
-            "false"
+            "false",
+            "true"
           ]
         },
         "response.presence_penalty": {
@@ -2437,7 +2833,8 @@
             "string"
           ],
           "values": [
-            "all_turns"
+            "all_turns",
+            "current_turn"
           ]
         },
         "response.reasoning.effort": {
@@ -2540,6 +2937,26 @@
           ]
         },
         "response.text.format.schema.properties.raw_memory.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.recap": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.recap.maxLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.recap.minLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.recap.type": {
           "types": [
             "string"
           ]
@@ -2707,6 +3124,14 @@
             "string"
           ]
         },
+        "response.tools[].execution": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "client"
+          ]
+        },
         "response.tools[].format": {
           "types": [
             "json-schema"
@@ -2717,11 +3142,23 @@
             "string"
           ],
           "values": [
+            "apply_patch",
+            "clock",
             "collaboration",
+            "create_goal",
             "exec",
+            "exec_command",
             "functions",
+            "get_goal",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "mcp__codex_app",
+            "read_mcp_resource",
             "request_user_input",
-            "wait"
+            "update_goal",
+            "view_image",
+            "wait",
+            "write_stdin"
           ]
         },
         "response.tools[].output_schema": {
@@ -2732,6 +3169,36 @@
         "response.tools[].parameters": {
           "types": [
             "json-schema"
+          ]
+        },
+        "response.tools[].return_token_budget": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "default"
+          ]
+        },
+        "response.tools[].search_content_types": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].search_content_types[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "image",
+            "text"
+          ]
+        },
+        "response.tools[].search_context_size": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "medium"
           ]
         },
         "response.tools[].strict": {
@@ -2767,15 +3234,37 @@
             "string"
           ],
           "values": [
+            "automation_update",
+            "capture_screen_context",
+            "create_thread",
+            "end_realtime_voice_call",
             "exec",
             "followup_task",
+            "fork_thread",
+            "get_handoff_status",
+            "handoff_thread",
             "interrupt_agent",
             "list_agents",
+            "list_archived_threads",
+            "list_projects",
+            "list_threads",
+            "load_workspace_dependencies",
+            "navigate_to_codex_page",
+            "open_in_codex",
+            "read_thread",
+            "read_thread_terminal",
             "request_user_input",
+            "request_user_input_async",
             "send_message",
+            "send_message_to_thread",
+            "set_thread_archived",
+            "set_thread_pinned",
+            "set_thread_title",
+            "sleep",
             "spawn_agent",
             "wait",
-            "wait_agent"
+            "wait_agent",
+            "wait_threads"
           ]
         },
         "response.tools[].tools[].output_schema": {
@@ -2812,7 +3301,45 @@
           "values": [
             "custom",
             "function",
-            "namespace"
+            "namespace",
+            "tool_search",
+            "web_search"
+          ]
+        },
+        "response.tools[].user_location": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].user_location.city": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].user_location.country": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "US"
+          ]
+        },
+        "response.tools[].user_location.region": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].user_location.timezone": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].user_location.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "approximate"
           ]
         },
         "response.top_logprobs": {
@@ -3016,6 +3543,19 @@
             "object"
           ]
         },
+        "response.access_programs": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.access_programs.cyber": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "standard"
+          ]
+        },
         "response.background": {
           "types": [
             "bool"
@@ -3088,9 +3628,11 @@
             "string"
           ],
           "values": [
+            "gpt-5.5",
             "gpt-5.6-luna",
             "gpt-5.6-sol",
-            "gpt-5.6-terra"
+            "gpt-5.6-terra",
+            "gpt-6-astra"
           ]
         },
         "response.moderation": {
@@ -3116,7 +3658,8 @@
             "bool"
           ],
           "values": [
-            "false"
+            "false",
+            "true"
           ]
         },
         "response.presence_penalty": {
@@ -3192,7 +3735,8 @@
             "string"
           ],
           "values": [
-            "all_turns"
+            "all_turns",
+            "current_turn"
           ]
         },
         "response.reasoning.effort": {
@@ -3295,6 +3839,26 @@
           ]
         },
         "response.text.format.schema.properties.raw_memory.type": {
+          "types": [
+            "string"
+          ]
+        },
+        "response.text.format.schema.properties.recap": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.text.format.schema.properties.recap.maxLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.recap.minLength": {
+          "types": [
+            "number"
+          ]
+        },
+        "response.text.format.schema.properties.recap.type": {
           "types": [
             "string"
           ]
@@ -3462,6 +4026,14 @@
             "string"
           ]
         },
+        "response.tools[].execution": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "client"
+          ]
+        },
         "response.tools[].format": {
           "types": [
             "json-schema"
@@ -3472,11 +4044,23 @@
             "string"
           ],
           "values": [
+            "apply_patch",
+            "clock",
             "collaboration",
+            "create_goal",
             "exec",
+            "exec_command",
             "functions",
+            "get_goal",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "mcp__codex_app",
+            "read_mcp_resource",
             "request_user_input",
-            "wait"
+            "update_goal",
+            "view_image",
+            "wait",
+            "write_stdin"
           ]
         },
         "response.tools[].output_schema": {
@@ -3487,6 +4071,36 @@
         "response.tools[].parameters": {
           "types": [
             "json-schema"
+          ]
+        },
+        "response.tools[].return_token_budget": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "default"
+          ]
+        },
+        "response.tools[].search_content_types": {
+          "types": [
+            "array"
+          ]
+        },
+        "response.tools[].search_content_types[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "image",
+            "text"
+          ]
+        },
+        "response.tools[].search_context_size": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "medium"
           ]
         },
         "response.tools[].strict": {
@@ -3522,15 +4136,37 @@
             "string"
           ],
           "values": [
+            "automation_update",
+            "capture_screen_context",
+            "create_thread",
+            "end_realtime_voice_call",
             "exec",
             "followup_task",
+            "fork_thread",
+            "get_handoff_status",
+            "handoff_thread",
             "interrupt_agent",
             "list_agents",
+            "list_archived_threads",
+            "list_projects",
+            "list_threads",
+            "load_workspace_dependencies",
+            "navigate_to_codex_page",
+            "open_in_codex",
+            "read_thread",
+            "read_thread_terminal",
             "request_user_input",
+            "request_user_input_async",
             "send_message",
+            "send_message_to_thread",
+            "set_thread_archived",
+            "set_thread_pinned",
+            "set_thread_title",
+            "sleep",
             "spawn_agent",
             "wait",
-            "wait_agent"
+            "wait_agent",
+            "wait_threads"
           ]
         },
         "response.tools[].tools[].output_schema": {
@@ -3567,7 +4203,45 @@
           "values": [
             "custom",
             "function",
-            "namespace"
+            "namespace",
+            "tool_search",
+            "web_search"
+          ]
+        },
+        "response.tools[].user_location": {
+          "types": [
+            "object"
+          ]
+        },
+        "response.tools[].user_location.city": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].user_location.country": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "US"
+          ]
+        },
+        "response.tools[].user_location.region": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].user_location.timezone": {
+          "types": [
+            "null"
+          ]
+        },
+        "response.tools[].user_location.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "approximate"
           ]
         },
         "response.top_logprobs": {
@@ -3617,6 +4291,76 @@
           ],
           "values": [
             "response.in_progress"
+          ]
+        }
+      }
+    },
+    "response.metadata": {
+      "magnitude": 0,
+      "paths": {
+        "metadata": {
+          "types": [
+            "object"
+          ]
+        },
+        "metadata.reasons": {
+          "types": [
+            "array"
+          ]
+        },
+        "metadata.reasons[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "probes"
+          ]
+        },
+        "metadata.retry_model": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "gpt-5.6-luna"
+          ]
+        },
+        "metadata.type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "safety_buffering"
+          ]
+        },
+        "metadata.use_cases": {
+          "types": [
+            "array"
+          ]
+        },
+        "metadata.use_cases[]": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "cyber"
+          ]
+        },
+        "response_id": {
+          "types": [
+            "string"
+          ]
+        },
+        "sequence_number": {
+          "types": [
+            "number"
+          ]
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "response.metadata"
           ]
         }
       }
@@ -3694,7 +4438,9 @@
             "interrupt_agent",
             "list_agents",
             "request_user_input",
+            "request_user_input_async",
             "send_message",
+            "sleep",
             "spawn_agent",
             "wait",
             "wait_agent"
@@ -3705,6 +4451,7 @@
             "string"
           ],
           "values": [
+            "clock",
             "collaboration"
           ]
         },
@@ -3868,7 +4615,9 @@
             "interrupt_agent",
             "list_agents",
             "request_user_input",
+            "request_user_input_async",
             "send_message",
+            "sleep",
             "spawn_agent",
             "wait",
             "wait_agent"
@@ -3879,6 +4628,7 @@
             "string"
           ],
           "values": [
+            "clock",
             "collaboration"
           ]
         },
@@ -3944,7 +4694,7 @@
       }
     },
     "response.output_text.delta": {
-      "magnitude": 5,
+      "magnitude": 6,
       "paths": {
         "content_index": {
           "types": [

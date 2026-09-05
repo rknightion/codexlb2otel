@@ -3,11 +3,11 @@ id: CXO-0026
 title: >-
   Make priority/fast-mode value answerable at session level, not just per
   response
-status: Parked
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-04 17:38'
-updated_date: '2026-09-04 22:30'
+updated_date: '2026-09-05 17:22'
 labels: []
 dependencies: []
 references:
@@ -102,8 +102,7 @@ Do not use served tier as evidence of anything. Per `internal/turn/turn.go`, eve
 - [x] #2 `codexlb_harness_unblocked_seconds` preserves `codexlb_critical_path_coverage` and `codexlb_family` while adding `codexlb_service_tier_requested`; `codexlb_responsesapi_excl_client_tools_seconds` preserves `codexlb_family` while adding the same tier label.
 - [x] #3 `codexlb_tokens_total` preserves provider, operation, request model, response model, account, request kind, family, reasoning effort, thread source, API key, and `gen_ai_token_type` while adding `codexlb_service_tier_requested`; `codexlb_errors_total` preserves provider, operation, request model, account, error type, error code, and status while adding the tier label.
 - [x] #4 Account and per-model rate-limit gauges carry `codexlb_rate_limit_window_minutes`; primary and secondary windows are emitted distinctly, and requested-tier attribution is recorded as a hard negative unless the wire identifies which request consumed the shared quota.
-- [ ] #5 The Fast Mode tab has a session-level throughput panel backed by an authoritative source, using earliest-to-latest session wall time and distinct turns, with disjoint pure-priority, pure-normal, and mixed cohorts, sample counts, and a non-randomised-cohort warning.
-- [x] #6 The attribute registry maps dotted span and metric key `codexlb.service_tier_requested` to Prometheus label `codexlb_service_tier_requested`, registers the bounded window label, updates exact-set and cardinality guards, and records that neither custom key has a GenAI semantic-convention equivalent.
+- [x] #5 The attribute registry maps dotted span and metric key `codexlb.service_tier_requested` to Prometheus label `codexlb_service_tier_requested`, registers the bounded window label, updates exact-set and cardinality guards, and records that neither custom key has a GenAI semantic-convention equivalent.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -134,10 +133,14 @@ CodeRabbit pass 1 completed with one major finding: the dashboard name checker g
 CodeRabbit pass 2 completed with three major findings, all verified and fixed: per-term probe-selector validation with a mixed-expression regression; archive retention documented as independent OR rules; and Postgres documentation aligned with lazy-pool behavior for a syntactically valid but unreachable DSN. Two-pass review ceiling reached; no third pass run. Final just check passed in 5.7s. AC 5 remains unproven and is the sole park.
 
 Final v0.4.0 deployment recheck: rate-limit window labeling is live with distinct 300-minute and 10080-minute per-model windows. Requested-tier labels were absent from the immediate response and turn-duration series, so no live priority cohort is claimed. AC 5 remains parked because sessions span multiple thread-derived traces, traces are disabled, and no authoritative cross-trace distinct-turn session aggregate exists.
+
+2026-09-05: AC 5 (session-level throughput panel) removed on Rob's decision. It required an authoritative cross-trace distinct-turn session aggregate; trace IDs derive from ThreadID and a fan-out session spans a parent thread plus subagent threads, so neither Tempo nor the traces-disabled deployment can provide it. Recorded here so it is not re-added as a defect.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Delivered requested-tier span and bounded metric attribution, distinct account and per-model quota windows, exact-set and absent-normal regressions, dashboard legend and probe-filter validation, and corrected related operator documentation. Focused race tests and final just check passed; CodeRabbit completed two passes and every major finding was fixed. Parked only the session-throughput panel because a fan-out session spans multiple thread-derived traces and neither current Tempo nor the traces-disabled deployment provides an authoritative cross-trace distinct-turn aggregate.
+
+Delivered requested-tier span and bounded metric attribution, distinct account and per-model quota windows (300 and 10080 minutes live on m7kni), exact-set regressions, dashboard legend and probe-filter validation, and corrected operator docs. Verified with focused race tests, just check, and two CodeRabbit passes with every major finding fixed. The session-throughput panel criterion was dropped on 2026-09-05 because no authoritative cross-trace session aggregate exists.
 <!-- SECTION:FINAL_SUMMARY:END -->

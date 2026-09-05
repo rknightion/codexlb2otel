@@ -1,11 +1,11 @@
 ---
 id: CXO-0001
 title: 'P5 - Postgres enrichment: join archive turns to request_logs'
-status: Parked
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-14 16:58'
-updated_date: '2026-09-04 22:30'
+updated_date: '2026-09-05 17:22'
 labels:
   - enhancement
   - from-gh-issue
@@ -68,4 +68,12 @@ Root wiring landed at 6a54f61 and final replay-safe cost handling at 05c53ed and
 Final 30 minute live sample at 2026-09-04T19:53Z: enrichment outcomes were disabled=1,183, with no cache_hit, db_hit, miss, or error series; codexlb_cost_usd_total remained absent. This confirms graceful disabled behavior only, not Postgres compatibility or enrichment success.
 
 Final v0.4.0 deployment recheck: Camden runs release SHA 8df1abbc and digest sha256:e62782f6062a20febb2a464a8802d4a03e5454de5ec932ed845ad378906ac1c7, but CODEXLB2OTEL_POSTGRES_DSN is still absent and Postgres remains disabled. m7kni returned only codexlb_selfobs_result=disabled for enrichment and no codexlb_cost_usd_total series. The source implementation is deployed and healthy; live Postgres compatibility, db_hit, and cost remain unproven. Resume boundary remains an existing least-privilege DSN with SELECT on request_logs, api_keys, and accounts; no credential or role was invented.
+
+2026-09-05 17:19 UTC: enrichment ENABLED on camden. Role codexlb2otel_ro created by the planning session (LOGIN, SELECT on request_logs/api_keys/accounts only, default_transaction_read_only=on, statement_timeout=5s); end-to-end auth over the exact DSN path (host.docker.internal:5435, scram) returned rows from request_logs, permission denied on usage_history, and refused an INSERT in a read-only transaction. Wired: CODEXLB2OTEL_POSTGRES_DSN in /opt/compose/codexlb2otel/.env, extra_hosts host.docker.internal:host-gateway in compose.yml (committed to compose-camden 647bc22), postgres block enabled in /opt/codexlb2otel/config.yaml (backup config.yaml.bak-<ts> beside it). Container recreated at image rev 93ec78d, healthy, log: postgres enrichment enabled. Live m7kni 5-minute window: enrich lookups db_hit=20.8, miss=1.1, disabled=42.6 (pre-restart tail); codexlb_cost_usd_total present and increasing (0.24 USD in the first minutes). Postgres compatibility, db_hit and cost are now proven live.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Archive turns are joined to request_logs by response id (indexed point lookup) with an id-tail prefetch that caches archive_request_id aliases, attaching cost_usd, api key id/name, codex-lb's status/error_code/failure_phase and two proxy timings; a database fault degrades to absent enrichment. Verified live on camden 2026-09-05 with a dedicated read-only role: db_hit outcomes and codexlb_cost_usd_total increasing on m7kni within five minutes of the deploy, alongside the earlier unit, race and just check evidence.
+<!-- SECTION:FINAL_SUMMARY:END -->

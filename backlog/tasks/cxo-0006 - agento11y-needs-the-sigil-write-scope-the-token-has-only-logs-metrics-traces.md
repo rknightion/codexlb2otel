@@ -4,7 +4,7 @@ title: 'agento11y needs the sigil:write scope; the token has only logs/metrics/t
 status: Parked
 assignee: []
 created_date: '2026-08-14 16:59'
-updated_date: '2026-09-04 22:30'
+updated_date: '2026-09-05 17:21'
 labels:
   - from-gh-issue
   - blocked-on-human
@@ -69,4 +69,6 @@ something an agent can complete here.** Everything after that - the config flip,
 the verification call - is ordinary work and is on the acceptance criteria.
 
 Final v0.4.0 deployment recheck: Camden still has agento11y.enabled=false and otlp.traces.enabled=false. No approved sigil:write credential appeared during the run, so no config was changed and no generation arrival is claimed. Resume boundary remains a deployed token carrying sigil:write; then enable, deploy, and verify individual accepted generations.
+
+2026-09-05 decision (Rob, wave 2 pre-flight): leave agento11y AND otlp traces disabled for wave 2. No sigil:write token will be minted before that wave. Stays Parked; resume boundary unchanged.
 <!-- SECTION:NOTES:END -->

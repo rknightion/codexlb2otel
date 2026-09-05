@@ -3,11 +3,11 @@ id: CXO-0021
 title: >-
   Dashboard additions: plot the enrichment data and every emitted signal that
   has no panel
-status: Parked
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-03 14:11'
-updated_date: '2026-09-04 22:30'
+updated_date: '2026-09-05 17:24'
 labels:
   - dashboards
 dependencies:
@@ -46,7 +46,7 @@ Deliberately NOT plotted, so nobody adds them later by mistake: gen_ai.provider.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Every panel in sections A to D exists in generate.py, and generate.py verify() fails if any metric, record type or span name that the exporter emits has no panel
-- [ ] #2 Regenerated JSON pushed to m7kni; gcx dashboards snapshot of the Tokens & Cost and Pipeline Health tabs shows live data in the new cost and enrichment panels within one hour of the enrichment deploy
+- [x] #2 Regenerated JSON pushed to m7kni; gcx dashboards snapshot of the Tokens & Cost and Pipeline Health tabs shows live data in the new cost and enrichment panels within one hour of the enrichment deploy
 - [x] #3 A $family variable exists and every cost, token and latency panel excludes probe by default
 - [x] #4 docs/dashboards.md and dashboards/README.md describe the new tabs and the deliberate omissions
 <!-- AC:END -->
@@ -70,4 +70,12 @@ Dashboard implementation landed at 7a54c59 and final selector fixes at 334a4db. 
 Final 30 minute live sample still had only enrichment disabled=1,183 and no codexlb_cost_usd_total series. The cost and genuine enrichment half of AC 2 remains parked, not skipped or passed.
 
 Final v0.4.0 deployment recheck: the live dashboard exactly matches the committed spec and the enrichment-disabled state renders, but Postgres has no DSN, enrichment emits disabled only, and codexlb_cost_usd_total returns no series. AC 2 remains parked until genuine db_hit and cost data arrive within the required observation window; dashboard presence alone is not a pass.
+
+2026-09-05 17:23 UTC, four minutes after enrichment went live on camden (CXO-0001 notes): gcx dashboards snapshot of live panels 132 (Enrichment lookups by result: db_hit 0.205 req/s last, miss 0.004 req/s, disabled decaying from the pre-restart tail), 47 (Cost by model, effort, thread source, family, and API key: one live series gpt-5.6-terra / high / subagent / websocket / personal at USD 0.0022) and 6 (Spend in range). PNGs kept gitignored at codex/evidence-2026-09-05-panel-*.png. AC 2 satisfied within the one-hour window.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added the cost, enrichment-health, unused-attribute, legacy Loki-body, lookup, invoke_agent/execute_tool span and family-filter panels to the generated v2 dashboard with generate.py coverage enforcement (63/63 metrics, 9/9 record types, 10/10 span names, 137 panels), documented the tabs and deliberate omissions, and published to m7kni with the live spec identical to the committed resource. Verified live on 2026-09-05: rendered snapshots of the enrichment and cost panels show db_hit lookups and per-model cost within four minutes of Postgres enrichment being enabled.
+<!-- SECTION:FINAL_SUMMARY:END -->

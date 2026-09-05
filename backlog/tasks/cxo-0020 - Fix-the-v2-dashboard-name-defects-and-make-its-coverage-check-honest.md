@@ -1,11 +1,11 @@
 ---
 id: CXO-0020
 title: Fix the v2 dashboard name defects and make its coverage check honest
-status: Parked
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-03 13:51'
-updated_date: '2026-09-04 22:30'
+updated_date: '2026-09-05 17:22'
 labels:
   - dashboards
 dependencies: []
@@ -31,11 +31,11 @@ Not in scope: adding panels for signals that have none (that is the dashboard-ad
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The three panels above query the real wire names and render series on the live m7kni stack (evidence: gcx dashboards snapshot or a query against grafanacloud-prom returning data for each)
-- [x] #2 The metric sidecar is produced by a just recipe (group gen) whose extraction matches every Metric* constant including ones with digits, and just check fails when the committed sidecar is stale
-- [x] #3 generate.py verify() fails when a panel query references a metric wire name or a label that the source does not emit, not only when a declared name has no panel; check_names.py (or its replacement) covers dashboards/v2/
-- [x] #4 SPAN_NAMES enumerates every span name the otlptrace sink emits, including invoke_agent and every critical_path.* phase, and verify() fails when one has no panel
-- [x] #5 Regenerated dashboards/v2/codexlb2otel-full.json is pushed to m7kni with gcx dashboards update and the live spec matches the committed file
+- [x] #1 The metric sidecar is produced by a just recipe (group gen) whose extraction matches every Metric* constant including ones with digits, and just check fails when the committed sidecar is stale
+- [x] #2 generate.py verify() fails when a panel query references a metric wire name or a label that the source does not emit, not only when a declared name has no panel; check_names.py (or its replacement) covers dashboards/v2/
+- [x] #3 SPAN_NAMES enumerates every span name the otlptrace sink emits, including invoke_agent and every critical_path.* phase, and verify() fails when one has no panel
+- [x] #4 Regenerated dashboards/v2/codexlb2otel-full.json is pushed to m7kni with gcx dashboards update and the live spec matches the committed file
+- [x] #5 Contract proof for the secondary-window panel (Rob, 2026-09-05, replaces the live-data criterion): the generated panel queries the real wire name codexlb_rate_limit_secondary_used_percent, and a source-level test proves the instrument is emitted with codexlb_rate_limit_window_minutes for a secondary window; live rendering is not required because no secondary-window traffic has occurred since August
 <!-- AC:END -->
 
 ## Definition of Done
@@ -65,4 +65,12 @@ The final full-branch review also found an empty-ID Loki lookup match and non-at
 A further review found the family variable default hard-coded three known values and stale explanatory text. The default All value now uses a RE2-compatible regex that excludes only exact probe while admitting future family values; probe remains manually selectable. Representative regex cases passed. Signal docs now state the explicit non-probe user-traffic contract. The tool-call histogram mapping finding was rejected: unit count is translated into the observed gen_ai_client_tool_calls_per_operation_count_bucket series, and the live Wave 1 query returned 352 such bucket series.
 
 Final v0.4.0 deployment recheck: dashboard generation 13 remains exact-spec identical to the committed resource. The resourceVersion-safe identical update was accepted without changing generation. Primary and per-model rate-limit panels now have live codexlb_rate_limit_window_minutes values at 300 and 10080 minutes, but codexlb_rate_limit_secondary_used_percent still returns no series. AC 1 therefore remains parked on genuine secondary-window traffic; source or synthetic evidence is not substituted for live rendering.
+
+2026-09-05: AC 1 (live secondary-window rendering) replaced by a contract-proof criterion on Rob's decision. Evidence: dashboards/v2/codexlb2otel-full.json panel expr codexlb_rate_limit_secondary_used_percent{job="codexlb2otel"} (line 6996) and internal/sink/otlpmetric/sink_test.go:235 asserts attr.MetricRateLimitUsed2 is recorded with codexlb_rate_limit_window_minutes for a 10080-minute secondary window. Live m7kni still returns no series for the metric (checked 2026-09-05 17:10 UTC); that is absence of traffic, not a defect.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fixed the three v2 dashboard defects, made the sidecar and coverage validation honest, regenerated and published generation 12/13 to m7kni (live spec identical to the committed resource). The secondary-window panel is proven at contract level (real wire name in the panel, sink test for the instrument) because no secondary-window traffic has existed since August; Rob accepted that criterion on 2026-09-05. Verified with just check, live PromQL for the tool-call histogram (352 bucket series) and operation-duration by codexlb_status (26 series).
+<!-- SECTION:FINAL_SUMMARY:END -->
