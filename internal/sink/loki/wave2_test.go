@@ -75,3 +75,27 @@ func TestToolCallLineTruncatesAsValidArgumentsJSON(t *testing.T) {
 		t.Errorf("replacement input = %q, want valid JSON", got.Input)
 	}
 }
+
+func TestBuildLines_UpstreamDiagnosticsStayInTurnBody(t *testing.T) {
+	tn := &turn.Turn{FirstTS: time.Unix(1, 0), LastTS: time.Unix(2, 0), UpstreamStatusCode: 503, UpstreamErrorCode: "overloaded", UpstreamTransport: "http", Prompts: []turn.Prompt{{Text: "synthetic"}}}
+	lines := buildLines(tn, attr.NewGuard(), "svc", attr.DefaultLabels, 192<<10, map[string]bool{attr.RecordTurn: true, attr.RecordPrompt: true}, newFakeRejecter())
+	if len(lines) != 2 {
+		t.Fatalf("lines = %d, want 2", len(lines))
+	}
+	for _, line := range lines {
+		for key := range kvMap(line.metadata) {
+			if key == "codexlb_upstream_status_code" || key == "codexlb_upstream_error_code" || key == "codexlb_upstream_transport" {
+				t.Errorf("%s metadata carries %s", line.recordType, key)
+			}
+		}
+		if line.recordType == attr.RecordTurn {
+			var got turn.Turn
+			if err := json.Unmarshal(line.body, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.UpstreamStatusCode != 503 || got.UpstreamErrorCode != "overloaded" || got.UpstreamTransport != "http" {
+				t.Fatal("turn body lost upstream diagnostics")
+			}
+		}
+	}
+}

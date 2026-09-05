@@ -3,6 +3,7 @@ package loki
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -31,6 +32,11 @@ const truncMarkerFmt = "…[truncated by codexlb2otel loki sink; original %d cha
 func buildLines(t *turn.Turn, guard *attr.Guard, serviceName string, labelKeys []string, maxLineBytes int, enabled map[string]bool, rej rejecter) []outLine {
 	var out []outLine
 	baseMeta := guard.Metadata(t, labelKeys)
+	// Upstream diagnostics belong only in the turn JSON body and response span,
+	// not in metadata inherited by every conversation-content line (D16).
+	baseMeta = slices.DeleteFunc(baseMeta, func(kv attr.KV) bool {
+		return kv.Key == attr.UpstreamStatusCode || kv.Key == attr.UpstreamErrorCode || kv.Key == attr.UpstreamTransport
+	})
 
 	labelCache := map[string][]attr.KV{}
 	labelsFor := func(recordType string) []attr.KV {
