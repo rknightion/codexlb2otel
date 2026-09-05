@@ -169,7 +169,8 @@ func traceAttrs(t *turn.Turn, kvs []attr.KV) (base, response []attribute.KeyValu
 		switch kv.Key {
 		case attr.CostUSD, attr.ProxyTimeToResponseCreated, attr.ProxyTimeToFirstUpstreamEvent:
 			continue
-		case attr.APIKeyID, attr.APIKeyName, attr.ProxyStatus, attr.ProxyErrorCode, attr.ProxyFailurePhase:
+		case attr.APIKeyID, attr.APIKeyName, attr.ProxyStatus, attr.ProxyErrorCode, attr.ProxyFailurePhase,
+			attr.UpstreamStatusCode, attr.UpstreamErrorCode, attr.UpstreamTransport:
 			response = append(response, attribute.String(kv.Key, kv.Value))
 		default:
 			base = append(base, attribute.String(kv.Key, kv.Value))

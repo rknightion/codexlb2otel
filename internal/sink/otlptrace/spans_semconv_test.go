@@ -154,6 +154,7 @@ func TestPostgresEnrichmentIsTypedAndResponseScoped(t *testing.T) {
 		FirstTS: now.Add(-time.Second), LastTS: now, ServerCreatedAt: now.Add(-time.Second),
 		ServerCompletedAt: now, CostUSD: &cost, APIKeyID: "key-1", APIKeyName: "primary",
 		ProxyStatus: "success", ProxyResponseCreatedMS: 1250, ProxyFirstUpstreamEventMS: 2500,
+		UpstreamStatusCode: 503, UpstreamErrorCode: "overloaded", UpstreamTransport: "http",
 	}
 	if err := s.Emit(context.Background(), []*turn.Turn{tn}); err != nil {
 		t.Fatal(err)
@@ -181,7 +182,7 @@ func TestPostgresEnrichmentIsTypedAndResponseScoped(t *testing.T) {
 				if sp.Name != "generateText gpt-5.6-sol" || a.Value.AsFloat64() != 2.5 {
 					t.Errorf("span %q first-upstream time = %v, want typed response-only 2.5", sp.Name, a.Value)
 				}
-			case attr.APIKeyID, attr.APIKeyName, attr.ProxyStatus:
+			case attr.APIKeyID, attr.APIKeyName, attr.ProxyStatus, attr.UpstreamStatusCode, attr.UpstreamErrorCode, attr.UpstreamTransport:
 				found[string(a.Key)] = true
 				if sp.Name != "generateText gpt-5.6-sol" {
 					t.Errorf("span %q carries response-only enrichment %s", sp.Name, a.Key)
@@ -191,7 +192,7 @@ func TestPostgresEnrichmentIsTypedAndResponseScoped(t *testing.T) {
 	}
 	for _, key := range []string{
 		attr.CostUSD, attr.ProxyTimeToResponseCreated, attr.ProxyTimeToFirstUpstreamEvent,
-		attr.APIKeyID, attr.APIKeyName, attr.ProxyStatus,
+		attr.APIKeyID, attr.APIKeyName, attr.ProxyStatus, attr.UpstreamStatusCode, attr.UpstreamErrorCode, attr.UpstreamTransport,
 	} {
 		if !found[key] {
 			t.Errorf("response span did not carry %s", key)
