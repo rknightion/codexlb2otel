@@ -3,9 +3,10 @@ id: CXO-0039
 title: >-
   Instant barchart panels show the timestamp as the category and hide the series
   name
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-06 11:13'
+updated_date: '2026-09-06 12:36'
 labels:
   - needs-triage
 dependencies: []
@@ -22,11 +23,23 @@ Every horizontal barchart built from an instant PromQL query with legendFormat (
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each affected barchart renders one labelled bar per label value in a gcx dashboards snapshot, with no year on the category axis
-- [ ] #2 The generator applies the fix through one helper so no instant barchart can be added without it; just dashboard-check is green
+- [x] #1 Each affected barchart renders one labelled bar per label value in a gcx dashboards snapshot, with no year on the category axis
+- [x] #2 The generator applies the fix through one helper so no instant barchart can be added without it; just dashboard-check is green
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Fixed in dashboards/v2/generate.py: _instant_barchart() appends a reduce (seriesToRows, lastNotNull) plus an organize rename for every barchart with an instant Prometheus query, sets colorByField and hides the redundant legend; instant_barchart_findings() runs inside verify() and a stripped panel produced one finding in the negative check. Six barcharts affected (28, 29, 34, 51, 53, 87). Deployed to m7kni as dashboard generation 17; snapshots of panel 28 (codex-tui) and panel 51 over 3h (memory, compaction, prewarm, turn) show named categories and no year on the axis. just check green; CodeRabbit complete with 0 findings.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Commit bfcf800: central series-to-rows reduce for instant barcharts with a verify() lint; m7kni generation 17 renders named categories (snapshots of panels 28 and 51).
+<!-- SECTION:FINAL_SUMMARY:END -->
