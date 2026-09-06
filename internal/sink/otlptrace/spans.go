@@ -86,6 +86,17 @@ func turnSpanID(t *turn.Turn) trace.SpanID {
 	return hashSpanID("turn", turnKey(t))
 }
 
+// toolCallSpanID identifies one invocation within a thread. The first occurrence
+// keeps the original two-part derivation so existing spans remain byte-identical;
+// later uses of a reused call ID add the reducer's 1-based occurrence to separate
+// the invocations deterministically.
+func toolCallSpanID(threadID, callID string, occurrence int) trace.SpanID {
+	if occurrence <= 1 {
+		return hashSpanID(threadID, callID)
+	}
+	return hashSpanID(threadID, callID, strconv.Itoa(occurrence))
+}
+
 // responseKey identifies one response - a Turn - independent of how many other
 // responses share its logical turn.
 func responseKey(t *turn.Turn) string {
@@ -544,7 +555,7 @@ func (s *Sink) emitToolCalls(ctx context.Context, parent trace.SpanContext, raw 
 		if tc.Status != "" {
 			otelAttrs = append(otelAttrs, attribute.String(traceAttrToolCallState, tc.Status))
 		}
-		sid := hashSpanID(t.ThreadID, tc.CallID)
+		sid := toolCallSpanID(t.ThreadID, tc.CallID, tc.CallOccurrence)
 		// Span name per the spec's own guidance for each operation: "execute_tool
 		// {gen_ai.tool.name}" / "invoke_agent {gen_ai.agent.name}" - the latter uses
 		// TaskName (the spawned agent's own name), not tc.Name (which would just say
@@ -594,7 +605,7 @@ func (s *Sink) emitCrossResponseToolResults(ctx context.Context, parent trace.Sp
 		extra = append(extra, contentItemAttrs(output.Ordinal, output.ItemID, output.CapturedAt, output.Provenance)...)
 		attrs := s.guard.With(base, extra...)
 		origin := trace.NewSpanContext(trace.SpanContextConfig{
-			TraceID: traceID(t), SpanID: hashSpanID(t.ThreadID, output.CallID), TraceFlags: trace.FlagsSampled,
+			TraceID: traceID(t), SpanID: toolCallSpanID(t.ThreadID, output.CallID, output.OriginCallOccurrence), TraceFlags: trace.FlagsSampled,
 		})
 		id := hashSpanID("tool_result", respKey, strconv.Itoa(i), output.CallID, output.ItemID, strconv.Itoa(output.Ordinal))
 		_, span := s.startLinkedChild(ctx, parent, "tool_result", id, respStart, toAttrs(attrs), trace.SpanKindInternal,
