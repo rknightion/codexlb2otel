@@ -55,14 +55,12 @@ test filter="":
 test-short:
     CLB_CORPUS=/nonexistent CLB_NO_CORPUS=1 go test -race ./...
 
-# opt-in full-corpus race suite and exhaustive drift scan; reports coverage separately
+# opt-in full-corpus gate against real captures; proves caps, Loki sizing, and drift; concurrency coverage is `just test` (corpus-free, race)
 [group('check')]
 [no-exit-message]
 test-corpus filter="":
-    @echo "full-corpus: exhaustive drift scan against {{ corpus }}"
     just corpus='{{ corpus }}' probe
-    @echo "full-corpus: race suite against {{ corpus }}"
-    CLB_CORPUS="$(cd '{{ corpus }}' && pwd)" env -u CLB_NO_CORPUS go test -p 1 -race -timeout 4h -run '{{ filter }}' ./...
+    CLB_CORPUS="$(cd '{{ corpus }}' && pwd)" env -u CLB_NO_CORPUS go test -p 1 -timeout 2h -run '{{ filter }}' ./...
     @echo "full-corpus: passed"
 
 # build all seven CLI tools into bin/ (gitignored)

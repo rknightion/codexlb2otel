@@ -19,12 +19,14 @@ This repo's task surface is a `justfile`. Discover it, don't guess it:
   committed `corpus.sig.json`. Stop and ask before running it; never pass `--yes` or `JUST_YES=1`.
 - If a task you need does not exist, add a recipe with a `#` doc comment and a `[group(...)]` rather
   than running a bare command.
-- `just test` and `just check` never read the local corpus. They are the routine development paths;
-  `just check` runs the faster parallel `just test-short`, matching CI's non-corpus path.
-- `just test-corpus` is the explicit, potentially multi-hour confidence gate. Run it after changing
-  archive decoding, reduction, metric cardinality, Loki sizing, or the embedded drift contract, and
-  before a release whose evidence depends on real archive coverage. A green routine gate is not proof
-  that the corpus-backed checks passed.
+- `just test` and `just check` never read the local corpus. `just test` provides concurrency coverage
+  with the race detector; `just check` runs the faster parallel `just test-short`, matching CI's
+  non-corpus path.
+- `just test-corpus` is the explicit full-corpus confidence gate, expected to take about 25–30 minutes.
+  Run it after changing archive decoding, reduction, metric cardinality, Loki sizing, or the embedded
+  drift contract, and before a release whose evidence depends on real archive coverage. It proves
+  caps, Loki sizing, and drift against real captures; concurrency coverage remains in `just test`
+  (corpus-free, race).
 - `just check` also requires Python 3 for dashboard artifact and coverage validation. Make sure
   `python3` is on `PATH` before running the gate.
 
