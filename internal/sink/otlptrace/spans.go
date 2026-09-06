@@ -178,6 +178,8 @@ func toAttrs(kvs []attr.KV) []attribute.KeyValue {
 func traceAttrs(t *turn.Turn, kvs []attr.KV) (base, response []attribute.KeyValue) {
 	for _, kv := range kvs {
 		switch kv.Key {
+		case attr.ClientGroup, attr.ConnectionKind, attr.FailurePhase:
+			continue // added only to the turn root, not inherited by child spans
 		case attr.CostUSD, attr.ProxyTimeToResponseCreated, attr.ProxyTimeToFirstUpstreamEvent:
 			continue
 		case attr.APIKeyID, attr.APIKeyName, attr.ProxyStatus, attr.ProxyErrorCode, attr.ProxyFailurePhase,
@@ -296,7 +298,11 @@ func (s *Sink) emitTurn(ctx context.Context, t *turn.Turn) {
 		turnStart = time.Unix(0, 0).UTC()
 	}
 
-	turnCtx, turnSpan := s.startRoot(ctx, "turn", tid, tsid, turnStart, full, turnLinks(t))
+	// Connection/client classifications describe the turn root. Child spans keep
+	// their existing attribute contracts.
+	turnAttrs := append([]attribute.KeyValue(nil), full...)
+	turnAttrs = append(turnAttrs, toAttrs(attr.Only(raw, attr.ClientGroup, attr.ConnectionKind, attr.FailurePhase))...)
+	turnCtx, turnSpan := s.startRoot(ctx, "turn", tid, tsid, turnStart, turnAttrs, turnLinks(t))
 
 	respStart := firstNonZero(t.ServerCreatedAt, t.FirstTS, turnStart)
 	respEnd := clampEnd(respStart, firstNonZero(t.ServerCompletedAt, t.LastTS, respStart))

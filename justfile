@@ -88,7 +88,7 @@ vuln: _govulncheck
 
 # THE GATE: exactly what CI's build-test job enforces.
 [group('check')]
-check: fmt-check lint build test-short probe-ci dashboard-check
+check: fmt-check lint build test-short probe-ci dashboard-check docs-links
 
 # CI's superset: snapshot needs cross-compilation and image needs a Docker daemon.
 [group('check')]
@@ -210,7 +210,7 @@ _govulncheck:
     mkdir -p '{{ tools }}'
     GOBIN='{{ tools }}' go install golang.org/x/vuln/cmd/govulncheck@{{ govulncheck_version }}
 
-# verify relative file links in the project documentation (anchors excluded)
+# verify relative file links and heading anchors in the project documentation
 [group('check')]
 [script('python3')]
 docs-links:

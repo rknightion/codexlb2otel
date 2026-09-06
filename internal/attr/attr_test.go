@@ -397,3 +397,16 @@ func TestRegistryIsWellFormed(t *testing.T) {
 		}
 	}
 }
+
+func TestEnrichmentFieldsStayOutOfLokiMetadata(t *testing.T) {
+	tn := &turn.Turn{ClientGroup: "codex-tui", ConnectionKind: "prewarm", FailurePhase: "upstream"}
+	g := NewGuard()
+	for _, key := range []string{ClientGroup, ConnectionKind, FailurePhase} {
+		if _, ok := find(g.Metadata(tn, DefaultLabels), key); ok {
+			t.Errorf("%s leaked into Loki structured metadata; these fields belong in the turn body", key)
+		}
+		if _, ok := find(g.SpanAttrs(tn), key); !ok {
+			t.Errorf("%s missing from span attributes", key)
+		}
+	}
+}

@@ -658,6 +658,10 @@ func (g *Guard) Metadata(t *turn.Turn, promoted []string) []KV {
 	}
 	out := make([]KV, 0, len(registry))
 	for _, f := range registry {
+		// These database classifications belong in the turn body, not Loki metadata.
+		if f.Key == ClientGroup || f.Key == ConnectionKind || f.Key == FailurePhase {
+			continue
+		}
 		if label[f.Key] || f.Of == nil {
 			continue // a stream label already, or not Turn-derived at all
 		}
