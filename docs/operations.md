@@ -61,6 +61,11 @@ just baseline
 
 The baseline contains structure and safe enums, not conversation bodies.
 
+`just test-corpus` is the opt-in full-corpus confidence gate. It runs the exhaustive probe and the
+non-race corpus suite and is expected to take about 25–30 minutes. Routine `just test` and
+`just check` remain corpus-free; concurrency coverage is provided by the race-enabled routine test
+path.
+
 The daemon can run the same comparison in-process with `probe.enabled`. It scans once immediately,
 then at `probe.interval`; `probe.sampled` is suitable for routine detection but cannot prove absence
 or update the baseline. A scan error retains the last successful severity counts and records the

@@ -67,13 +67,24 @@ returns after eviction is flagged `BaselineReset`; its current cumulative value 
 not an exact delta. Deleted-file tombstones prevent a reclaimed path from being treated as the same
 generation forever and are pruned after their UTC filename day is more than three days old.
 
-The checkpoint also persists the bounded tool-call correlation index. It stores unconsumed
-`(thread, call_id)` entries with the originating response id, turn id, tool name, and archive
-capture time. It keeps at most 512 entries per thread and evicts entries older than 24 hours on the
-archive clock. A matching result is classified as `exact`, `ambiguous`, or `none`; an exact entry
-is consumed. The index is state version 5, and version 4 or older snapshots restore with an empty
-index. Replay deduplication prevents a replay from re-inserting a call or consuming its origin a
-second time, and lookup never crosses thread boundaries.
+The checkpoint also persists the bounded tool-call correlation index. It stores call entries with the
+originating response id, turn id, tool name, archive capture time, and a 1-based call occurrence.
+Consumed entries remain in retained history so a reused call ID receives the next occurrence. A
+matching result is classified as `exact`, `ambiguous`, or `none`; an exact entry records its
+`origin_call_occurrence` and is then consumed for result matching. Tool-call span IDs use
+`hashSpanID(threadID, callID)` when the occurrence is at most 1 and add the occurrence to the hash
+for later uses. Exact result links apply the same rule to `origin_call_occurrence`. These occurrence
+fields are wire metadata, not span attributes.
+
+The index keeps at most 512 entries per thread and at most 4,096 resident threads. On insertion
+past the global bound, it evicts the thread whose newest entry is oldest, breaking ties with the
+lexically smallest thread ID. Entries older than 24 hours on the archive clock are removed during
+expiry; a thread with no retained entries is removed on that pass. Reuse protection applies only
+within this retained correlation history. Per-thread capacity eviction, global thread eviction,
+and expiry reset numbering for a later reuse, so this is not a lifetime guarantee. The checkpoint
+state version is 6; version 5 restores the other reducer state with an empty call index. Replay
+deduplication prevents a replay from re-inserting a call or consuming its origin a second time, and
+lookup never crosses thread boundaries.
 
 ## Enrichment boundary
 

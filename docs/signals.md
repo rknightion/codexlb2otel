@@ -35,15 +35,21 @@ suffixes. Query the backend's translated series names, not the dotted OTel names
 ### Metric attribute boundaries
 
 `codexlb.family` is present on response and turn shapes and on every token counter and duration
-histogram. Exclude `codexlb.family = "probe"`, for example with `codexlb.family != "probe"`, when
+histogram. Exclude `codexlb.family = "probe"`, for example with the OTel expression
+`codexlb.family != "probe"` or the translated PromQL selector `codexlb_family!="probe"`, when
 measuring user traffic. Dashboard user-traffic queries apply the family selector, whose default is
 all non-probe values. This is separate from the record transport field, which is not a reliable way
 to identify synthetic health traffic.
 
+For a connection-level prewarm exclusion, use the OTel expression
+`codexlb.connection_kind != "prewarm"` or the translated PromQL selector
+`codexlb_connection_kind!="prewarm"`; see the proxy-wait caveat below because this selector removes
+a connection cohort rather than classifying each response as a prewarm.
+
 The primary operation, turn, and TTFT histograms retain model and their contract-specific cohort
 labels. Lower-level critical-path, engine-timing, response-subtraction, and TBT histograms retain
-only family, plus critical-path coverage where applicable. This keeps their bucket expansion inside
-the measured active-series budget. Agent Observability histograms retain stable
+family and connection kind, plus critical-path coverage where applicable. This keeps their bucket
+expansion inside the measured active-series budget. Agent Observability histograms retain stable
 `gen_ai.agent.name`; the instructions-hash `gen_ai.agent.version` remains on response records and
 spans rather than multiplying histogram buckets.
 
@@ -80,6 +86,18 @@ The optional database join adds `cost_usd`, `api_key_id`, `api_key_name`, `proxy
 response span. API-key and proxy fields are response-scoped metadata and are not re-derived from
 wire fields.
 
+The wave 3 enrichment fields have these bounded values and destinations:
+
+| Field | Bounded values observed | Metric dimension | Loki body | Span attribute |
+| --- | --- | --- | --- | --- |
+| `client_group` | `codex-tui`, `codex_exec`, `Codex Desktop`, `curl`, `Python-urllib`, `codex_cli_rs` (cap 8) | `codexlb.turns` and `codexlb.cost_usd` only | `turn` body | `codexlb.client_group` on the `turn` root |
+| `connection_kind` | `normal`, `prewarm` (cap 4) | Every turn-level instrument carrying `codexlb.family` | `turn` body | `codexlb.connection_kind` on the `turn` root |
+| `failure_phase` | `upstream`, `downstream` (cap 4; content-only) | None | `turn` body | `codexlb.failure_phase` on the `turn` root |
+
+The span attributes above are on the literal `turn` root only. They are not copied to its
+`generateText` or `streamText` child spans. These fields remain in the Loki body and are not added
+as Loki labels or structured-metadata fields.
+
 The three proxy wait columns are nullable milliseconds in the turn JSON. They preserve the
 difference between an observed zero and no observation: a non-null zero is emitted as `0`, while a
 null value is omitted. Their anchors are deliberately different:
@@ -87,18 +105,37 @@ null value is omitted. Their anchors are deliberately different:
 | Turn field | Proxy measurement |
 | --- | --- |
 | `proxy_queue_wait_ms` | Account selection and admission, including failed failover attempts; outside the successful attempt's latency anchor. |
-| `proxy_response_create_gate_wait_ms` | Wait inside the HTTP bridge's response-create gate. |
+| `proxy_response_create_gate_wait_ms` | Wait inside the websocket or HTTP-bridge response-create gate. |
 | `proxy_bridge_queue_wait_ms` | Wait inside the HTTP bridge queue. |
 
 The proxy wait histogram is `codexlb.proxy.wait` (Prometheus
 `codexlb_proxy_wait_seconds`) in seconds. It records the three kinds separately with explicit
 buckets `0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5`. Its exact cohort is
-`codexlb.proxy.wait_kind`, `codexlb.family`, `codexlb.request_kind`, `gen_ai.request.model`, and
-`codexlb.thread_source`. `codexlb.proxy.wait_coverage` (Prometheus
+`codexlb.proxy.wait_kind`, `codexlb.family`, `codexlb.connection_kind`, `codexlb.request_kind`,
+`gen_ai.request.model`, and `codexlb.thread_source`. `codexlb.proxy.wait_coverage` (Prometheus
 `codexlb_proxy_wait_coverage_total`) is a `{observation}` counter with one `present` or `absent`
 observation per kind and response; its exact attributes are `codexlb.proxy.wait_kind`,
-`codexlb.selfobs.result`, and `codexlb.family`. A present zero enters the histogram, while an
-absent value enters coverage only. None of these waits is summed into an end-to-end duration.
+`codexlb.selfobs.result`, `codexlb.family`, and `codexlb.connection_kind`. A present zero enters the
+histogram, while an absent value enters coverage only. None of these waits is summed into an
+end-to-end duration.
+
+## Proxy waits: which path populates what
+
+`latency_queue_ms` is the streaming-path pre-attempt wait: request start to successful-attempt admission, including selection/failover; it is written as zero when immediate (`app/modules/proxy/_service/streaming/mixin.py:509-513`, `565-573`). It is NULL on HTTP bridge and websocket rows.
+
+`latency_response_create_gate_wait_ms` is written after a successful response-create gate acquisition, from the acquisition-start monotonic timestamp to acquisition (`app/modules/proxy/service.py:1262-1287`, `1381-1390`). Thus successful websocket and HTTP-bridge requests have it, including zero; rows with no successful acquisition leave it NULL.
+
+`latency_bridge_queue_wait_ms` is HTTP-bridge-only: immediately before bridge admission through its successful acquisition (`app/modules/proxy/_service/http_bridge/request_submit.py:2015-2031`). It is NULL for direct streaming and websocket traffic.
+
+The internal HTTP-bridge prewarm has `skip_request_log=True`, so it produces no request-log row or wait measurements (`app/modules/proxy/_service/http_bridge/request_submit.py:2600-2628`).
+
+`connection_request_kind` is nullable and is set from the request header only for websocket transport (`app/db/models.py:464-470`, `app/modules/proxy/_service/http_bridge/request_submit.py:820-858`). Direct streaming leaves it NULL, which explains the observed rule: queue is present only where connection kind is NULL.
+
+Connection-level `prewarm` does not mean the archive response is a prewarm. A zero-output completion is refined to request kind `prewarm` (`app/modules/proxy/_service/websocket/mixin.py:834-841`); otherwise a genuine response on that connection remains a normal request. The reducer reads per-response client metadata, rather than the stale connection header (`internal/turn/reducer.go:486-522`), so it sees genuine responses as `turn`. `codexlb.turns` counts only `turn` and therefore is not inflated (`internal/sink/otlpmetric/record.go:63-65`).
+
+The exporter reads the three columns into their matching fields (`internal/enrich/enrich.go:377-379`). A non-nil pointer, including zero, records a histogram sample; nil records only `absent` coverage (`internal/sink/otlpmetric/record.go:195-227`).
+
+Connection-level prewarm exclusion removes a cohort that can contain genuine turns; the source establishes distinct semantics, not a measured proof of inflated counting. The nullable connection classification was added by `app/db/alembic/versions/20260804_230000_add_request_log_connection_request_kind.py:31-36`.
 
 The upstream diagnostics `upstream_status_code`, `upstream_error_code`, and `upstream_transport`
 are copied into the turn JSON body and response span attributes as
@@ -141,13 +178,26 @@ archive observation timestamp in structured metadata and does not change those e
 ### Tool-result origins
 
 The reducer keeps a per-thread index from `(call_id)` to the originating response, turn, and tool
-name. A single match sets `origin_response_id`, `origin_turn_id`, `origin_tool_name`, and
+name. Each recorded call receives a 1-based `call_occurrence`. A single match sets
+`origin_response_id`, `origin_turn_id`, `origin_tool_name`, `origin_call_occurrence`, and
 `origin_match: "exact"`; more than one open call with the same id is `"ambiguous"`; no match is
-`"none"`. An exact match is consumed, so duplicate outputs cannot match the same call again. The
-index is persisted in checkpoint state version 5, bounded to 512 entries per thread and 24 hours
-on the archive clock, and pruned on insert. It never searches another thread. Replay uses the
-existing deduplication set, so replayed history neither re-inserts calls nor consumes an origin
-twice.
+`"none"`. An exact match is consumed for result matching, but the entry remains in retained
+history so a reused call ID receives the next occurrence. Replay uses the existing deduplication
+set, so replayed history neither re-inserts calls nor consumes an origin twice.
+
+Tool-call span IDs use `hashSpanID(threadID, callID)` when `call_occurrence <= 1` and
+`hashSpanID(threadID, callID, occurrence)` for later occurrences. An exact result link uses the
+same rule with `origin_call_occurrence`. `call_occurrence` and `origin_call_occurrence` are wire
+fields, not span attributes. This reuse protection applies only within retained correlation
+history: per-thread capacity eviction, global thread eviction, or 24-hour expiry resets the
+numbering for a later reuse. It is a source-level protection within that retained history, not a
+lifetime guarantee.
+
+The index is persisted in checkpoint state version 6. It keeps at most 512 entries per thread and
+at most 4,096 resident threads on the archive clock. On insertion past the global bound, it evicts
+the thread whose newest entry is oldest; ties are broken by lexically smallest thread ID. Threads
+whose entries have all expired are removed on the next expiry pass. Version 5 restores the other
+reducer state with an empty call index. The index never searches another thread.
 
 ### September wire additions
 
@@ -254,6 +304,10 @@ The response span carries the response-scoped enrichment attributes, proxy timin
 non-null proxy waits. The turn, phase, and tool spans do not repeat those response-only diagnostics.
 This keeps a cost or proxy measurement attached to the response it describes rather than making it
 look like a property of every child span.
+
+The `codexlb.client_group`, `codexlb.connection_kind`, and `codexlb.failure_phase` attributes are
+attached to the literal `turn` root span only. They are not present on the `generateText` or
+`streamText` child spans.
 
 A tool result recovered on a later response becomes a `tool_result` child of the receiving response
 span. It has a span link to the deterministic origin tool-call span, plus
