@@ -19,9 +19,10 @@ name: publish
 # `uses: rknightion/.github/...` pulls a workflow from ANOTHER repository, and
 # GitHub will not auto-run one of those on a bot-authored pull request - it parks
 # at action_required behind a manual "Approve and run" gate. release-please.yml
-# therefore opens its release PR under RELEASE_PLEASE_TOKEN, a PAT identity, which
-# is a trusted author. That secret is provisioned. Do not "simplify" that step back
-# to the default GITHUB_TOKEN or release PRs will silently stop running CI.
+# mints a per-run GitHub App installation token from the OpenBao broker
+# (`id-token: write`, see `release-please.yml:22`). That identity is a trusted PR
+# author. No PAT exists. Do not "simplify" that step back to the default
+# GITHUB_TOKEN or release PRs will silently stop running CI.
 
 on:
   push:

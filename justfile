@@ -218,8 +218,30 @@ docs-links:
     import re
     from urllib.parse import unquote, urlsplit
 
+    def heading_slugs(markdown):
+        used = set()
+        next_suffix = {}
+        slugs = set()
+        for line in markdown.splitlines():
+            match = re.match(r' {0,3}#{1,6}\s+(.+?)\s*#*\s*$', line)
+            if not match:
+                continue
+            heading = match.group(1).strip().lower()
+            base = re.sub(r'[^\w\s-]', '', heading)
+            base = re.sub(r'\s+', '-', base)
+            suffix = next_suffix.get(base, 0)
+            slug = base if suffix == 0 else f'{base}-{suffix}'
+            while slug in used:
+                suffix += 1
+                slug = f'{base}-{suffix}'
+            next_suffix[base] = suffix + 1
+            used.add(slug)
+            slugs.add(slug)
+        return slugs
+
     files = [Path('README.md'), Path('AGENTS.md'), *Path('docs').rglob('*.md')]
     broken = []
+    headings = {}
     checked = 0
     for source in files:
         text = re.sub(r'```.*?```', '', source.read_text(), flags=re.S)
@@ -233,7 +255,15 @@ docs-links:
             checked += 1
             if not resolved.exists():
                 broken.append(f'{source}: {target}')
+                continue
+            if parsed.fragment:
+                if resolved not in headings:
+                    target_text = re.sub(r'```.*?```', '', resolved.read_text(), flags=re.S)
+                    headings[resolved] = heading_slugs(target_text)
+                anchor = unquote(parsed.fragment)
+                if anchor not in headings[resolved]:
+                    broken.append(f'{source}: {target} (missing anchor)')
     if broken:
         print('\n'.join(broken))
         raise SystemExit(1)
-    print(f'PASS: {checked} relative file links across {len(files)} Markdown files; anchors not checked')
+    print(f'PASS: {checked} relative file links across {len(files)} Markdown files; file anchors checked')
