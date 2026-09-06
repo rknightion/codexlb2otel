@@ -23,6 +23,7 @@ Usage:
 
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
@@ -154,6 +155,29 @@ SPAN_NAMES = ["turn", "critical_path.pre_inference", "critical_path.engine_wall"
               "critical_path.sampling_and_stream", "critical_path.client_tool_pause",
               "critical_path.other", "execute_tool", "invoke_agent", "generateText", "streamText"]
 
+# The family-bearing instruments all retain connection_kind in the metric sink's
+# attr.Only sets. This is the source-side contract for the dashboard lint below: a
+# family matcher is a probe exclusion for these instruments, so it must be paired with
+# the connection-prewarm exclusion unless the query explicitly opts into all connection
+# kinds for the prewarm-share panel.
+CONNECTION_KIND_METRICS = {
+    "codexlb.responses", "codexlb.turns", "codexlb.tokens", "gen_ai.client.token.usage",
+    "codexlb.image_gen_tokens", "codexlb.cost_usd", "codexlb.proxy.wait",
+    "codexlb.proxy.wait_coverage", "gen_ai.client.operation.duration",
+    "codexlb.turn.duration", "gen_ai.client.time_to_first_token", "codexlb.engine_wall",
+    "codexlb.harness_unblocked", "codexlb.pre_inference", "codexlb.sampling_and_stream",
+    "codexlb.client_tool_pause", "codexlb.engine_service_inference",
+    "codexlb.engine_service_sampling", "codexlb.engine_iapi_inference",
+    "codexlb.engine_iapi_sampling", "codexlb.responses_excl_engine_and_tool",
+    "codexlb.responses_excl_engine_wait_sampling",
+    "codexlb.responses_excl_engine_wait_sampling_iapi",
+    "codexlb.responsesapi_excl_client_tools", "codexlb.engine_uncached_prompt_tokens",
+    "codexlb.engine_service_tbt", "codexlb.engine_iapi_tbt",
+    "codexlb.engine_service_minus_iapi_tbt", "codexlb.transport_events",
+    "codexlb.baseline_resets",
+}
+PREWARM_SCOPE_EXCEPTIONS = {"Prewarm connection share"}
+
 _covered_metrics = set()
 _covered_records = set()
 _covered_spans = set()
@@ -168,17 +192,24 @@ def prom(metric, suffix=""):
 
 # Template-variable filters. Applied only to metrics that actually carry the label -
 # adding a matcher for a label a series does not have silently empties the panel.
+# Every family-bearing instrument also carries connection_kind. Keep that cohort
+# exclusion beside the family selector so a panel cannot silently reintroduce connection
+# prewarm traffic while retaining the probe exclusion.
 F_FULL = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexlb_request_kind=~"$kind"'
 F_MODEL = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account"'
 F_ACCT = 'codexlb_account_id=~"$account"'
-F_FAMILY = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexlb_family=~"$family"'
-F_RESPONSE = F_FULL + ', codexlb_family=~"$family"'
-F_MODEL_FAMILY = F_MODEL + ', codexlb_family=~"$family"'
+F_FAMILY_ALL_CONNECTIONS = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexlb_family=~"$family"'
+F_CONNECTION_NORMAL = 'codexlb_connection_kind!="prewarm"'
+F_FAMILY = F_FAMILY_ALL_CONNECTIONS + ', ' + F_CONNECTION_NORMAL
+F_RESPONSE_ALL_CONNECTIONS = F_FULL + ', codexlb_family=~"$family", codexlb_connection_kind=~".*"'
+F_RESPONSE_PREWARM = F_FULL + ', codexlb_family=~"$family", codexlb_connection_kind="prewarm"'
+F_RESPONSE = F_FULL + ', codexlb_family=~"$family", ' + F_CONNECTION_NORMAL
+F_MODEL_FAMILY = F_MODEL + ', codexlb_family=~"$family", ' + F_CONNECTION_NORMAL
 F_TOKEN = F_RESPONSE
-F_USER_TURN = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexlb_request_kind="turn", codexlb_family=~"$family"'
-F_DURATION = 'gen_ai_request_model=~"$model", codexlb_family=~"$family"'
+F_USER_TURN = 'gen_ai_request_model=~"$model", codexlb_account_id=~"$account", codexlb_request_kind="turn", codexlb_family=~"$family", ' + F_CONNECTION_NORMAL
+F_DURATION = 'gen_ai_request_model=~"$model", codexlb_family=~"$family", ' + F_CONNECTION_NORMAL
 F_TTFT = F_DURATION + ', codexlb_request_kind=~"$kind"'
-F_FAMILY_ONLY = 'codexlb_family=~"$family"'
+F_FAMILY_ONLY = 'codexlb_family=~"$family", ' + F_CONNECTION_NORMAL
 
 # RE2 has no negative lookahead. This is the complement of the exact string
 # "probe", so the default All option admits future families without admitting
@@ -269,7 +300,7 @@ def _as_table(queries):
 
 def panel(title, queries, viz="timeseries", desc="", unit=None, opts=None,
           fieldcfg=None, transforms=None, thresholds=None, maxv=None, minv=None,
-          decimals=None, overrides=None):
+          decimals=None, overrides=None, time_from=None):
     queries = _renumber(queries)
     if viz == "table":
         queries = _as_table(queries)
@@ -287,13 +318,16 @@ def panel(title, queries, viz="timeseries", desc="", unit=None, opts=None,
         defaults["thresholds"] = {"mode": "absolute", "steps": thresholds}
     if fieldcfg:
         defaults.update(fieldcfg)
+    query_options = {}
+    if time_from:
+        query_options["timeFrom"] = time_from
     return {"kind": "Panel", "spec": {
         "id": _panel_id[0],
         "title": title,
         "description": desc,
         "links": [],
         "data": {"kind": "QueryGroup", "spec": {
-            "queries": queries, "queryOptions": {}, "transformations": transforms or []}},
+            "queries": queries, "queryOptions": query_options, "transformations": transforms or []}},
         "vizConfig": {"kind": "VizConfig", "group": viz, "version": "v0", "spec": {
             "options": opts or {},
             "fieldConfig": {"defaults": defaults, "overrides": overrides or []}}},
@@ -468,11 +502,12 @@ of one another. Filtering to `turn` hides real spend.
         "Spend in range", [q(f'sum(increase({prom("codexlb.cost_usd")}{sel(filt=F_TOKEN)}[$__range]))',
                               "USD", instant=True)],
         "stat", unit="currencyUSD", opts=stat_opts("none", "lastNotNull", 42),
-        desc="Observed enriched spend in the selected range. Probe traffic is excluded by the family selector."))
+        desc="Observed enriched spend in the selected range. Probe traffic and connection-prewarm "
+             "traffic are excluded by the default family and connection selectors."))
     p.append(panel(
         "Spend rate", [q(f'sum(rate({prom("codexlb.cost_usd")}{sel(filt=F_TOKEN)}[$__rate_interval]))', "USD/s")],
         unit="currencyUSD", opts=LEG,
-        desc="Observed enriched spend per second, excluding probe traffic by default."))
+        desc="Observed enriched spend per second, excluding probe and connection-prewarm traffic by default."))
     p.append(panel(
         "Errors", [q(f'round(sum(increase({prom("codexlb.errors")}{sel(filt=F_MODEL)}[$__range])))', "errors", instant=True)],
         "stat", opts=stat_opts("none", "lastNotNull", 42), unit="short",
@@ -560,8 +595,10 @@ So every effort-split panel here counts **requests**, never tokens. Token shape 
 LogQL question and lives on the **Tokens & Cost** tab. The one token panel here is by model only,
 and says so.
 
-`responses` counts every model response, prewarm included; `turns` excludes prewarm and compaction.
-Where the two disagree the gap is client-tagged prewarm - real billed traffic, not noise.
+The default request and cost panels exclude the `codexlb_connection_kind="prewarm"` cohort. That is a
+connection-level filter and can still contain real user turns, so it is not a claim that every response
+on such a connection is speculative. The dedicated prewarm-share panel on the Turns & Responses tab
+explicitly includes prewarm in its all-request denominator.
 """))
     p.append(panel(
         "Response rate by model", [
@@ -575,9 +612,10 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
             q(f'sum by (gen_ai_request_model) (rate({prom("codexlb.turns")}'
               f'{sel(HAS_MODEL, F_RESPONSE)}[$__rate_interval]))', "{{gen_ai_request_model}}"),
         ], unit="reqps", opts=LEG, fieldcfg=STACK,
-        desc="The same shape with prewarm and compaction excluded - real work only. A "
-             "model whose turn rate sits far below its response rate is being prewarmed "
-             "more than it is being used."))
+        desc="The same shape with connection-prewarm traffic excluded. codexlb.turns counts "
+             "archive-level RequestKind=turn only, so compaction and archive-level prewarm "
+             "request kinds are already outside this counter; use the dedicated connection-"
+             "share panel for the separate prewarm cohort."))
     p.append(panel(
         "Response rate by model and reasoning effort", [
             q(f'sum by (gen_ai_request_model, gen_ai_request_reasoning_level) '
@@ -642,8 +680,9 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
                              {"Value": "responses", "gen_ai_request_model": "model",
                               "gen_ai_request_reasoning_level": "effort",
                               "codexlb_request_kind": "kind"})],
-        desc="The numbers behind the tab, with request kind as a third column so prewarm "
-             "is visible rather than folded into the model total. Sort any column."))
+        desc="The numbers behind the tab for the default connection cohort, with request "
+             "kind as a third column. Sort any column; the dedicated prewarm-share panel "
+             "uses an explicit all-connection denominator."))
     p.append(panel(
         "Response rate by reasoning effort", [
             q(f'sum by (gen_ai_request_reasoning_level) (rate({prom("codexlb.responses")}'
@@ -661,6 +700,27 @@ Where the two disagree the gap is client-tagged prewarm - real billed traffic, n
              "also carries reasoning effort; the Tokens & Cost tab exposes that split. "
              "Input + output only; cache_read and reasoning are sub-buckets nested inside "
              "those two and stacking them on their own parents double-counts."))
+    p.append(panel(
+        "Requests by client group", [
+            q(f'sum by (codexlb_client_group) (increase({prom("codexlb.turns")}'
+              f'{sel(filt=F_USER_TURN)}[$__range]))', "{{codexlb_client_group}}", instant=True),
+        ], "barchart", unit="short",
+        opts={"orientation": "horizontal", "showValue": "auto",
+              "legend": {"showLegend": False}},
+        desc="Completed user-turn requests grouped by the bounded proxy client group. "
+             "The default cohort excludes probes and connection-prewarm traffic. Because "
+             "connection prewarm can carry a real turn, this is a cohort breakdown rather "
+             "than a claim about request kind."))
+    p.append(panel(
+        "Cost by client group", [
+            q(f'sum by (codexlb_client_group) (increase({prom("codexlb.cost_usd")}'
+              f'{sel(filt=F_TOKEN)}[$__range]))', "{{codexlb_client_group}}", instant=True),
+        ], "barchart", unit="currencyUSD",
+        opts={"orientation": "horizontal", "showValue": "auto",
+              "legend": {"showLegend": False}},
+        desc="Observed enriched cost grouped by the bounded proxy client group. This panel "
+             "excludes probes and connection-prewarm traffic as its fixed operational cohort; "
+             "background connection spend is intentionally outside the breakdown."))
     p.append(panel(
         "Distinct agent versions by model", [
             q(f'count by (gen_ai_request_model) (count by (gen_ai_request_model, gen_ai_agent_version) '
@@ -687,9 +747,24 @@ def tab_turns():
             q(f'sum by (codexlb_request_kind) (rate({prom("codexlb.responses")}{sel(filt=F_RESPONSE)}[$__rate_interval]))',
               "{{codexlb_request_kind}}"),
         ], unit="reqps", opts=LEG, fieldcfg=STACK,
-        desc="turn, prewarm, compaction and memory run CONCURRENTLY on the same thread - "
-             "they are separate metric series, not phases of one another. Prewarm and "
-             "compaction volume is invisible to the user but not to the bill."))
+        desc="Request kinds run CONCURRENTLY on the same thread - they are separate metric "
+             "series, not phases of one another. This default cohort excludes connection-"
+             "prewarm traffic; the archive-level prewarm request kind can still be present "
+             "on a normal connection."))
+    p.append(panel(
+        "Prewarm connection share", [
+            q(f'100 * sum(increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE_PREWARM)}[$__range])) / '
+              f'clamp_min(sum(increase({prom("codexlb.responses")}{sel(filt=F_RESPONSE_ALL_CONNECTIONS)}[$__range])), 1)',
+              "prewarm %", instant=True),
+        ], "gauge", unit="percent", minv=0, maxv=100,
+        thresholds=[{"color": "green", "value": None}, {"color": "orange", "value": 10},
+                    {"color": "red", "value": 30}],
+        opts=stat_opts("area", text_size=42),
+        desc="Responses on a connection classified as prewarm divided by all responses in the "
+             "selected family/account/model/request-kind cohort. The denominator explicitly "
+             "includes prewarm connections, even though the default latency and volume panels "
+             "exclude them. Connection prewarm is a cohort filter and can carry real turns; this "
+             "percentage does not classify every response on those connections as speculative."))
     p.append(panel(
         "Turns by originator and thread source", [
             q(f'sum by (codexlb_originator, codexlb_thread_source) '
@@ -841,7 +916,8 @@ it on the same axis would double-count against `input` for anyone who did not kn
               f'(increase({prom("codexlb.tokens")}{sel(filt=F_TOKEN)}[$__range]))', "", instant=True),
         ], "table", opts=TABLE_OPTS,
         desc="Where the tokens actually went. Sort by value to find the expensive corner - "
-             "it is often compaction or prewarm rather than user turns."))
+             "it is often archive-level compaction or a prewarm request kind on a normal connection "
+             "rather than user turns."))
     cost = prom("codexlb.cost_usd")
     p.append(panel(
         "Cost by model, effort, thread source, family, and API key", [
@@ -849,7 +925,8 @@ it on the same axis would double-count against `input` for anyone who did not kn
               f'(rate({cost}{sel(filt=F_TOKEN)}[$__rate_interval]))',
               "{{gen_ai_request_model}} / {{gen_ai_request_reasoning_level}} / {{codexlb_thread_source}} / {{codexlb_family}} / {{codexlb_api_key_name}}"),
         ], unit="currencyUSD", opts=LEG,
-        desc="Enriched spend split across bounded cost dimensions. The default family selection excludes probes."))
+        desc="Enriched spend split across bounded cost dimensions. The default family and connection "
+             "selectors exclude probes and connection-prewarm traffic."))
     p.append(panel(
         "Cost split by request kind", [
             q(f'sum by (codexlb_request_kind) (increase({cost}{sel(filt=F_TOKEN)}[$__range]))',
@@ -1398,7 +1475,9 @@ def tab_errors():
                  '| upstream_status_code != "" [$__auto]))', "{{upstream_status_code}}"),
         ], unit="short", opts=LEG, fieldcfg=BARS,
         desc="HTTP status values attached by the upstream request log. The status is parsed from turn "
-             "JSON in Loki and is intentionally absent from all metric dimensions."))
+             "JSON in Loki and is intentionally absent from all metric dimensions. The default 24 h "
+             "window keeps this sparse diagnostic visible; the signal is roughly 0.2% of turns.",
+        time_from="24h"))
     p.append(panel(
         "Upstream error code distribution (Loki)", [
             logq('sum by (upstream_error_code) (count_over_time({service_name="codexlb2otel", '
@@ -1406,7 +1485,9 @@ def tab_errors():
                  '| upstream_error_code != "" [$__auto]))', "{{upstream_error_code}}"),
         ], unit="short", opts=LEG, fieldcfg=BARS,
         desc="Bounded upstream error codes from turn JSON. Empty and unavailable values are excluded, "
-             "and arbitrary database error bodies never become labels."))
+             "and arbitrary database error bodies never become labels. The default 24 h window keeps "
+             "this sparse diagnostic visible; the signal is roughly 0.2% of turns.",
+        time_from="24h"))
     mismatch = ('{service_name="codexlb2otel", codexlb_record_type="turn"} '
                 '| json proxy_error_code="proxy_error_code", '
                 'upstream_error_code="upstream_error_code", '
@@ -1421,7 +1502,9 @@ def tab_errors():
         ], "table", opts=TABLE_OPTS,
         desc="Only rows where the bounded proxy and upstream error codes differ. The upstream HTTP "
              "status is retained as context when present; equal codes are filtered out by the derived "
-             "code_match label."))
+             "code_match label. The default 24 h window keeps this sparse diagnostic visible; the "
+             "signal is roughly 0.2% of turns.",
+        time_from="24h"))
     p.append(panel(
         "Transport events", [
             q(f'sum by (codexlb_frame_type, codexlb_close_code, codexlb_family) '
@@ -1837,7 +1920,8 @@ def logvar(name, label, tag, desc):
 
 def family_var():
     v = qvar("family", "Transport family", "codexlb_responses_total", "codexlb_family",
-             "Metric family selector. All non-probe families are selected by default; probe remains available for cost analysis.",
+             "Metric family selector. All non-probe families are selected by default; probe remains available for analysis. "
+             "Family-bearing panels also exclude connection_kind=prewarm unless they explicitly show the prewarm cohort.",
              allv=NOT_PROBE_RE)
     return v
 
@@ -1848,11 +1932,11 @@ def build():
          [24, 4, 4, 4, 4, 4, 4, 12, 12, 12, 12, 12, 12],
          [5, 5, 5, 5, 5, 5, 5, 8, 8, 8, 8, 8, 9]),
         ("Model Usage", tab_models(),
-         [24, 12, 12, 24, 12, 12, 8, 8, 8, 24, 12, 12],
-         [7, 9, 9, 10, 9, 9, 9, 9, 9, 10, 9, 9]),
+         [24, 12, 12, 24, 12, 12, 8, 8, 8, 24, 12, 12, 12, 12, 12],
+         [7, 9, 9, 10, 9, 9, 9, 9, 9, 10, 9, 9, 9, 9, 9]),
         ("Turns & Responses", tab_turns(),
-         [12, 12, 12, 12, 12, 12, 12, 12, 24],
-         [8, 8, 8, 9, 8, 9, 7, 7, 11]),
+         [12, 12, 12, 12, 12, 12, 12, 12, 12, 24, 12, 12],
+         [8, 8, 8, 8, 9, 8, 9, 7, 7, 11, 8, 8]),
         ("Tokens & Cost", tab_tokens(),
          [24, 16, 8, 12, 12, 12, 24, 8, 8, 8, 24],
          [6, 9, 9, 9, 8, 8, 10, 7, 7, 7, 6]),
@@ -1947,6 +2031,99 @@ def build():
     return spec
 
 
+def _metric_selectors(expr, metric):
+    """Return the label selector for each reference to one generated instrument."""
+    base = PROM_NAME[metric]
+    names = sorted((base, base + "_bucket", base + "_sum", base + "_count"),
+                   key=len, reverse=True)
+    alternatives = "|".join(re.escape(name) for name in names)
+    pattern = (r"(?<![A-Za-z0-9_])(?:" + alternatives +
+               r")(?![A-Za-z0-9_])(?:\{([^{}]*)\})?")
+    return [match.group(1) or "" for match in re.finditer(pattern, expr)]
+
+
+def _excludes_probe(expr):
+    """Recognise the family selector used by the dashboard's default cohort."""
+    return ('codexlb_family=~"$family"' in expr or
+            re.search(r'codexlb_family\s*!~?\s*"probe"', expr) is not None)
+
+
+def _selector_excludes_probe(selector):
+    return ('codexlb_family=~"$family"' in selector or
+            re.search(r'codexlb_family\s*!~?\s*"probe"', selector) is not None)
+
+
+def _selector_excludes_connection_prewarm(selector):
+    return re.search(
+        r'codexlb_connection_kind\s*(?:!=|!~)\s*"prewarm"', selector
+    ) is not None
+
+
+def _selector_is_prewarm(selector):
+    return re.search(r'codexlb_connection_kind\s*=\s*"prewarm"', selector) is not None
+
+
+def _selector_is_all_connections(selector):
+    return re.search(r'codexlb_connection_kind\s*=~\s*"\.\*"', selector) is not None
+
+
+def _explicit_prewarm_scope(expr, selectors):
+    """Validate the ratio's exact-prewarm numerator and all-connection denominator."""
+    if len(selectors) != 2:
+        return False
+    exact = _selector_is_prewarm(selectors[0])
+    all_connections = _selector_is_all_connections(selectors[1])
+    shared_scope = all(all(
+        term in selector for term in (
+            'gen_ai_request_model=~"$model"',
+            'codexlb_account_id=~"$account"',
+            'codexlb_request_kind=~"$kind"',
+            'codexlb_family=~"$family"',
+        )) for selector in selectors)
+    matching_metric = (expr.count(PROM_NAME["codexlb.responses"]) == 2 and
+                       all(_selector_excludes_probe(selector) for selector in selectors))
+    return exact and all_connections and shared_scope and matching_metric
+
+
+def _normal_scope(selector):
+    return _selector_excludes_probe(selector) and _selector_excludes_connection_prewarm(selector)
+
+
+def connection_kind_findings(spec):
+    """Find family-filtered targets that forgot the connection-prewarm scope.
+
+    Family-bearing instruments have the connection_kind dimension in the exporter.
+    The normal dashboard cohort excludes ``prewarm``; the prewarm-share panel is the
+    deliberate exception and states its all-connection or exact-prewarm matcher in the
+    generated query itself. Returning structured findings keeps the negative check
+    small and makes the failure useful when a new panel is added.
+    """
+    findings = []
+    for element_name, element in spec.get("elements", {}).items():
+        if element.get("kind") != "Panel":
+            continue
+        exprs = []
+        check_names.extract_expr_strings(element, exprs)
+        title = element.get("spec", {}).get("title", "")
+        for expr in exprs:
+            if not _excludes_probe(expr):
+                continue
+            for metric in sorted(CONNECTION_KIND_METRICS):
+                selectors = _metric_selectors(expr, metric)
+                if not selectors:
+                    continue
+                if not all(_selector_excludes_probe(selector) for selector in selectors):
+                    findings.append((element_name, PROM_NAME[metric], expr))
+                    continue
+                if title in PREWARM_SCOPE_EXCEPTIONS:
+                    if metric == "codexlb.responses" and _explicit_prewarm_scope(expr, selectors):
+                        continue
+                elif all(_normal_scope(selector) for selector in selectors):
+                    continue
+                findings.append((element_name, PROM_NAME[metric], expr))
+    return findings
+
+
 def verify(spec):
     """Fail rather than ship a dashboard that quietly dropped a signal."""
     problems = []
@@ -2018,6 +2195,10 @@ def verify(spec):
                      and PROM_NAME["codexlb.turns"] in expr]
     if len(cost_per_turn) != 1 or cost_per_turn[0].count('codexlb_request_kind="turn"') != 2:
         problems.append("cost per turn must restrict both cost and turn count to user turns")
+
+    for element_name, metric, _ in connection_kind_findings(spec):
+        problems.append(f"{element_name} uses {metric} with a probe-family selector "
+                        "but no connection_kind prewarm scope")
 
     # Every element must be reachable from a tab, or it renders nowhere.
     referenced = set()

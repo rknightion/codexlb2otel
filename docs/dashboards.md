@@ -29,6 +29,15 @@ silently ignores a new signal.
 The twelve tabs include enriched cost and token shape, status disagreement diagnostics, agent
 topology, ID lookup, and trace views. The `$family` selector defaults to websocket, HTTP, and
 unknown traffic, excluding probes from cost, token, and latency views unless probes are selected.
+Family-bearing metric panels also apply `codexlb_connection_kind!="prewarm"` by default. This is a
+connection-level cohort filter: a prewarm connection can carry a real turn, so the exclusion does
+not classify every request on that connection as a speculative response. The Turns & Responses tab
+has a prewarm-share panel whose numerator selects prewarm connections and whose denominator explicitly
+includes all connection kinds.
+
+The Model Usage tab breaks completed requests and enriched cost down by `codexlb_client_group`.
+Those two counters are the only metric dimensions carrying that bounded client classification, which
+keeps the series budget predictable while still showing who is using the proxy.
 
 The Latency & Critical Path tab shows proxy queue, response-create gate, and bridge queue waits as
 separate p50/p95 distributions, plus present/absent coverage by wait kind. It also compares proxy-wait
@@ -39,6 +48,8 @@ different anchors, so the dashboard never adds them into an end-to-end total.
 
 The Errors & Transport tab reads `upstream_status_code` and `upstream_error_code` from turn JSON in
 Loki, where it shows their distributions and a table of proxy/upstream error-code mismatches. The
+upstream diagnostic panels default to a 24 h relative range because the signal is only about 0.2% of
+turns; widen the dashboard range when investigating an older event. The
 Conversation Logs tab adds a tool-call input-presence ratio by kind, tool-result origin matches
 (`exact`, `ambiguous`, and `none`), an ordinal ordering example, and a lookup panel driven by the
 `$upstream_error_code` text variable. For example, the lookup panel uses:
