@@ -248,10 +248,10 @@ docs-links:
         for target in re.findall(r'!?\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)', text):
             target = target.strip('<>')
             parsed = urlsplit(target)
-            if parsed.scheme or parsed.netloc or not parsed.path:
+            if parsed.scheme or parsed.netloc or not (parsed.path or parsed.fragment):
                 continue
             path = unquote(parsed.path)
-            resolved = Path(path.lstrip('/')) if path.startswith('/') else source.parent / path
+            resolved = (Path(path.lstrip('/')) if path.startswith('/') else source.parent / path) if path else source
             checked += 1
             if not resolved.exists():
                 broken.append(f'{source}: {target}')
