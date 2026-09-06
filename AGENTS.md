@@ -1,83 +1,63 @@
 # codexlb2otel
 
 Tails codex-lb's conversation archives and emits OTLP metrics, Loki logs, Tempo traces and
-agento11y generations. `CLAUDE.md` imports this file, so Claude Code and Codex read the same
-instructions and cannot drift apart. Put project instructions here, never there.
+agento11y generations.
 
 ## Task interface
 
-This repo's task surface is a `justfile`. Discover it, don't guess it:
+`just check` is the gate, and CI's `build-test` job runs exactly that. `just vuln`, `just snapshot`
+and `just image` are separate CI jobs; `just ci` is the local superset that covers them.
 
-    just --list                        # human-readable
-    just --dump --dump-format json     # machine-readable
-    just --show <recipe>               # what a recipe actually runs
-
-- `just check` is the toolchain-only pre-commit gate and exactly what CI's `build-test` job enforces.
-  CI separately runs `just vuln` plus the Docker- and cross-compilation-dependent `just ci` legs.
-- Prefer `just <recipe>` over the underlying tool. If you are typing `go test`, you want `just test`.
-- Run `just` with stdin from `/dev/null`. `just baseline` is `[confirm]`-gated — it overwrites the
-  committed `corpus.sig.json`. Stop and ask before running it; never pass `--yes` or `JUST_YES=1`.
-- If a task you need does not exist, add a recipe with a `#` doc comment and a `[group(...)]` rather
-  than running a bare command.
-- `just test` and `just check` never read the local corpus. `just test` provides concurrency coverage
-  with the race detector; `just check` runs the faster parallel `just test-short`, matching CI's
-  non-corpus path.
-- `just test-corpus` is the explicit full-corpus confidence gate, expected to take about 25–30 minutes.
-  Run it after changing archive decoding, reduction, metric cardinality, Loki sizing, or the embedded
-  drift contract, and before a release whose evidence depends on real archive coverage. It proves
-  caps, Loki sizing, and drift against real captures; concurrency coverage remains in `just test`
-  (corpus-free, race).
-- `just check` also requires Python 3 for dashboard artifact and coverage validation. Make sure
-  `python3` is on `PATH` before running the gate.
-
-## Camden deployment boundary
-
-Camden's settled deployment enables Postgres enrichment through the existing `codexlb2otel_ro` role,
-which has `SELECT` on `request_logs`, `api_keys`, and `accounts`; connection details stay in the
-deployment environment. Tempo traces remain permanently disabled by the settled deployment decision.
-Agent Observability generations remain disabled because native per-profile Codex integration owns
-that observation path. Camden verification therefore
-covers the enabled health, self-observability, metrics, and Loki paths; source-level trace tests are
-not live delivery evidence.
+- Run `just` with stdin from `/dev/null`. `just baseline` is `[confirm]`-gated and overwrites the
+  committed `internal/profile/baseline/corpus.sig.json`. Ask before running it, and never pass
+  `--yes` or `JUST_YES=1`.
+- `just check` needs `python3` on `PATH` for the dashboard-artifact and docs-link legs.
+- `just test` and `just check` never read the local corpus. `just test-corpus` is the opt-in
+  full-corpus gate against real captures and takes roughly 25-30 minutes. It is the only thing that
+  proves caps, Loki sizing and drift, so run it after changing archive decoding, reduction, metric
+  cardinality, Loki sizing or the embedded drift contract, and before a release whose evidence
+  depends on real archive coverage. Race-detector concurrency coverage stays in `just test`.
+- `just docs-links` validates every relative Markdown link and heading anchor in `README.md`,
+  `AGENTS.md` and `docs/`, so a broken link in this file fails the gate.
 
 ## The archives are personal data
 
 The conversation archives hold full prompts, tool output and assistant messages. They are gitignored
 by tree and by extension, and `TestNoArchivesAreTracked` (`internal/fixture/tracked_test.go`) fails
 the build if anything of that shape is ever staged. `corpus.sig.json` is content-free by
-construction; `TestSignature_CarriesNoConversationContent` keeps it that way. Do not weaken either.
+construction, and `TestSignature_CarriesNoConversationContent` (`internal/profile/signature_test.go`)
+keeps it that way. Do not weaken either. `backlog/` is committed, so the same bar applies there:
+write the shape, not the instance.
+
+## Settled deployment decisions
+
+- Tempo traces and Agent Observability generations are permanently disabled on the camden
+  deployment; native per-profile Codex integration owns the generations path. Source-level trace
+  tests are therefore not live delivery evidence.
+- Postgres enrichment runs through the read-only `codexlb2otel_ro` role, which holds `SELECT` on
+  `request_logs`, `api_keys` and `accounts` only. The DSN lives in the deployment environment.
 
 ## Task tracking
 
-Work lives in a Backlog.md board under `backlog/`, driven **through the CLI** - `backlog task list
---plain` is the queue, `backlog doc list --plain` the durable docs. `backlog/` is committed, so the
-same personal-data bar applies to it: write the shape, not the instance.
-
-Four rules, each for a specific silent failure:
-
-- **Never `--notes` or `--plan` bare.** They *replace* the whole section, destroying another
-  session's writes with no warning and exit 0. Use `--append-notes` / `--append-plan`. This is an
-  open upstream bug, not a misunderstanding, and a global `PreToolUse` hook in the agent config denies the bare
-  forms rather than trusting anyone to remember.
-- **Never hand-edit task, draft, doc, decision or milestone markdown.** Section boundaries are
-  HTML-comment markers; break one and the section is silently dropped at exit 0 - still in the file,
-  invisible to the CLI, until the next write destroys it for real. There is no repair command;
-  `backlog doctor` only fixes duplicate task IDs. `backlog/config.yml` is the deliberate exception:
-  list-valued keys cannot be set through `backlog config set`, so it is edited by hand.
-- **Finalize in one call**, so an interrupted session cannot leave finished work looking unfinished:
+- `backlog/config.yml` is the deliberate exception to driving the tracker only through its CLI:
+  list-valued keys cannot be set through `backlog config set`, so that one file is hand-edited.
+- Finalize in one call, so an interrupted session cannot leave finished work looking unfinished:
   `backlog task edit CXO-0007 --check-ac 1 --check-ac 2 -s Done`.
-- **Never let two agents edit the same task.** The concurrent-write fix upstream covers the edit
-  funnel but not reorder, draft saves, the TUI path, `doc update` or decision updates.
+- Never let two agents edit the same task. The upstream concurrent-write fix covers the edit funnel
+  but not reorder, draft saves, the TUI path, `doc update` or decision updates.
+- `#NNN` in commit messages and code comments points at a deleted GitHub Issues tracker, not at a
+  Backlog task ID.
 
-Read **"Agent fan-out protocol (canonical)"** before designing a wave, and **"Wave operating model"**
-for this project's own rules - its recurring defects, exclusive resources and run-end contract.
-`backlog doc list --plain` shows both.
+Read the `Agent fan-out protocol (canonical)` doc before designing a wave, and `Wave operating model`
+for this project's recurring defects, exclusive resources and run-end contract. Both are in
+`backlog doc list --plain`.
 
-## History before 2026-08-14
+## Deeper references
 
-This repo tracked its work in GitHub Issues until 2026-08-14. The issues and their local export were
-deleted before the repository became public. Existing `#NNN` references in commit messages and code
-comments refer to that retired tracker; task IDs deliberately do not mirror it.
+- `docs/operations.md` - read before changing deployment configuration, enrichment, checkpointing or
+  which signals are enabled.
+- `docs/security.md` - read before touching archive handling, retention, or anything that could
+  carry conversation content into telemetry.
 
 <!-- BACKLOG.MD GUIDELINES START -->
 <!-- backlog.md-instructions-version: 1.50.1 -->
