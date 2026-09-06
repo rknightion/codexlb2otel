@@ -262,6 +262,7 @@ func TestRequestedTierMetricScopePreservesExactAttributes(t *testing.T) {
 
 	tt := baseTurn("tier")
 	tt.RequestKind = requestKindTurn
+	tt.ConnectionKind = "normal"
 	tt.ServiceTierRequested = "priority"
 	tt.Effort = "xhigh"
 	tt.ThreadSource = "subagent"
@@ -284,14 +285,15 @@ func TestRequestedTierMetricScopePreservesExactAttributes(t *testing.T) {
 		want []string
 	}{
 		{name: attr.MetricHarnessUnblocked, want: []string{
-			attr.CriticalPathCoverage, attr.Family, attr.ServiceTierRequested,
+			attr.CriticalPathCoverage, attr.Family, attr.ConnectionKind, attr.ServiceTierRequested,
 		}},
 		{name: attr.MetricResponsesAPIExclClientTools, want: []string{
-			attr.Family, attr.ServiceTierRequested,
+			attr.Family, attr.ConnectionKind, attr.ServiceTierRequested,
 		}},
 		{name: attr.MetricTokens, want: []string{
 			attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
 			attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Family,
+			attr.ConnectionKind,
 			attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName,
 			attr.ServiceTierRequested, attr.GenAITokenType,
 		}},
@@ -326,6 +328,7 @@ func TestRequestedTierMetricScopePreservesExactAttributes(t *testing.T) {
 	}
 	for _, set := range attrSets(t, operation) {
 		assertAttr(t, attr.MetricOperationDuration, set, attr.ServiceTierRequested, "priority")
+		assertAttr(t, attr.MetricOperationDuration, set, attr.ConnectionKind, "normal")
 	}
 }
 

@@ -61,7 +61,7 @@ func (s *Sink) recordCounts(ctx context.Context, t *turn.Turn, base []attr.KV) {
 	s.inst.responses.Add(ctx, 1, otelmetric.WithAttributes(toOtel(responseCounterAttrs(base))...))
 
 	if t.RequestKind == requestKindTurn {
-		s.inst.turns.Add(ctx, 1, otelmetric.WithAttributes(toOtel(responseCounterAttrs(base))...))
+		s.inst.turns.Add(ctx, 1, otelmetric.WithAttributes(toOtel(turnCounterAttrs(base))...))
 	}
 
 	if t.WebSearchRequests > 0 {
@@ -553,7 +553,7 @@ func attributeSetsForTurn(t *turn.Turn, guard *attr.Guard, base []attr.KV) []Ins
 
 	add(attr.MetricResponses, responseCounterAttrs(base))
 	if t.RequestKind == requestKindTurn {
-		add(attr.MetricTurns, responseCounterAttrs(base))
+		add(attr.MetricTurns, turnCounterAttrs(base))
 	}
 	if t.WebSearchRequests > 0 {
 		add(attr.MetricWebSearch, webSearchAttrs(base))
@@ -726,149 +726,182 @@ func attributeSetsForTurn(t *turn.Turn, guard *attr.Guard, base []attr.KV) []Ins
 }
 
 // responseCounterAttrs keeps the historical request/response shape plus API key name,
-// but deliberately drops reasoning effort and thread source because CXO-0003 reserves
-// those for token and cost shape. It also drops the bounded proxy_status/error_code/
-// failure_phase fields introduced in wave 0: those are response-span and Loki
-// diagnostics, not response-count dimensions.
+// and keeps connection_kind beside family so response volume can exclude prewarm
+// connections. It deliberately drops reasoning effort and thread source because
+// CXO-0003 reserves those for token and cost shape. It also drops the bounded
+// proxy_status/error_code/failure_phase fields introduced in wave 0: those are
+// response-span and Loki diagnostics, not response-count dimensions. Client group is
+// deliberately absent; only the turn counter and cost counter carry that dimension.
 func responseCounterAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
-		attr.GenAIResponseModel, attr.Status, attr.RequestKind, attr.Family, attr.AccountID,
-		attr.PlanType, attr.ServiceTier, attr.ServiceTierRequested, attr.APIKeyName,
+		attr.GenAIResponseModel, attr.Status, attr.RequestKind, attr.Family, attr.ConnectionKind,
+		attr.AccountID, attr.PlanType, attr.ServiceTier, attr.ServiceTierRequested, attr.APIKeyName,
 		attr.SubagentKind, attr.Originator, attr.GenAIAgentName, attr.GenAIAgentVersion,
 		attr.ErrorType, attr.ErrorCategory, attr.ErrorCode, attr.CriticalPathCoverage,
 		attr.CloseCode, attr.BaselineReset, attr.FrameType)
 }
 
+// turnCounterAttrs is responseCounterAttrs plus client_group for the user-turn
+// counter. Both counters retain connection_kind beside family so a query can remove
+// prewarm connections; client_group stays on turns only and never widens responses.
+func turnCounterAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
+		attr.GenAIResponseModel, attr.Status, attr.RequestKind, attr.Family, attr.ConnectionKind,
+		attr.AccountID, attr.ClientGroup, attr.PlanType, attr.ServiceTier,
+		attr.ServiceTierRequested, attr.APIKeyName, attr.SubagentKind, attr.Originator,
+		attr.GenAIAgentName, attr.GenAIAgentVersion, attr.ErrorType, attr.ErrorCategory,
+		attr.ErrorCode, attr.CriticalPathCoverage, attr.CloseCode, attr.BaselineReset,
+		attr.FrameType)
+}
+
 // tokenCounterAttrs is codexlb.tokens' query shape: model/account/request kind, plus
-// family for probe exclusion and effort/thread/API-key for cost-shape panels. It
-// deliberately drops agent version and token semantics, which only the convention
-// token-usage histogram's consumer needs.
+// family and connection_kind for probe/prewarm exclusion, plus effort/thread/API-key
+// for cost-shape panels. It deliberately drops client_group, agent version and token
+// semantics, which only the turn/cost surfaces or convention token-usage histogram's
+// consumer needs.
 func tokenCounterAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
 		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
-		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName,
+		attr.Family, attr.ConnectionKind, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName,
 		attr.ServiceTierRequested)
 }
 
 // tokenUsageAttrs keeps the required family, effort and thread-source token shape.
-// Agent version is deliberately absent: an instructions hash rotates independently
-// of billing shape, and multiplying that unbounded churn through histogram buckets
-// would exceed the measured active-series budget. It remains available on response
-// records and spans for Agent Observability correlation.
+// connection_kind stays beside family so prewarm cohorts can be excluded. Client group
+// and agent version are deliberately absent: client group belongs only on turns/cost,
+// while an instructions hash rotates independently of billing shape, and multiplying
+// that churn through histogram buckets would exceed the measured active-series budget.
+// Both remain available on response records and spans for correlation.
 func tokenUsageAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
 		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
-		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName,
+		attr.Family, attr.ConnectionKind, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName,
 		attr.GenAIAgentName)
 }
 
 // costAttrs mirrors the token shape, minus gen_ai.token.type: cost is response-level,
-// but needs the same family, effort, thread-source and API-key filters as tokens.
+// but needs the same family/connection_kind, effort, thread-source and API-key filters
+// as tokens. Client group is retained here, alongside the turn counter, as the only
+// other metric dimension for usage by client.
 func costAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
 		attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID, attr.RequestKind,
-		attr.Family, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName)
+		attr.Family, attr.ConnectionKind, attr.ReasoningEffort, attr.ThreadSource, attr.APIKeyName,
+		attr.ClientGroup)
 }
 
 // proxyWaitAttrs is deliberately narrower than the shared metric base. A proxy wait
 // answers a cohort latency question using only the frozen model/request/thread/family
-// dimensions; account, status, tier, error and every other bounded field are dropped
-// with attr.Only because they belong to the other instruments' questions and would
-// multiply eleven histogram buckets without a proxy-wait query contract.
+// dimensions plus connection_kind for prewarm exclusion; account, status, tier, error
+// and every other bounded field are dropped with attr.Only because they belong to the
+// other instruments' questions and would multiply eleven histogram buckets without a
+// proxy-wait query contract.
 func proxyWaitAttrs(guard *attr.Guard, base []attr.KV, kind string) []attr.KV {
-	attrs := attr.Only(base, attr.Family, attr.RequestKind, attr.GenAIRequestModel, attr.ThreadSource)
+	attrs := attr.Only(base, attr.Family, attr.ConnectionKind, attr.RequestKind, attr.GenAIRequestModel, attr.ThreadSource)
 	return guard.With(attrs, attr.KV{Key: attr.ProxyWaitKind, Value: kind})
 }
 
 // proxyWaitCoverageAttrs keeps only family from the turn-derived base and adds the
-// two fixed coverage dimensions. SelfObsResult describes whether the nullable wait
-// column was present; its two closed values are routed through the shared guard along
-// with ProxyWaitKind so every emitted dimension has the same cap enforcement.
+// connection_kind cohort dimension plus the two fixed coverage dimensions.
+// SelfObsResult describes whether the nullable wait column was present; its two closed
+// values are routed through the shared guard along with ProxyWaitKind so every emitted
+// dimension has the same cap enforcement.
 func proxyWaitCoverageAttrs(guard *attr.Guard, base []attr.KV, kind, result string) []attr.KV {
-	return guard.With(attr.Only(base, attr.Family),
+	return guard.With(attr.Only(base, attr.Family, attr.ConnectionKind),
 		attr.KV{Key: attr.ProxyWaitKind, Value: kind},
 		attr.KV{Key: attr.SelfObsResult, Value: result})
 }
 
 // imageGenTokenAttrs is a token counter, so it carries family and API key name for
-// probe and key-cost exclusion. It deliberately drops reasoning effort/thread source
-// because those only describe text-model token and cost shape in this wave.
+// probe/prewarm and key-cost exclusion. It deliberately drops client_group and
+// reasoning effort/thread source because those only describe turn/cost text-model
+// shape in this wave.
 func imageGenTokenAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind, attr.Family, attr.APIKeyName)
+		attr.GenAIRequestModel, attr.AccountID, attr.RequestKind, attr.Family,
+		attr.ConnectionKind, attr.APIKeyName)
 }
 
 // engineUncachedPromptTokenAttrs is baseline-sensitive engine-token data, so it keeps
-// response model and baseline_reset, adds family/API key as required for token
-// counters, and deliberately leaves out effort/thread source per CXO-0003's narrower
-// token-shape decision.
+// response model and baseline_reset, adds family/connection_kind and API key as required
+// for token counters, and deliberately leaves out client_group and effort/thread source
+// per CXO-0003's narrower token-shape decision.
 func engineUncachedPromptTokenAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
 		attr.GenAIResponseModel, attr.AccountID, attr.RequestKind, attr.Family,
-		attr.APIKeyName, attr.BaselineReset)
+		attr.ConnectionKind, attr.APIKeyName, attr.BaselineReset)
 }
 
 // operationDurationAttrs is the agent-observability latency shape. It adds family for
-// probe exclusion and keeps error and stable agent-name labels for the SDK UI, while
-// deliberately dropping effort/thread source and API key name to keep duration
-// histograms out of token/cost-only dimensions. Agent version is an instructions hash
-// whose unbounded churn is too expensive once multiplied through histogram buckets;
-// response records and spans retain it for correlation.
+// probe exclusion, connection_kind for prewarm exclusion, and keeps error and stable
+// agent-name labels for the SDK UI, while deliberately dropping effort/thread source and
+// API key name to keep duration histograms out of token/cost-only dimensions. Agent
+// version is an instructions hash whose unbounded churn is too expensive once multiplied
+// through histogram buckets; response records and spans retain it for correlation.
 func operationDurationAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation, attr.GenAIRequestModel,
 		attr.GenAIResponseModel, attr.Status, attr.ErrorType, attr.ErrorCategory,
-		attr.GenAIAgentName, attr.ServiceTierRequested, attr.Family)
+		attr.GenAIAgentName, attr.ServiceTierRequested, attr.Family, attr.ConnectionKind)
 }
 
 // turnDurationAttrs measures user-visible latency only. It carries family and the
-// requested service tier because those answer latency questions, and drops effort,
-// thread source, API key and agent version because they are not duration dimensions.
+// requested service tier because those answer latency questions, and carries
+// connection_kind beside family so prewarm connections can be excluded. It drops
+// effort, thread source, client group, API key and agent version because they are not
+// duration dimensions.
 func turnDurationAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
-		attr.GenAIRequestModel, attr.ServiceTierRequested, attr.Family)
+		attr.GenAIRequestModel, attr.ServiceTierRequested, attr.Family, attr.ConnectionKind)
 }
 
 // ttftAttrs follows the agent-observability duration shape for first-token latency,
-// with family added for probe exclusion. It deliberately drops effort/thread/API key
-// because CXO-0003 keeps those off duration histograms.
+// with family and connection_kind added for probe/prewarm exclusion. It deliberately
+// drops effort/thread/client group/API key because CXO-0003 keeps those off duration
+// histograms.
 func ttftAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIProvider, attr.GenAIOperation,
 		attr.GenAIRequestModel, attr.RequestKind, attr.GenAIAgentName,
-		attr.ServiceTierRequested, attr.Family)
+		attr.ServiceTierRequested, attr.Family, attr.ConnectionKind)
 }
 
 // criticalPathDurationAttrs is specific to most critical-path measurements: coverage
-// describes whether these duration values are trustworthy. Family is the only traffic
-// dimension retained so probes remain removable without multiplying every bucket by
-// model, account and request-kind churn. Model-specific user-facing latency remains on
-// operation duration, turn duration and TTFT.
+// describes whether these duration values are trustworthy. Family and connection_kind
+// are the traffic dimensions retained so probes and prewarm connections remain
+// removable without multiplying every bucket by model, account and request-kind churn.
+// Model-specific user-facing latency remains on operation duration, turn duration and
+// TTFT.
 func criticalPathDurationAttrs(base []attr.KV) []attr.KV {
-	return attr.Only(base, attr.CriticalPathCoverage, attr.Family)
+	return attr.Only(base, attr.CriticalPathCoverage, attr.Family, attr.ConnectionKind)
 }
 
 func harnessUnblockedAttrs(base []attr.KV) []attr.KV {
-	return attr.Only(base, attr.CriticalPathCoverage, attr.Family, attr.ServiceTierRequested)
+	// Keep connection_kind beside family so this critical-path latency can exclude
+	// prewarm connections while retaining the requested-tier comparison.
+	return attr.Only(base, attr.CriticalPathCoverage, attr.Family, attr.ConnectionKind, attr.ServiceTierRequested)
 }
 
 // engineTimingDurationAttrs is for most cumulative engine timing deltas. It
-// retains only family: the instruments compare layers and derived durations rather
-// than cohorts, while model-specific latency remains available on the three primary
-// histograms. This keeps eight bucketed instruments inside the measured series budget.
+// retains family and connection_kind: the instruments compare layers and derived
+// durations while allowing probes and prewarm connections to be excluded. Model-specific
+// latency remains available on the three primary histograms. This keeps eight bucketed
+// instruments inside the measured series budget.
 func engineTimingDurationAttrs(base []attr.KV) []attr.KV {
-	return attr.Only(base, attr.Family)
+	return attr.Only(base, attr.Family, attr.ConnectionKind)
 }
 
 func responsesAPIExclClientToolsAttrs(base []attr.KV) []attr.KV {
-	return attr.Only(base, attr.Family, attr.ServiceTierRequested)
+	// Family and connection_kind keep this derived latency removable for probe and
+	// prewarm cohorts; requested tier remains its only other comparison dimension.
+	return attr.Only(base, attr.Family, attr.ConnectionKind, attr.ServiceTierRequested)
 }
 
 // tbtAttrs keeps only family for probe exclusion. TBT compares the service and IAPI
-// layers directly; retaining model/account/request-kind on three bucketed views would
-// spend series on a cohort breakdown already covered by TTFT and operation duration.
-// It also drops baseline_reset because these fields are per-response running averages,
-// not cumulative deltas.
+// layers directly; connection_kind stays beside it for prewarm exclusion. Retaining
+// model/account/request-kind on three bucketed views would spend series on a cohort
+// breakdown already covered by TTFT and operation duration. It also drops baseline_reset
+// because these fields are per-response running averages, not cumulative deltas.
 func tbtAttrs(base []attr.KV) []attr.KV {
-	return attr.Only(base, attr.Family)
+	return attr.Only(base, attr.Family, attr.ConnectionKind)
 }
 
 // webSearchAttrs is not a token or duration instrument, so CXO-0003 does not add
@@ -886,11 +919,12 @@ func errorCounterAttrs(base []attr.KV) []attr.KV {
 		attr.AccountID, attr.ErrorType, attr.ErrorCode, attr.Status, attr.ServiceTierRequested)
 }
 
-// transportEventAttrs is the websocket lifecycle shape. It carries family because
-// transport events may belong to probe traffic, and drops request model/effort/thread
-// source because dropped connections are diagnosed by close code and frame type.
+// transportEventAttrs is the websocket lifecycle shape. It carries family and
+// connection_kind because transport events may belong to probe or prewarm traffic, and
+// drops request model/effort/thread source because dropped connections are diagnosed by
+// close code and frame type.
 func transportEventAttrs(base []attr.KV) []attr.KV {
-	return attr.Only(base, attr.Family, attr.AccountID, attr.CloseCode, attr.FrameType)
+	return attr.Only(base, attr.Family, attr.ConnectionKind, attr.AccountID, attr.CloseCode, attr.FrameType)
 }
 
 // safetyBufferingAttrs keeps only the model pair and account: this rare counter asks
@@ -900,11 +934,12 @@ func safetyBufferingAttrs(base []attr.KV) []attr.KV {
 	return attr.Only(base, attr.GenAIRequestModel, attr.GenAIResponseModel, attr.AccountID)
 }
 
-// baselineResetAttrs carries family because reset size must be comparable with probe
-// exclusion, and otherwise only request kind and account. Model, effort and thread
-// source would multiply a hygiene counter whose job is simply to size the reset caveat.
+// baselineResetAttrs carries family and connection_kind because reset size must be
+// comparable with probe/prewarm exclusion, and otherwise only request kind and account.
+// Model, effort and thread source would multiply a hygiene counter whose job is simply
+// to size the reset caveat.
 func baselineResetAttrs(base []attr.KV) []attr.KV {
-	return attr.Only(base, attr.Family, attr.RequestKind, attr.AccountID)
+	return attr.Only(base, attr.Family, attr.ConnectionKind, attr.RequestKind, attr.AccountID)
 }
 
 // engineCallAttrs intentionally remains a call-count shape, not a latency shape:

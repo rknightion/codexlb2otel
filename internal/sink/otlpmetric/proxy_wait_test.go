@@ -21,6 +21,7 @@ func TestProxyWaitMetricsUseFrozenAttributeSets(t *testing.T) {
 	tt := baseTurn("proxy-waits")
 	tt.ResponseID = "resp-proxy-waits"
 	tt.RequestKind = requestKindTurn
+	tt.ConnectionKind = "normal"
 	tt.ThreadSource = "subagent"
 	tt.ProxyQueueWaitMS = &queue
 	tt.ProxyResponseCreateGateWaitMS = &gate
@@ -47,7 +48,7 @@ func TestProxyWaitMetricsUseFrozenAttributeSets(t *testing.T) {
 		t.Fatalf("%s: got %d data points, want queue and response_create_gate only", attr.MetricProxyWait, len(hist.DataPoints))
 	}
 	wantBounds := []float64{0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5}
-	wantWaitAttrs := []string{attr.Family, attr.GenAIRequestModel, attr.RequestKind, attr.ThreadSource, attr.ProxyWaitKind}
+	wantWaitAttrs := []string{attr.Family, attr.ConnectionKind, attr.GenAIRequestModel, attr.RequestKind, attr.ThreadSource, attr.ProxyWaitKind}
 	slices.Sort(wantWaitAttrs)
 	seenKinds := map[string]float64{}
 	for _, dp := range hist.DataPoints {
@@ -63,6 +64,7 @@ func TestProxyWaitMetricsUseFrozenAttributeSets(t *testing.T) {
 			t.Fatalf("%s data point has no wait kind", attr.MetricProxyWait)
 		}
 		assertAttr(t, attr.MetricProxyWait, dp.Attributes, attr.Family, tt.Family)
+		assertAttr(t, attr.MetricProxyWait, dp.Attributes, attr.ConnectionKind, tt.ConnectionKind)
 		assertAttr(t, attr.MetricProxyWait, dp.Attributes, attr.GenAIRequestModel, tt.Model)
 		assertAttr(t, attr.MetricProxyWait, dp.Attributes, attr.RequestKind, tt.RequestKind)
 		assertAttr(t, attr.MetricProxyWait, dp.Attributes, attr.ThreadSource, tt.ThreadSource)
@@ -95,7 +97,7 @@ func TestProxyWaitMetricsUseFrozenAttributeSets(t *testing.T) {
 	if len(sum.DataPoints) != 3 {
 		t.Fatalf("%s: got %d data points, want one per wait kind", attr.MetricProxyWaitCoverage, len(sum.DataPoints))
 	}
-	wantCoverageAttrs := []string{attr.Family, attr.ProxyWaitKind, attr.SelfObsResult}
+	wantCoverageAttrs := []string{attr.Family, attr.ConnectionKind, attr.ProxyWaitKind, attr.SelfObsResult}
 	slices.Sort(wantCoverageAttrs)
 	wantResults := map[string]string{
 		"queue":                "present",
@@ -113,6 +115,7 @@ func TestProxyWaitMetricsUseFrozenAttributeSets(t *testing.T) {
 			t.Fatalf("%s point missing kind or result: kind=%q (%v), result=%q (%v)", attr.MetricProxyWaitCoverage, kind, kindOK, result, resultOK)
 		}
 		assertAttr(t, attr.MetricProxyWaitCoverage, dp.Attributes, attr.Family, tt.Family)
+		assertAttr(t, attr.MetricProxyWaitCoverage, dp.Attributes, attr.ConnectionKind, tt.ConnectionKind)
 		if got := wantResults[kind]; got != result {
 			t.Errorf("%s %s result = %q, want %q", attr.MetricProxyWaitCoverage, kind, result, got)
 		}
