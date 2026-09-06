@@ -80,3 +80,127 @@ func TestCallIndexEvictsByArchiveAgeAndPerThreadLimit(t *testing.T) {
 		t.Errorf("newest lookup match = %q, want exact", match)
 	}
 }
+
+func TestCallIndexBoundsResidentThreadsAndEvictsOldestNewestEntry(t *testing.T) {
+	base := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	var calls callIndex
+	for i := 0; i < callIndexThreadLimit; i++ {
+		thread := fmt.Sprintf("thread-%04d", i)
+		calls.record(thread, "call", callRef{CapturedAt: base.Add(time.Duration(i) * time.Second)})
+	}
+	calls.record("thread-overflow", "call", callRef{CapturedAt: base.Add(callIndexThreadLimit * time.Second)})
+
+	if got := len(calls.threads); got != callIndexThreadLimit {
+		t.Fatalf("resident threads = %d, want %d", got, callIndexThreadLimit)
+	}
+	if _, ok := calls.threads["thread-0000"]; ok {
+		t.Fatal("thread with oldest newest entry survived eviction")
+	}
+	if _, ok := calls.threads["thread-overflow"]; !ok {
+		t.Fatal("newly recorded thread was not retained")
+	}
+}
+
+func TestCallIndexEvictsLexicallySmallestThreadOnNewestEntryTie(t *testing.T) {
+	base := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	var calls callIndex
+	for i := 0; i < callIndexThreadLimit; i++ {
+		calls.record(fmt.Sprintf("thread-%04d", i), "call", callRef{CapturedAt: base})
+	}
+	calls.record("thread-overflow", "call", callRef{CapturedAt: base})
+
+	if _, ok := calls.threads["thread-0000"]; ok {
+		t.Fatal("lexically smallest tied thread survived eviction")
+	}
+}
+
+func TestCallIndexKeepsNewerResidentsWhenIncomingThreadIsOldest(t *testing.T) {
+	base := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	t.Run("older incoming entry", func(t *testing.T) {
+		var calls callIndex
+		for i := 0; i < callIndexThreadLimit; i++ {
+			calls.record(fmt.Sprintf("thread-%04d", i), "call", callRef{CapturedAt: base.Add(time.Duration(i) * time.Second)})
+		}
+		calls.record("incoming-oldest", "call", callRef{CapturedAt: base.Add(-time.Second)})
+
+		if _, ok := calls.threads["incoming-oldest"]; ok {
+			t.Fatal("older incoming thread displaced a newer resident")
+		}
+		if _, ok := calls.threads["thread-0000"]; !ok {
+			t.Fatal("newer resident was evicted for older incoming thread")
+		}
+	})
+	t.Run("lexically smallest tied incoming entry", func(t *testing.T) {
+		var calls callIndex
+		for i := 0; i < callIndexThreadLimit; i++ {
+			calls.record(fmt.Sprintf("thread-%04d", i), "call", callRef{CapturedAt: base})
+		}
+		calls.record("a-incoming", "call", callRef{CapturedAt: base})
+
+		if _, ok := calls.threads["a-incoming"]; ok {
+			t.Fatal("lexically smallest tied incoming thread displaced a resident")
+		}
+		if _, ok := calls.threads["thread-0000"]; !ok {
+			t.Fatal("tied resident was evicted instead of lexically smallest incoming thread")
+		}
+	})
+}
+
+func TestCallIndexExpiryDropsEmptyThreads(t *testing.T) {
+	base := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	var calls callIndex
+	calls.record("expired", "call", callRef{CapturedAt: base})
+	calls.record("live", "call", callRef{CapturedAt: base.Add(callIndexMaxAge + time.Second)})
+
+	if _, ok := calls.threads["expired"]; ok {
+		t.Fatal("thread whose entries all expired remained resident")
+	}
+}
+
+func TestCallIndexOccurrenceSurvivesConsumedCall(t *testing.T) {
+	base := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	var calls callIndex
+	if got := calls.record("thread", "call", callRef{CapturedAt: base}); got != 1 {
+		t.Fatalf("first occurrence = %d, want 1", got)
+	}
+	if _, match := calls.lookup("thread", "call"); match != "exact" {
+		t.Fatalf("lookup match = %q, want exact", match)
+	}
+	if got := calls.record("thread", "call", callRef{CapturedAt: base.Add(time.Second)}); got != 2 {
+		t.Fatalf("occurrence after consumed call = %d, want 2", got)
+	}
+}
+
+func TestCallIndexOccurrenceResetsWhenBoundedHistoryIsRemoved(t *testing.T) {
+	base := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	t.Run("expiry", func(t *testing.T) {
+		var calls callIndex
+		calls.record("thread", "call", callRef{CapturedAt: base})
+		calls.advance(base.Add(callIndexMaxAge + time.Second))
+		calls.pruneAll()
+		if got := calls.record("thread", "call", callRef{CapturedAt: base.Add(callIndexMaxAge + 2*time.Second)}); got != 1 {
+			t.Fatalf("occurrence after expiry = %d, want reset to 1", got)
+		}
+	})
+	t.Run("per-thread cap", func(t *testing.T) {
+		var calls callIndex
+		calls.record("thread", "call", callRef{CapturedAt: base})
+		for i := 0; i < callIndexLimit; i++ {
+			calls.record("thread", fmt.Sprintf("other-%03d", i), callRef{CapturedAt: base.Add(time.Duration(i+1) * time.Second)})
+		}
+		if got := calls.record("thread", "call", callRef{CapturedAt: base.Add((callIndexLimit + 1) * time.Second)}); got != 1 {
+			t.Fatalf("occurrence after per-thread cap = %d, want reset to 1", got)
+		}
+	})
+	t.Run("thread eviction", func(t *testing.T) {
+		var calls callIndex
+		calls.record("thread", "call", callRef{CapturedAt: base})
+		for i := 0; i < callIndexThreadLimit-1; i++ {
+			calls.record(fmt.Sprintf("other-%04d", i), "call", callRef{CapturedAt: base.Add(time.Duration(i+1) * time.Second)})
+		}
+		calls.record("overflow", "call", callRef{CapturedAt: base.Add(callIndexThreadLimit * time.Second)})
+		if got := calls.record("thread", "call", callRef{CapturedAt: base.Add((callIndexThreadLimit + 1) * time.Second)}); got != 1 {
+			t.Fatalf("occurrence after thread eviction = %d, want reset to 1", got)
+		}
+	})
+}

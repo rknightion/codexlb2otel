@@ -651,7 +651,7 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 				Ordinal: r.nextContentOrdinal(t), ItemID: it.ID, CapturedAt: t.LastTS, Provenance: "replayed",
 				CallID: it.CallID, Chars: len(body), Truncated: cut, Text: text,
 				OriginResponseID: origin.ResponseID, OriginTurnID: origin.TurnID,
-				OriginToolName: origin.ToolName, OriginMatch: match,
+				OriginToolName: origin.ToolName, OriginCallOccurrence: origin.Occurrence, OriginMatch: match,
 			})
 
 		// additional_tools is the ONLY input item type observed carrying a tool
@@ -914,19 +914,26 @@ func (r *Reducer) applyOutputItem(t *Turn, ev frame.Event) {
 		}
 	}
 
+	callOccurrence := 0
+	if it.Type == "custom_tool_call" || it.Type == "function_call" {
+		callOccurrence = r.calls.record(t.ThreadID, it.CallID, callRef{
+			ResponseID: t.ResponseID, TurnID: t.TurnID, ToolName: it.Name, CapturedAt: t.LastTS,
+		})
+	}
+
 	switch it.Type {
 	case "custom_tool_call":
 		t.ToolCalls = append(t.ToolCalls, ToolCall{
 			Ordinal: r.nextContentOrdinal(t), ItemID: it.ID, CapturedAt: t.LastTS, Provenance: "live",
 			Kind: "custom", Name: it.Name, CallID: it.CallID,
-			Status: it.Status, InputChars: len(it.Input), Input: it.Input,
+			Status: it.Status, InputChars: len(it.Input), Input: it.Input, CallOccurrence: callOccurrence,
 		})
 	case "function_call":
 		input, omitted, truncated := redactFunctionArguments(it.Arguments, r.opts.MaxToolOutputChars)
 		tc := ToolCall{
 			Ordinal: r.nextContentOrdinal(t), ItemID: it.ID, CapturedAt: t.LastTS, Provenance: "live",
 			Kind: "function", Name: it.Name, CallID: it.CallID,
-			Status: it.Status, InputChars: len(it.Arguments), Input: input,
+			Status: it.Status, InputChars: len(it.Arguments), Input: input, CallOccurrence: callOccurrence,
 			InputOmitted: omitted, InputTruncated: truncated,
 		}
 		var a spawnArgs
@@ -945,10 +952,6 @@ func (r *Reducer) applyOutputItem(t *Turn, ev frame.Event) {
 	case "reasoning":
 		// Content is Fernet-encrypted by OpenAI and cannot be read. Size only.
 		t.ReasoningEnc += len(it.Encrypted)
-	}
-	if it.Type == "custom_tool_call" || it.Type == "function_call" {
-		r.calls.advance(t.LastTS)
-		r.calls.record(t.ThreadID, it.CallID, callRef{ResponseID: t.ResponseID, TurnID: t.TurnID, ToolName: it.Name, CapturedAt: t.LastTS})
 	}
 }
 

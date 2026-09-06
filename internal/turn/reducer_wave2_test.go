@@ -109,6 +109,32 @@ func TestReducerWave2_ReusedCallIDRemainsAmbiguous(t *testing.T) {
 	}
 }
 
+func TestReducerWave3ToolCallOccurrencesLinkExactOutput(t *testing.T) {
+	r := New()
+	base := time.Date(2026, 9, 5, 14, 0, 0, 0, time.UTC)
+	addWave2Event(t, r, "req-origin", base, `{"type":"response.create","client_metadata":{"thread_id":"thread-occurrence"}}`)
+	addWave2Event(t, r, "req-origin", base.Add(time.Millisecond), `{"type":"response.created","response":{"id":"response-origin"}}`)
+	origin := addWave2Event(t, r, "req-origin", base.Add(2*time.Millisecond), `{"type":"response.output_item.done","item":`+functionEvent("item-origin", "call-reused", "lookup", `{}`)+`}`)
+	if origin != nil {
+		t.Fatal("output item unexpectedly completed the origin response")
+	}
+	origin = addWave2Event(t, r, "req-origin", base.Add(3*time.Millisecond), `{"type":"response.completed","response":{"status":"completed"}}`)
+	if origin == nil || origin.ToolCalls[0].CallOccurrence != 1 {
+		t.Fatalf("origin occurrence = %+v, want 1", origin)
+	}
+
+	addWave2Event(t, r, "req-result", base.Add(4*time.Millisecond), `{"type":"response.create","client_metadata":{"thread_id":"thread-occurrence"},"input":[{"type":"function_call_output","call_id":"call-reused","output":"result"}]}`)
+	result := addWave2Event(t, r, "req-result", base.Add(5*time.Millisecond), `{"type":"response.completed","response":{"status":"completed"}}`)
+	if result == nil || len(result.ToolOutputs) != 1 || result.ToolOutputs[0].OriginMatch != "exact" || result.ToolOutputs[0].OriginCallOccurrence != 1 {
+		t.Fatalf("result origin = %+v, want exact occurrence 1", result)
+	}
+
+	second := reduceWave2(t, r, "thread-occurrence", functionEvent("item-second", "call-reused", "lookup", `{}`))
+	if second.ToolCalls[0].CallOccurrence != 2 {
+		t.Fatalf("reused call occurrence = %d, want 2", second.ToolCalls[0].CallOccurrence)
+	}
+}
+
 func TestReducerWave2_ErrorEventsTolerateSequenceNumber(t *testing.T) {
 	r := New()
 	done := addWave2Event(t, r, "req-error", time.Date(2026, 9, 5, 15, 0, 0, 0, time.UTC), `{"type":"error","sequence_number":7,"error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"synthetic"}}`)

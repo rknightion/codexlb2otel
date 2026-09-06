@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	callIndexLimit  = 512
-	callIndexMaxAge = 24 * time.Hour
+	callIndexLimit       = 512
+	callIndexThreadLimit = 4096
+	callIndexMaxAge      = 24 * time.Hour
 )
 
 // callRef identifies an observed invocation; CapturedAt is archive observation time.
@@ -16,9 +17,10 @@ type callRef struct {
 	TurnID     string    `json:"turn_id"`
 	ToolName   string    `json:"tool_name"`
 	CapturedAt time.Time `json:"captured_at"`
+	Occurrence int       `json:"occurrence"`
 }
 
-// callIndex holds unconsumed tool calls, scoped to their originating thread.
+// callIndex holds bounded correlation history, scoped to originating threads.
 // advance supplies the archive clock without adding a wall-clock lookup parameter.
 type callIndex struct {
 	clock   time.Time
@@ -26,8 +28,9 @@ type callIndex struct {
 }
 
 type callIndexEntry struct {
-	CallID string  `json:"call_id"`
-	Ref    callRef `json:"ref"`
+	CallID   string  `json:"call_id"`
+	Ref      callRef `json:"ref"`
+	Consumed bool    `json:"consumed,omitempty"`
 }
 
 type callIndexWire struct {
@@ -48,6 +51,7 @@ func (c *callIndex) UnmarshalJSON(data []byte) error {
 	}
 	c.clock = wire.Clock
 	c.threads = cloneCallThreads(wire.Threads)
+	c.enforceLimits()
 	return nil
 }
 
@@ -59,28 +63,44 @@ func (c *callIndex) advance(at time.Time) {
 	}
 }
 
-// record retains a completed call until one unambiguous output consumes it. Calls
-// without both correlation keys cannot safely be associated and are ignored.
-func (c *callIndex) record(thread, callID string, ref callRef) {
+// record retains a completed call in the bounded index. A consumed entry remains
+// until it expires or is evicted so a reused call ID receives the next occurrence.
+// Calls without both correlation keys cannot safely be associated and are ignored.
+func (c *callIndex) record(thread, callID string, ref callRef) int {
 	if thread == "" || callID == "" {
-		return
+		return 0
 	}
 	c.advance(ref.CapturedAt)
 	if c.threads == nil {
 		c.threads = make(map[string][]callIndexEntry)
 	}
-	c.pruneAll()
+	c.enforceLimits()
 	entries := c.threads[thread]
+	occurrence := 1
+	for _, entry := range entries {
+		if entry.CallID == callID && entry.Ref.Occurrence >= occurrence {
+			occurrence = entry.Ref.Occurrence + 1
+		}
+	}
+	ref.Occurrence = occurrence
 	entries = append(entries, callIndexEntry{CallID: callID, Ref: ref})
 	entries = c.prune(entries)
+	if len(entries) == 0 {
+		delete(c.threads, thread)
+		return 0
+	}
 	if len(entries) > callIndexLimit {
 		entries = append([]callIndexEntry(nil), entries[len(entries)-callIndexLimit:]...)
 	}
 	c.threads[thread] = entries
+	if len(c.threads) > callIndexThreadLimit {
+		c.evictOldestThread()
+	}
+	return occurrence
 }
 
-// lookup finds an origin only in the supplied thread. An exact match is consumed
-// so a duplicate tool output cannot attach to the same invocation again.
+// lookup finds an unconsumed origin only in the supplied thread. An exact match is
+// marked consumed so a duplicate tool output cannot attach to the same invocation.
 func (c *callIndex) lookup(thread, callID string) (callRef, string) {
 	if thread == "" || callID == "" {
 		return callRef{}, "none"
@@ -93,7 +113,7 @@ func (c *callIndex) lookup(thread, callID string) (callRef, string) {
 	}
 	matchAt := -1
 	for i, entry := range entries {
-		if entry.CallID != callID {
+		if entry.CallID != callID || entry.Consumed {
 			continue
 		}
 		if matchAt >= 0 {
@@ -105,13 +125,49 @@ func (c *callIndex) lookup(thread, callID string) (callRef, string) {
 		return callRef{}, "none"
 	}
 	ref := entries[matchAt].Ref
-	entries = append(entries[:matchAt], entries[matchAt+1:]...)
-	if len(entries) == 0 {
-		delete(c.threads, thread)
-	} else {
-		c.threads[thread] = entries
-	}
+	entries[matchAt].Consumed = true
+	c.threads[thread] = entries
 	return ref, "exact"
+}
+
+// evictOldestThread removes the resident thread whose newest correlation entry is
+// oldest. A lexical thread-ID tie-break makes checkpoint-sized pressure deterministic.
+func (c *callIndex) evictOldestThread() {
+	var oldestThread string
+	var oldestNewest time.Time
+	for thread, entries := range c.threads {
+		if len(entries) == 0 {
+			delete(c.threads, thread)
+			continue
+		}
+		newest := entries[0].Ref.CapturedAt
+		for _, entry := range entries[1:] {
+			if entry.Ref.CapturedAt.After(newest) {
+				newest = entry.Ref.CapturedAt
+			}
+		}
+		if oldestThread == "" || newest.Before(oldestNewest) || (newest.Equal(oldestNewest) && thread < oldestThread) {
+			oldestThread, oldestNewest = thread, newest
+		}
+	}
+	if oldestThread != "" {
+		delete(c.threads, oldestThread)
+	}
+}
+
+// enforceLimits repairs decoded or programmatically supplied state before it can
+// become resident. Normal record insertion participates in global eviction after
+// the new entry has been added, so an older incoming thread evicts itself.
+func (c *callIndex) enforceLimits() {
+	c.pruneAll()
+	for thread, entries := range c.threads {
+		if len(entries) > callIndexLimit {
+			c.threads[thread] = append([]callIndexEntry(nil), entries[len(entries)-callIndexLimit:]...)
+		}
+	}
+	for len(c.threads) > callIndexThreadLimit {
+		c.evictOldestThread()
+	}
 }
 
 func (c *callIndex) prune(entries []callIndexEntry) []callIndexEntry {
@@ -142,7 +198,9 @@ func (c *callIndex) pruneAll() {
 func (c callIndex) entries(thread string) int { return len(c.threads[thread]) }
 
 func (c callIndex) snapshot() callIndex {
-	return callIndex{clock: c.clock, threads: c.copyThreads()}
+	snapshot := callIndex{clock: c.clock, threads: c.copyThreads()}
+	snapshot.enforceLimits()
+	return snapshot
 }
 
 func (c callIndex) copyThreads() map[string][]callIndexEntry {

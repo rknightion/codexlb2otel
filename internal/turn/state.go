@@ -30,12 +30,14 @@ type State struct {
 	Calls    callIndex             `json:"calls"`
 }
 
-// stateVersion 5 persists the pending tool-call correlation index. Version 4 adds
+// stateVersion 6 persists the bounded tool-call correlation index, including
+// consumed entries needed to number reused call IDs. Version 5 persisted only
+// pending calls and therefore restores with an empty index. Version 4 adds
 // per-entry archive timestamps. State eviction is deliberately
 // age-based, anchored to the newest archive event timestamp seen for the series, not
 // the wall clock. Without persisting that anchor, a restart would either evict every
 // restored baseline immediately or keep all of them forever.
-const stateVersion = 5
+const stateVersion = 6
 
 // cumulativeWire is the checkpoint's on-disk shape for cumulative. A named struct
 // rather than an inline literal in both Marshal and Unmarshal, because the inline
@@ -161,7 +163,7 @@ func (r *Reducer) Restore(s State) {
 // snapshots that predate persisted timestamps. That keeps the first pass after an
 // upgrade from evicting restored state solely because the checkpoint format was old.
 func (r *Reducer) RestoreAt(s State, loadedAt time.Time) {
-	if s.Version != stateVersion && s.Version != 4 && s.Version != 3 {
+	if s.Version != stateVersion && s.Version != 5 && s.Version != 4 && s.Version != 3 {
 		return
 	}
 	if s.Prev != nil {
