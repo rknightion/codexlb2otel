@@ -3,11 +3,11 @@ id: CXO-0034
 title: >-
   Explain why proxy queue and bridge-queue waits and upstream diagnostics never
   appeared live, and prove them over a real window
-status: Parked
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-06 09:23'
-updated_date: '2026-09-06 10:50'
+updated_date: '2026-09-06 11:28'
 labels: []
 dependencies: []
 priority: high
@@ -26,7 +26,7 @@ Wave 2 (CXO-0030, CXO-0031) shipped the proxy wait histogram, the wait coverage 
 - [x] #1 A documented statement in docs/signals.md of which codex-lb request path populates each of the three waits, citing the codex-lb source location, and whether absent is expected for websocket-era rows
 - [x] #2 Either a fix with a failing-then-passing test for a mapping defect, or a test pinning that a row with connection_request_kind set and NULL queue wait is reported absent by design
 - [x] #3 A live m7kni query over at least 24 hours that returns at least one turn record with upstream_error_code set, or the report states the count was zero for that window with the query quoted
-- [ ] #4 The dashboard's Errors tab upstream-diagnostic panels default to a window in which the signal is expected to be visible, and docs/dashboards.md says why
+- [x] #4 The dashboard's Errors tab upstream-diagnostic panels default to a window in which the signal is expected to be visible, and docs/dashboards.md says why
 <!-- AC:END -->
 
 ## Definition of Done
@@ -44,10 +44,14 @@ Wave 3: execute the frozen lane ownership and decisions in codex/goal-2026-09-06
 
 <!-- SECTION:NOTES:BEGIN -->
 Wave3 final source 3bc28996c78c3533ae30f370f01a247aa6dea3ac. One git push was rejected (fetch first); zero successful pushes. Remote advanced by Renovate at10:16:57Z. No second attempt under the one-push contract. L1 verdict (a): no wait mapping defect, structural NULL by request path. Synthetic NULL/zero tests and source-cited docs pass. Live 24h Loki aggregate at 2026-09-06T10:48:00Z counted 2 upstream-error turn records. Generated upstream panels use v2 queryOptions.timeFrom=24h; deployment of those panels remains unproven. Resume in a newly authorized publication run: fetch and reconcile remote main 72c29953f4d6a03528cbf0c2f319d30900cbaf01 with the preserved local commits, run the integrated gate on the reconciled tree, authorize a new push, verify CI/publish and Watchtower at that SHA, then update and read back the m7kni dashboard and prove the new dimensions live.
+
+Publication resumed 2026-09-06: Rob rebased the 13 wave 3 commits onto Renovate's 72c2995 and pushed cce4673; CI 34029098196 and publish 34029098538 succeeded; camden deployed cce4673 at 11:10 UTC, healthy, 0 restarts. Dashboard pushed to m7kni as generation 15, spec-equal to the committed JSON after custom:{} normalisation; Errors tab diagnostic panels carry the 24h queryOptions.timeFrom override and docs/dashboards.md explains it.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Source 3bc28996c78c3533ae30f370f01a247aa6dea3ac; no pushed SHA. L1 verdict (a): no wait mapping defect, structural NULL by request path. Synthetic NULL/zero tests and source-cited docs pass. Live 24h Loki aggregate at 2026-09-06T10:48:00Z counted 2 upstream-error turn records. Generated upstream panels use v2 queryOptions.timeFrom=24h; deployment of those panels remains unproven. Resume in a newly authorized publication run: fetch and reconcile remote main 72c29953f4d6a03528cbf0c2f319d30900cbaf01 with the preserved local commits, run the integrated gate on the reconciled tree, authorize a new push, verify CI/publish and Watchtower at that SHA, then update and read back the m7kni dashboard and prove the new dimensions live.
+
+Pushed SHA cce4673 (CI 34029098196, publish 34029098538, camden deploy 11:10 UTC). Dashboard generation 15 spec-equal with the 24h upstream-diagnostic window. AC1-3 as recorded by wave 3; AC4 proven by the live generation 15 read-back.
 <!-- SECTION:FINAL_SUMMARY:END -->
