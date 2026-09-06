@@ -9,6 +9,7 @@ const (
 	callIndexLimit       = 512
 	callIndexThreadLimit = 4096
 	callIndexMaxAge      = 24 * time.Hour
+	callIndexSweepEvery  = time.Minute
 )
 
 // callRef identifies an observed invocation; CapturedAt is archive observation time.
@@ -23,8 +24,9 @@ type callRef struct {
 // callIndex holds bounded correlation history, scoped to originating threads.
 // advance supplies the archive clock without adding a wall-clock lookup parameter.
 type callIndex struct {
-	clock   time.Time
-	threads map[string][]callIndexEntry
+	clock     time.Time
+	nextSweep time.Time
+	threads   map[string][]callIndexEntry
 }
 
 type callIndexEntry struct {
@@ -74,8 +76,12 @@ func (c *callIndex) record(thread, callID string, ref callRef) int {
 	if c.threads == nil {
 		c.threads = make(map[string][]callIndexEntry)
 	}
-	c.enforceLimits()
-	entries := c.threads[thread]
+	// Sweep inactive threads at most once per archive minute. Capacity eviction
+	// remains immediate, and the active thread is pruned on every insertion.
+	if c.nextSweep.IsZero() || !c.clock.Before(c.nextSweep) {
+		c.pruneAll()
+	}
+	entries := c.prune(c.threads[thread])
 	occurrence := 1
 	for _, entry := range entries {
 		if entry.CallID == callID && entry.Ref.Occurrence >= occurrence {
@@ -185,6 +191,7 @@ func (c *callIndex) prune(entries []callIndexEntry) []callIndexEntry {
 }
 
 func (c *callIndex) pruneAll() {
+	c.nextSweep = c.clock.Add(callIndexSweepEvery)
 	for thread, entries := range c.threads {
 		entries = c.prune(entries)
 		if len(entries) == 0 {

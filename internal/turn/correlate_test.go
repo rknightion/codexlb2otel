@@ -204,3 +204,23 @@ func TestCallIndexOccurrenceResetsWhenBoundedHistoryIsRemoved(t *testing.T) {
 		}
 	})
 }
+
+// Global expiry is amortized; the active thread still expires on every record.
+func TestCallIndexExpirySweepCadence(t *testing.T) {
+	base := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	var calls callIndex
+	calls.record("inactive", "call", callRef{CapturedAt: base})
+	calls.record("active", "call", callRef{CapturedAt: base})
+	boundary := base.Add(callIndexMaxAge)
+	calls.record("clock", "call", callRef{CapturedAt: boundary})
+	if got := calls.record("active", "call", callRef{CapturedAt: boundary.Add(time.Second)}); got != 1 {
+		t.Fatalf("expired active occurrence = %d, want 1", got)
+	}
+	if _, ok := calls.threads["inactive"]; !ok {
+		t.Fatal("inactive thread swept before the next minute boundary")
+	}
+	calls.record("clock", "next", callRef{CapturedAt: boundary.Add(time.Minute)})
+	if _, ok := calls.threads["inactive"]; ok {
+		t.Fatal("expired inactive thread survived next sweep")
+	}
+}

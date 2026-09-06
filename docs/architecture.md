@@ -79,7 +79,9 @@ fields are wire metadata, not span attributes.
 The index keeps at most 512 entries per thread and at most 4,096 resident threads. On insertion
 past the global bound, it evicts the thread whose newest entry is oldest, breaking ties with the
 lexically smallest thread ID. Entries older than 24 hours on the archive clock are removed during
-expiry; a thread with no retained entries is removed on that pass. Reuse protection applies only
+expiry; a thread with no retained entries is removed on that pass. Insertions sweep inactive
+threads at most once per archive minute and always prune the active thread; capacity eviction
+remains immediate, and checkpoint repair performs a full sweep. Reuse protection applies only
 within this retained correlation history. Per-thread capacity eviction, global thread eviction,
 and expiry reset numbering for a later reuse, so this is not a lifetime guarantee. The checkpoint
 state version is 6; version 5 restores the other reducer state with an empty call index. Replay
