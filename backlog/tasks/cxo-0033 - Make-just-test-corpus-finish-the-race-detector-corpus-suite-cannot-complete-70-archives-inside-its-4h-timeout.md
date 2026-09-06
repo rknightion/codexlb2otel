@@ -3,11 +3,11 @@ id: CXO-0033
 title: >-
   Make just test-corpus finish: the race-detector corpus suite cannot complete
   70 archives inside its 4h timeout
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-06 00:05'
-updated_date: '2026-09-06 09:33'
+updated_date: '2026-09-06 10:50'
 labels: []
 dependencies: []
 priority: medium
@@ -23,14 +23,14 @@ just test-corpus runs the full-corpus suite with -race and a 4h timeout. On the 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 just test-corpus completes green on the full 70-file corpus on the lab Mac inside its own timeout
-- [ ] #2 AGENTS.md and the justfile doc comment describe what the corpus gate proves and that concurrency coverage comes from just test
-- [ ] #3 The wave operating model doc (doc-0002) test-corpus once-per-wave rule still holds and names the expected wall time
+- [x] #1 just test-corpus completes green on the full 70-file corpus on the lab Mac inside its own timeout
+- [x] #2 AGENTS.md and the justfile doc comment describe what the corpus gate proves and that concurrency coverage comes from just test
+- [x] #3 The wave operating model doc (doc-0002) test-corpus once-per-wave rule still holds and names the expected wall time
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -38,3 +38,15 @@ just test-corpus runs the full-corpus suite with -race and a 4h timeout. On the 
 <!-- SECTION:PLAN:BEGIN -->
 Wave 3: execute the frozen lane ownership and decisions in codex/goal-2026-09-06-wave3.md. Root commits wave 0 before dispatch; L2/L7 depend on L1 and the recorded D15 verdict. Integrate, run the rewritten corpus gate once after wiring, review, push once, verify Watchtower and m7kni, then reconcile acceptance and resume boundaries.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Wave3 final source 3bc28996c78c3533ae30f370f01a247aa6dea3ac. One git push was rejected (fetch first); zero successful pushes. Remote advanced by Renovate at10:16:57Z. No second attempt under the one-push contract. Rewrote the exhaustive corpus recipe without race; invocation 1 passed all 70 archives, exit 0, wall_seconds=3017.490 (50m17.490s). AGENTS and recipe describe caps/sizing/drift versus corpus-free race coverage. doc-0002 updated through CLI and read back. The corpus began at wiring 2354ec9; later correlation repair has separate final race-gate evidence. No corpus rerun.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Source 3bc28996c78c3533ae30f370f01a247aa6dea3ac; no pushed SHA. Rewrote the exhaustive corpus recipe without race; invocation 1 passed all 70 archives, exit 0, wall_seconds=3017.490 (50m17.490s). AGENTS and recipe describe caps/sizing/drift versus corpus-free race coverage. doc-0002 updated through CLI and read back. The corpus began at wiring 2354ec9; later correlation repair has separate final race-gate evidence. No corpus rerun.
+<!-- SECTION:FINAL_SUMMARY:END -->

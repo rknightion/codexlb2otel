@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 17:01'
-updated_date: '2026-08-29 13:43'
+updated_date: '2026-09-06 10:51'
 ---
 This document carries **only what is specific to codexlb2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -22,7 +22,8 @@ This repo's task surface is a `justfile`. Discover it, don't guess it:
 - `just check` is the toolchain-only pre-commit gate and exactly what CI's `build-test` job enforces. CI separately runs `just vuln` plus the Docker- and cross-compilation-dependent `just ci` legs.
 - Prefer `just <recipe>` over the underlying tool. If you are typing `go test`, you want `just test`.
 - Run `just` with stdin from `/dev/null`. `just baseline` is `[confirm]`-gated — it overwrites the committed `corpus.sig.json`. Stop and ask before running it; never pass `--yes` or `JUST_YES=1`.
-- `just test` is the full local race-test suite (uses the corpus if it has been synced). `just check` runs `just test-short` instead, matching CI's non-corpus path. A green `just test-short` (or `just check`) is not proof the corpus-backed tests pass; that only happens locally with `just test` against a synced corpus.
+- `just test` and `just check` never read the local corpus. `just check` runs the faster parallel `just test-short`, matching CI's non-corpus path.
+- `just test-corpus` is the opt-in gate against real captures: it proves caps, Loki sizing and drift; concurrency coverage comes from `just test` (corpus-free, race). Expected wall time is ~25–30 min. A green routine gate is not proof that corpus-backed checks passed.
 
 ## Exclusive resources - one lane at a time, no exceptions
 
@@ -110,6 +111,8 @@ what a sink does with an error class. Those are contract decisions; a lane inven
 more than the round trip. A boundary with no escape hatch is a stop condition wearing a safety label.
 
 ## Run-end against this tracker
+
+- `just test-corpus` once per wave, expected ~25–30 min, never blocks the push
 
 - Landed work: `backlog task edit <id> --check-ac N -s Done` in **one call**, with the SHA in the
   final summary.
