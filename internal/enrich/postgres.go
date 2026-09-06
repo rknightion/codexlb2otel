@@ -66,6 +66,9 @@ type rowScanner interface {
 func scanRow(rs rowScanner) (Row, error) {
 	var row Row
 	var (
+		clientGroup                     *string
+		connectionKind                  *string
+		failurePhase                    *string
 		latencyQueueMS                  *int
 		latencyResponseCreateGateWaitMS *int
 		latencyBridgeQueueWaitMS        *int
@@ -82,7 +85,9 @@ func scanRow(rs rowScanner) (Row, error) {
 		&row.APIKeyName,
 		&row.Status,
 		&row.ErrorCode,
-		&row.FailurePhase,
+		&clientGroup,
+		&connectionKind,
+		&failurePhase,
 		&row.LatencyResponseCreatedMS,
 		&row.LatencyFirstUpstreamEventMS,
 		&latencyQueueMS,
@@ -94,6 +99,15 @@ func scanRow(rs rowScanner) (Row, error) {
 	)
 	if err != nil {
 		return row, err
+	}
+	if clientGroup != nil {
+		row.ClientGroup = *clientGroup
+	}
+	if connectionKind != nil {
+		row.ConnectionKind = *connectionKind
+	}
+	if failurePhase != nil {
+		row.FailurePhase = *failurePhase
 	}
 	row.LatencyQueueMS = latencyQueueMS
 	row.LatencyResponseCreateGateWaitMS = latencyResponseCreateGateWaitMS
@@ -123,7 +137,9 @@ const selectFields = `
 	COALESCE(api_keys.name, '') AS api_key_name,
 	COALESCE(request_logs.status, '') AS status,
 	COALESCE(request_logs.error_code, '') AS error_code,
-	COALESCE(request_logs.failure_phase, '') AS failure_phase,
+	request_logs.useragent_group,
+	request_logs.connection_request_kind,
+	request_logs.failure_phase,
 	COALESCE(request_logs.latency_response_created_ms, 0) AS latency_response_created_ms,
 	COALESCE(request_logs.latency_first_upstream_event_ms, 0) AS latency_first_upstream_event_ms,
 	request_logs.latency_queue_ms,

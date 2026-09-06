@@ -9,7 +9,7 @@ import (
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
 
-func TestPostgresIntegration_GatedByDSN(t *testing.T) {
+func TestPostgresIntegration_EnrichmentColumnsGatedByDSN(t *testing.T) {
 	dsn := os.Getenv("CLB_TEST_PG_DSN")
 	if dsn == "" {
 		t.Skip("CLB_TEST_PG_DSN is not set")
@@ -28,6 +28,8 @@ func TestPostgresIntegration_GatedByDSN(t *testing.T) {
 	}
 	defer e.Close()
 
+	// PrefetchOnce executes prefetchSQL against the real request_logs schema, so
+	// an undefined or renamed selected column is reported through LookupErrors.
 	if err := e.PrefetchOnce(context.Background()); err != nil {
 		t.Fatalf("PrefetchOnce() error = %v", err)
 	}

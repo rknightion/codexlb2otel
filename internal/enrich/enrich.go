@@ -46,6 +46,8 @@ type Row struct {
 	APIKeyName                      string
 	Status                          string
 	ErrorCode                       string
+	ClientGroup                     string
+	ConnectionKind                  string
 	FailurePhase                    string
 	LatencyResponseCreatedMS        float64
 	LatencyFirstUpstreamEventMS     float64
@@ -366,6 +368,9 @@ func (e *StoreEnricher) recordError(err error) {
 }
 
 func attach(t *turn.Turn, row Row) {
+	t.ClientGroup = row.ClientGroup
+	t.ConnectionKind = row.ConnectionKind
+	t.FailurePhase = row.FailurePhase
 	t.CostUSD = row.CostUSD
 	t.APIKeyID = row.APIKeyID
 	t.APIKeyName = row.APIKeyName

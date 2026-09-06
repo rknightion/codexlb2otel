@@ -162,6 +162,96 @@ func TestStoreEnricher_OptionalProxyAndUpstreamFields(t *testing.T) {
 	}
 }
 
+func TestStoreEnricher_AttachesTurnEnrichmentAndAbsentValues(t *testing.T) {
+	tests := []struct {
+		name           string
+		row            Row
+		wantClient     string
+		wantConnection string
+		wantFailure    string
+	}{
+		{
+			name: "present",
+			row: Row{
+				RequestID:      "resp_enrichment_present",
+				ClientGroup:    "client-test",
+				ConnectionKind: "normal",
+				FailurePhase:   "downstream",
+			},
+			wantClient:     "client-test",
+			wantConnection: "normal",
+			wantFailure:    "downstream",
+		},
+		{
+			name: "null and empty are absent",
+			row: Row{
+				RequestID:      "resp_enrichment_absent",
+				ClientGroup:    "",
+				ConnectionKind: "",
+				FailurePhase:   "",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeStore{lookups: map[string]Row{tt.row.RequestID: tt.row}}
+			e := NewStoreEnricher(store, Options{LookupTimeout: time.Second, CacheEntries: 8})
+			defer e.Close()
+
+			gotTurn := &turn.Turn{ResponseID: tt.row.RequestID}
+			if got := e.Enrich(context.Background(), gotTurn); !got.Found {
+				t.Fatalf("Enrich() = %+v, want found", got)
+			}
+			if gotTurn.ClientGroup != tt.wantClient {
+				t.Errorf("ClientGroup = %q, want %q", gotTurn.ClientGroup, tt.wantClient)
+			}
+			if gotTurn.ConnectionKind != tt.wantConnection {
+				t.Errorf("ConnectionKind = %q, want %q", gotTurn.ConnectionKind, tt.wantConnection)
+			}
+			if gotTurn.FailurePhase != tt.wantFailure {
+				t.Errorf("FailurePhase = %q, want %q", gotTurn.FailurePhase, tt.wantFailure)
+			}
+			if gotTurn.ProxyFailurePhase != tt.wantFailure {
+				t.Errorf("ProxyFailurePhase = %q, want %q", gotTurn.ProxyFailurePhase, tt.wantFailure)
+			}
+		})
+	}
+}
+
+func TestStoreEnricher_ConnectionRowsKeepNullableWaitsAbsent(t *testing.T) {
+	zero := 0
+	for _, connectionKind := range []string{"normal", "prewarm"} {
+		t.Run(connectionKind, func(t *testing.T) {
+			row := Row{
+				ID:                              11,
+				RequestID:                       "resp_" + connectionKind,
+				ConnectionKind:                  connectionKind,
+				LatencyResponseCreateGateWaitMS: &zero,
+				LatencyQueueMS:                  nil,
+				LatencyBridgeQueueWaitMS:        nil,
+			}
+			store := &fakeStore{lookups: map[string]Row{row.RequestID: row}}
+			e := NewStoreEnricher(store, Options{LookupTimeout: time.Second, CacheEntries: 8})
+			defer e.Close()
+
+			gotTurn := &turn.Turn{ResponseID: row.RequestID}
+			if got := e.Enrich(context.Background(), gotTurn); !got.Found {
+				t.Fatalf("Enrich() = %+v, want found", got)
+			}
+			if gotTurn.ConnectionKind != connectionKind {
+				t.Fatalf("ConnectionKind = %q, want %q", gotTurn.ConnectionKind, connectionKind)
+			}
+			if gotTurn.ProxyQueueWaitMS != nil || gotTurn.ProxyBridgeQueueWaitMS != nil {
+				t.Fatalf("connection waits = queue %v, bridge %v; want absent", gotTurn.ProxyQueueWaitMS, gotTurn.ProxyBridgeQueueWaitMS)
+			}
+			if gotTurn.ProxyResponseCreateGateWaitMS == nil || *gotTurn.ProxyResponseCreateGateWaitMS != 0 {
+				t.Fatalf("gate wait = %v, want present zero", gotTurn.ProxyResponseCreateGateWaitMS)
+			}
+		})
+	}
+}
+
 func TestStoreEnricher_StoreErrorIsAbsentEnrichment(t *testing.T) {
 	store := &fakeStore{lookupErr: errors.New("postgres is down")}
 	e := NewStoreEnricher(store, Options{
@@ -211,7 +301,8 @@ func TestStoreEnricher_PrefetchMatchesArchiveRequestIDWithoutPointQueryingIt(t *
 		prefetch: []Row{{
 			ID: 11, RequestID: "resp_2", ArchiveRequestID: "ws_2", CostUSD: &cost,
 			APIKeyID: "key-2", APIKeyName: "secondary", Status: "rate_limited",
-			ErrorCode: "rate_limit_exceeded", FailurePhase: "upstream",
+			ErrorCode: "rate_limit_exceeded", ClientGroup: "client-prefetch",
+			ConnectionKind: "prewarm", FailurePhase: "upstream",
 			LatencyQueueMS: intPtr(18), LatencyResponseCreateGateWaitMS: intPtr(0),
 			LatencyBridgeQueueWaitMS: intPtr(1), UpstreamStatusCode: 429,
 			UpstreamErrorCode: "upstream_rate_limited", UpstreamTransport: "http",
@@ -232,6 +323,10 @@ func TestStoreEnricher_PrefetchMatchesArchiveRequestIDWithoutPointQueryingIt(t *
 	if byArchiveID.ProxyErrorCode != "rate_limit_exceeded" ||
 		byArchiveID.ProxyFailurePhase != "upstream" {
 		t.Fatalf("proxy error fields were not attached: %+v", byArchiveID)
+	}
+	if byArchiveID.ClientGroup != "client-prefetch" || byArchiveID.ConnectionKind != "prewarm" ||
+		byArchiveID.FailurePhase != "upstream" {
+		t.Fatalf("turn enrichment fields were not attached: %+v", byArchiveID)
 	}
 	if byArchiveID.ProxyQueueWaitMS == nil || *byArchiveID.ProxyQueueWaitMS != 18 ||
 		byArchiveID.ProxyResponseCreateGateWaitMS == nil || *byArchiveID.ProxyResponseCreateGateWaitMS != 0 ||

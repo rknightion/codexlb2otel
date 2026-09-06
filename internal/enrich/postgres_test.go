@@ -11,6 +11,7 @@ func TestScanRow_MapsNullableProxyAndUpstreamColumns(t *testing.T) {
 	queue := 125
 	bridge := 2
 	status := 503
+	failurePhase := "upstream"
 	empty := ""
 	errorCode := "upstream_overloaded"
 	transport := "http"
@@ -49,7 +50,7 @@ func TestScanRow_MapsNullableProxyAndUpstreamColumns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := scanRow(&fakeRowScanner{values: scanValues(tt.queue, tt.gate, tt.bridge, tt.status, tt.errorCode, tt.transport)})
+			got, err := scanRow(&fakeRowScanner{values: scanValues(&empty, &empty, &failurePhase, tt.queue, tt.gate, tt.bridge, tt.status, tt.errorCode, tt.transport)})
 			if err != nil {
 				t.Fatalf("scanRow() error = %v", err)
 			}
@@ -81,8 +82,99 @@ func TestScanRow_MapsNullableProxyAndUpstreamColumns(t *testing.T) {
 	}
 }
 
+func TestScanRow_MapsNullableTurnEnrichment(t *testing.T) {
+	clientGroup := "client-test"
+	connectionKind := "normal"
+	failurePhase := "downstream"
+	empty := ""
+
+	tests := []struct {
+		name           string
+		clientGroup    *string
+		connectionKind *string
+		failurePhase   *string
+		wantClient     string
+		wantConnection string
+		wantFailure    string
+	}{
+		{
+			name:           "present",
+			clientGroup:    &clientGroup,
+			connectionKind: &connectionKind,
+			failurePhase:   &failurePhase,
+			wantClient:     clientGroup,
+			wantConnection: connectionKind,
+			wantFailure:    failurePhase,
+		},
+		{
+			name:           "empty",
+			clientGroup:    &empty,
+			connectionKind: &empty,
+			failurePhase:   &empty,
+		},
+		{
+			name: "null",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := scanRow(&fakeRowScanner{values: scanValues(tt.clientGroup, tt.connectionKind, tt.failurePhase, nil, nil, nil, nil, nil, nil)})
+			if err != nil {
+				t.Fatalf("scanRow() error = %v", err)
+			}
+			if got.ClientGroup != tt.wantClient {
+				t.Errorf("ClientGroup = %q, want %q", got.ClientGroup, tt.wantClient)
+			}
+			if got.ConnectionKind != tt.wantConnection {
+				t.Errorf("ConnectionKind = %q, want %q", got.ConnectionKind, tt.wantConnection)
+			}
+			if got.FailurePhase != tt.wantFailure {
+				t.Errorf("FailurePhase = %q, want %q", got.FailurePhase, tt.wantFailure)
+			}
+		})
+	}
+}
+
+func TestScanRow_ConnectionRowsKeepNullableWaitsAbsent(t *testing.T) {
+	zero := 0
+	queue := 125
+	bridge := 2
+
+	tests := []struct {
+		name           string
+		connectionKind string
+		queue          *int
+		bridge         *int
+	}{
+		{name: "normal", connectionKind: "normal"},
+		{name: "prewarm", connectionKind: "prewarm"},
+		{name: "direct streaming measured values", connectionKind: "", queue: &queue, bridge: &bridge},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := scanRow(&fakeRowScanner{values: scanValues(nil, stringPtr(tt.connectionKind), nil, tt.queue, &zero, tt.bridge, nil, nil, nil)})
+			if err != nil {
+				t.Fatalf("scanRow() error = %v", err)
+			}
+			if got.ConnectionKind != tt.connectionKind {
+				t.Fatalf("ConnectionKind = %q, want %q", got.ConnectionKind, tt.connectionKind)
+			}
+			assertOptionalInt(t, got.LatencyQueueMS, tt.queue)
+			assertOptionalInt(t, got.LatencyBridgeQueueWaitMS, tt.bridge)
+			if got.LatencyResponseCreateGateWaitMS == nil || *got.LatencyResponseCreateGateWaitMS != 0 {
+				t.Fatalf("LatencyResponseCreateGateWaitMS = %v, want present zero", got.LatencyResponseCreateGateWaitMS)
+			}
+		})
+	}
+}
+
 func TestPostgresQueriesSelectAllEnrichmentColumns(t *testing.T) {
 	columns := []string{
+		"useragent_group",
+		"connection_request_kind",
+		"failure_phase",
 		"latency_queue_ms",
 		"latency_response_create_gate_wait_ms",
 		"latency_bridge_queue_wait_ms",
@@ -108,10 +200,11 @@ func TestPostgresQueriesSelectAllEnrichmentColumns(t *testing.T) {
 	}
 }
 
-func scanValues(queue, gate, bridge, status *int, errorCode, transport *string) []any {
+func scanValues(clientGroup, connectionKind, failurePhase *string, queue, gate, bridge, status *int, errorCode, transport *string) []any {
 	return []any{
 		int64(7), "resp_scan", "archive_scan", float64(1.25), "key-scan", "scan",
-		"success", "", "upstream", float64(12.5), float64(8.25),
+		"success", "", optionalStringValue(clientGroup), optionalStringValue(connectionKind), optionalStringValue(failurePhase),
+		float64(12.5), float64(8.25),
 		optionalIntValue(queue), optionalIntValue(gate), optionalIntValue(bridge),
 		optionalIntValue(status), optionalStringValue(errorCode), optionalStringValue(transport),
 	}
@@ -145,6 +238,10 @@ func assertOptionalInt(t *testing.T, got, want *int) {
 }
 
 func intPtr(value int) *int {
+	return &value
+}
+
+func stringPtr(value string) *string {
 	return &value
 }
 
