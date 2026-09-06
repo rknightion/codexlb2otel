@@ -24,7 +24,10 @@ python3 dashboards/v2/generate.py > dashboards/v2/codexlb2otel-full.json
 
 The generator reconciles its panels against the metric constants, emitted Loki record types, and
 span names. It exits non-zero and names missing coverage rather than producing a dashboard that
-silently ignores a new signal.
+silently ignores a new signal. Barcharts fed by an instant Prometheus query are reduced to one row
+per series (a `reduce` in series-to-rows mode) so the category axis shows the series names rather
+than the timestamp; the generator applies that centrally and its verification fails on any instant
+barchart that lacks it.
 
 The twelve tabs include enriched cost and token shape, status disagreement diagnostics, agent
 topology, ID lookup, and trace views. The `$family` selector defaults to websocket, HTTP, and

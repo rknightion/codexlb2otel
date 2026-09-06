@@ -298,12 +298,44 @@ def _as_table(queries):
     return queries
 
 
+def _instant_barchart(queries, transforms, opts):
+    """An instant multi-series result feeding a barchart MUST be reduced to rows.
+
+    Each series of an instant query arrives as its own frame with a single point. The
+    barchart takes the first non-numeric field as its category axis, and the only one
+    it finds is the timestamp, so every panel drew one category labelled with the
+    year and one bar per series; with the legend hidden the series name was shown
+    nowhere at all (CXO-0039). ``reduce`` in series-to-rows mode turns the frames into
+    one table whose string field is the series display name, which is what the
+    legendFormat already computed. Applied centrally so a new instant barchart cannot
+    reintroduce it; verify() fails on any barchart that reaches the JSON without it.
+    """
+    if not any(pq["spec"]["query"]["group"] == "prometheus"
+               and pq["spec"]["query"]["spec"].get("instant") for pq in queries):
+        return transforms, opts
+    transforms = list(transforms or [])
+    if not any(t.get("group") == "reduce" for t in transforms):
+        transforms.append({"kind": "Transformation", "group": "reduce",
+                           "spec": {"options": {"reducers": ["lastNotNull"],
+                                                "mode": "seriesToRows",
+                                                "includeTimeField": False}}})
+        transforms.append(organize({}, {"Field": "group", "Last *": "value"}))
+    opts = dict(opts or {})
+    opts.setdefault("colorByField", "group")
+    # After the reduce there is one numeric field, so the legend would only ever
+    # say "value"; the category axis carries the names.
+    opts.setdefault("legend", {"showLegend": False})
+    return transforms, opts
+
+
 def panel(title, queries, viz="timeseries", desc="", unit=None, opts=None,
           fieldcfg=None, transforms=None, thresholds=None, maxv=None, minv=None,
           decimals=None, overrides=None, time_from=None):
     queries = _renumber(queries)
     if viz == "table":
         queries = _as_table(queries)
+    if viz == "barchart":
+        transforms, opts = _instant_barchart(queries, transforms, opts)
     _panel_id[0] += 1
     defaults = {}
     if unit:
@@ -2124,6 +2156,27 @@ def connection_kind_findings(spec):
     return findings
 
 
+def instant_barchart_findings(spec):
+    """Barchart elements whose instant Prometheus query is not reduced to rows."""
+    findings = []
+    for element_name, element in spec.get("elements", {}).items():
+        if element.get("kind") != "Panel":
+            continue
+        pspec = element.get("spec", {})
+        if pspec.get("vizConfig", {}).get("group") != "barchart":
+            continue
+        data = pspec.get("data", {}).get("spec", {})
+        instant = any(pq["spec"]["query"]["group"] == "prometheus"
+                      and pq["spec"]["query"]["spec"].get("instant")
+                      for pq in data.get("queries", []))
+        reduced = any(t.get("group") == "reduce"
+                      and t.get("spec", {}).get("options", {}).get("mode") == "seriesToRows"
+                      for t in data.get("transformations", []))
+        if instant and not reduced:
+            findings.append((element_name, pspec.get("title", "")))
+    return findings
+
+
 def verify(spec):
     """Fail rather than ship a dashboard that quietly dropped a signal."""
     problems = []
@@ -2195,6 +2248,10 @@ def verify(spec):
                      and PROM_NAME["codexlb.turns"] in expr]
     if len(cost_per_turn) != 1 or cost_per_turn[0].count('codexlb_request_kind="turn"') != 2:
         problems.append("cost per turn must restrict both cost and turn count to user turns")
+
+    for element_name, title in instant_barchart_findings(spec):
+        problems.append(f"{element_name} ({title!r}) is an instant barchart without a "
+                        f"series-to-rows reduce; the category axis would show the timestamp")
 
     for element_name, metric, _ in connection_kind_findings(spec):
         problems.append(f"{element_name} uses {metric} with a probe-family selector "

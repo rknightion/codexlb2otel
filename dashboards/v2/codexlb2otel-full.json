@@ -2303,7 +2303,35 @@
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "reduce",
+                  "spec": {
+                    "options": {
+                      "reducers": [
+                        "lastNotNull"
+                      ],
+                      "mode": "seriesToRows",
+                      "includeTimeField": false
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {},
+                      "renameByName": {
+                        "Field": "group",
+                        "Last *": "value"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -2316,7 +2344,8 @@
                 "showValue": "auto",
                 "legend": {
                   "showLegend": false
-                }
+                },
+                "colorByField": "group"
               },
               "fieldConfig": {
                 "defaults": {
@@ -2362,7 +2391,35 @@
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "reduce",
+                  "spec": {
+                    "options": {
+                      "reducers": [
+                        "lastNotNull"
+                      ],
+                      "mode": "seriesToRows",
+                      "includeTimeField": false
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {},
+                      "renameByName": {
+                        "Field": "group",
+                        "Last *": "value"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -2375,7 +2432,8 @@
                 "showValue": "auto",
                 "legend": {
                   "showLegend": false
-                }
+                },
+                "colorByField": "group"
               },
               "fieldConfig": {
                 "defaults": {
@@ -2723,7 +2781,35 @@
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "reduce",
+                  "spec": {
+                    "options": {
+                      "reducers": [
+                        "lastNotNull"
+                      ],
+                      "mode": "seriesToRows",
+                      "includeTimeField": false
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {},
+                      "renameByName": {
+                        "Field": "group",
+                        "Last *": "value"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -2738,7 +2824,8 @@
                 "stacking": "none",
                 "legend": {
                   "showLegend": false
-                }
+                },
+                "colorByField": "group"
               },
               "fieldConfig": {
                 "defaults": {},
@@ -3894,7 +3981,35 @@
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "reduce",
+                  "spec": {
+                    "options": {
+                      "reducers": [
+                        "lastNotNull"
+                      ],
+                      "mode": "seriesToRows",
+                      "includeTimeField": false
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {},
+                      "renameByName": {
+                        "Field": "group",
+                        "Last *": "value"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -3907,6 +4022,10 @@
                   "drawStyle": "bars",
                   "fillOpacity": 70,
                   "lineWidth": 0
+                },
+                "colorByField": "group",
+                "legend": {
+                  "showLegend": false
                 }
               },
               "fieldConfig": {
@@ -4019,7 +4138,35 @@
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "reduce",
+                  "spec": {
+                    "options": {
+                      "reducers": [
+                        "lastNotNull"
+                      ],
+                      "mode": "seriesToRows",
+                      "includeTimeField": false
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {},
+                      "renameByName": {
+                        "Field": "group",
+                        "Last *": "value"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -4032,6 +4179,10 @@
                   "drawStyle": "bars",
                   "fillOpacity": 70,
                   "lineWidth": 0
+                },
+                "colorByField": "group",
+                "legend": {
+                  "showLegend": false
                 }
               },
               "fieldConfig": {
@@ -6796,7 +6947,35 @@
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "reduce",
+                  "spec": {
+                    "options": {
+                      "reducers": [
+                        "lastNotNull"
+                      ],
+                      "mode": "seriesToRows",
+                      "includeTimeField": false
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {},
+                      "renameByName": {
+                        "Field": "group",
+                        "Last *": "value"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -6810,7 +6989,8 @@
                 "legend": {
                   "showLegend": false
                 },
-                "xTickLabelRotation": 0
+                "xTickLabelRotation": 0,
+                "colorByField": "group"
               },
               "fieldConfig": {
                 "defaults": {},
