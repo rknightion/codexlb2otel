@@ -39,8 +39,14 @@ write the shape, not the instance.
 
 ## Task tracking
 
-- `backlog/config.yml` is the deliberate exception to driving the tracker only through its CLI:
-  list-valued keys cannot be set through `backlog config set`, so that one file is hand-edited.
+- Never `--notes` or `--plan` bare. They replace the whole section and exit 0, destroying another
+  session's writes with no warning. Use `--append-notes` and `--append-plan`; a global guard hook
+  denies the bare forms.
+- Never hand-edit task, draft, doc, decision or milestone markdown. Section boundaries are
+  HTML-comment markers; break one and the section is silently dropped at exit 0, still in the file
+  but invisible to the CLI until the next write destroys it for real. There is no repair command,
+  and `backlog doctor` only fixes duplicate task IDs. `backlog/config.yml` is the deliberate
+  exception: list-valued keys cannot be set through `backlog config set`, so it is hand-edited.
 - Finalize in one call, so an interrupted session cannot leave finished work looking unfinished:
   `backlog task edit CXO-0007 --check-ac 1 --check-ac 2 -s Done`.
 - Never let two agents edit the same task. The upstream concurrent-write fix covers the edit funnel
