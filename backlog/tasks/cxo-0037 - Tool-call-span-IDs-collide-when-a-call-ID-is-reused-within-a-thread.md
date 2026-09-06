@@ -1,9 +1,11 @@
 ---
 id: CXO-0037
 title: Tool-call span IDs collide when a call ID is reused within a thread
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-06 09:23'
+updated_date: '2026-09-06 09:33'
 labels: []
 dependencies: []
 priority: low
@@ -27,3 +29,9 @@ CXO-0028 froze the tool-call span ID as hashSpanID(threadID, callID) so a later 
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 3: execute the frozen lane ownership and decisions in codex/goal-2026-09-06-wave3.md. Root commits wave 0 before dispatch; L2/L7 depend on L1 and the recorded D15 verdict. Integrate, run the rewritten corpus gate once after wiring, review, push once, verify Watchtower and m7kni, then reconcile acceptance and resume boundaries.
+<!-- SECTION:PLAN:END -->

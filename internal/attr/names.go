@@ -201,6 +201,12 @@ const (
 	// Family is websocket | http | probe. NOT the record's own transport field, which
 	// reads "websocket" for every record including the HTTP ones and the health checks.
 	Family = "codexlb.family"
+	// ClientGroup is the proxy client classification, not the model provider.
+	ClientGroup = "codexlb.client_group"
+	// ConnectionKind classifies connection prewarming independently of RequestKind.
+	ConnectionKind = "codexlb.connection_kind"
+	// FailurePhase is the proxy upstream/downstream failure boundary, not a model finish reason.
+	FailurePhase = "codexlb.failure_phase"
 	// RequestKind is turn | prewarm | compaction. Prewarm does no engine work and
 	// compaction is the server compacting context; neither is a user turn, and counting
 	// them as one overstates turn rates and understates cost per turn.

@@ -28,6 +28,9 @@ const idJustification = "codex-lb's own internal identifier or lifecycle detail;
 // 2026-08-07), not assumed - see the matching const's own doc comment in names.go for
 // the fuller version of each.
 var semconvJustified = map[string]string{
+	ClientGroup:            "proxy client classification has no GenAI equivalent",
+	ConnectionKind:         "proxy connection warmup classification is distinct from model operation",
+	FailurePhase:           "proxy upstream/downstream failure boundary is not a model finish reason",
 	TurnTrigger:            "Codex goal continuation trigger has no GenAI equivalent",
 	SafetyBufferingReasons: "provider safety buffering reason enum has no GenAI equivalent",
 	ReasoningContext:       "provider reasoning history scope is distinct from reasoning effort",

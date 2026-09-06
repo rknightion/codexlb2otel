@@ -16,6 +16,10 @@ import "time"
 
 // Turn is one model response, assembled from every frame sharing a request_id.
 type Turn struct {
+	// Database-enriched client and connection classifications, distinct from RequestKind.
+	ClientGroup    string `json:"client_group,omitempty"`
+	ConnectionKind string `json:"connection_kind,omitempty"`
+	FailurePhase   string `json:"failure_phase,omitempty"`
 	// Identity. All high cardinality - log attributes only, never metric labels.
 	RequestID      string    `json:"request_id"`
 	ResponseID     string    `json:"response_id,omitempty"`
@@ -385,6 +389,11 @@ type AgentMessage struct {
 
 // ToolCall is one tool invocation the model made.
 type ToolCall struct {
+	// CallOccurrence is the 1-based occurrence of this call ID within the thread.
+	// The correlation index retains at most 4096 threads, evicting the oldest
+	// newest-entry first (lexical thread ID breaks ties), with 512 entries per
+	// thread and 24-hour archive-clock expiry.
+	CallOccurrence int       `json:"call_occurrence,omitempty"`
 	InputOmitted   int       `json:"input_omitted,omitempty"`
 	InputTruncated bool      `json:"input_truncated,omitempty"`
 	Ordinal        int       `json:"ordinal"`
@@ -446,18 +455,20 @@ type Prompt struct {
 // Text is truncated: these carry whole command outputs and are the single largest
 // content source in the archive. Chars always records the untruncated length.
 type ToolOutput struct {
-	OriginResponseID string    `json:"origin_response_id,omitempty"`
-	OriginTurnID     string    `json:"origin_turn_id,omitempty"`
-	OriginToolName   string    `json:"origin_tool_name,omitempty"`
-	OriginMatch      string    `json:"origin_match"`
-	Ordinal          int       `json:"ordinal"`
-	ItemID           string    `json:"item_id,omitempty"`
-	CapturedAt       time.Time `json:"captured_at,omitempty"`
-	Provenance       string    `json:"provenance,omitempty"`
-	CallID           string    `json:"call_id,omitempty"`
-	Chars            int       `json:"chars"`
-	Truncated        bool      `json:"truncated,omitempty"`
-	Text             string    `json:"text,omitempty"`
+	// OriginCallOccurrence identifies the invocation only on an exact match.
+	OriginCallOccurrence int       `json:"origin_call_occurrence,omitempty"`
+	OriginResponseID     string    `json:"origin_response_id,omitempty"`
+	OriginTurnID         string    `json:"origin_turn_id,omitempty"`
+	OriginToolName       string    `json:"origin_tool_name,omitempty"`
+	OriginMatch          string    `json:"origin_match"`
+	Ordinal              int       `json:"ordinal"`
+	ItemID               string    `json:"item_id,omitempty"`
+	CapturedAt           time.Time `json:"captured_at,omitempty"`
+	Provenance           string    `json:"provenance,omitempty"`
+	CallID               string    `json:"call_id,omitempty"`
+	Chars                int       `json:"chars"`
+	Truncated            bool      `json:"truncated,omitempty"`
+	Text                 string    `json:"text,omitempty"`
 }
 
 // cumulative snapshots the logical-turn counters so the next response can be diffed

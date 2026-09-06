@@ -3,9 +3,11 @@ id: CXO-0034
 title: >-
   Explain why proxy queue and bridge-queue waits and upstream diagnostics never
   appeared live, and prove them over a real window
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-06 09:23'
+updated_date: '2026-09-06 09:33'
 labels: []
 dependencies: []
 priority: high
@@ -31,3 +33,9 @@ Wave 2 (CXO-0030, CXO-0031) shipped the proxy wait histogram, the wait coverage 
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 3: execute the frozen lane ownership and decisions in codex/goal-2026-09-06-wave3.md. Root commits wave 0 before dispatch; L2/L7 depend on L1 and the recorded D15 verdict. Integrate, run the rewritten corpus gate once after wiring, review, push once, verify Watchtower and m7kni, then reconcile acceptance and resume boundaries.
+<!-- SECTION:PLAN:END -->
