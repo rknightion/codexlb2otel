@@ -1,5 +1,5 @@
-github.com/OpenRouterTeam/go-sdk v0.7.123 h1:ZHtO7voGxEUmMVtgJm3i7aKigQaLm76F7W/msTUR12A=
-github.com/OpenRouterTeam/go-sdk v0.7.123/go.mod h1:8vFtUZ9I2YiDntYbck42wQhrx9DsJN5PHbViaHwTkXc=
+github.com/OpenRouterTeam/go-sdk v0.7.124 h1:7UN3rwr2hugiSL/UZKrvgO/ksCIYGhu0gEkEVU/u81k=
+github.com/OpenRouterTeam/go-sdk v0.7.124/go.mod h1:8vFtUZ9I2YiDntYbck42wQhrx9DsJN5PHbViaHwTkXc=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=
