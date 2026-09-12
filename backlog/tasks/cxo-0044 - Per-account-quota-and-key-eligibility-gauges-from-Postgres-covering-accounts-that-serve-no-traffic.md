@@ -3,11 +3,11 @@ id: CXO-0044
 title: >-
   Per-account quota and key-eligibility gauges from Postgres, covering accounts
   that serve no traffic
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-12 10:09'
-updated_date: '2026-09-12 17:30'
+updated_date: '2026-09-12 18:11'
 labels:
   - enrichment
   - metrics
@@ -66,12 +66,12 @@ Measured query cost against the live database: the latest-per-account reads plan
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 A poller reads the five account and quota tables on its own schedule and publishes an immutable snapshot
-- [ ] #2 The observable callbacks read only that snapshot and perform no database IO, and a test proves a callback invoked while the poller holds its lock returns within a bounded time rather than blocking
+- [x] #2 The observable callbacks read only that snapshot and perform no database IO, and a test proves a callback invoked while the poller holds its lock returns within a bounded time rather than blocking
 - [x] #3 Every account in the accounts table produces a codexlb.account.info series whether or not it has served traffic
 - [x] #4 codexlb.account.api_key_eligible is 0 for an account that no active key can reach and 1 otherwise, and a test covers the scope-enabled-but-unassigned case
 - [x] #5 The account id attribute value is the bare uuid prefix and joins with the archive-derived rate limit series
 - [x] #6 Every quoted identifier for the window column is present, and a test executes the statements against a stub rejecting an unquoted reserved word
-- [ ] #7 A database fault disables only these gauges; archive ingestion, Loki and the existing metric path keep running, with the outcome visible in the self-observability counters
+- [x] #7 A database fault disables only these gauges; archive ingestion, Loki and the existing metric path keep running, with the outcome visible in the self-observability counters
 - [x] #8 The feature is disabled by default in config.example.yaml and TestLoad_ExampleConfigIsDeployable still passes
 - [x] #9 accounts.email is selected and emitted as a bounded attribute on codexlb.account.info, so an account is identifiable in a dashboard without a database session
 <!-- AC:END -->
@@ -103,6 +103,8 @@ Park boundary: add an end-to-end test that publishes a real Poller snapshot and 
 Deployment-config authority was granted on 2026-09-12. Camden was backed up, account_poller was enabled with the existing read-only DSN, Compose validation passed, and the authorized stop/pull/up completed. The first real poll failed safely with: accountpoll: scan usage history: cannot scan int4 (OID 23) in binary format into **time.Time. The task is reopened for this production-shape bug; no account data was exposed.
 
 Resumed deployment evidence: the existing DSN was reused, the poller config was enabled after a timestamped backup, and the first old-image poll exposed reset_at as int4 rather than timestamptz. A failing regression pinned to_timestamp(reset_at) on both quota statements; focused race tests, a real DSN-gated Poller scan, integrated just check, CodeRabbit with zero findings, and fresh read-only L7 review followed. Exact CI 34694991455 and publish 34694991713 succeeded at 88773a47c9e56005ea759e73a7774c6971f4d04a. The healthy deployed image has manifest digest sha256:69c38f727568d63ea61527e03de6bb6e9df70bc8e2e13801b70b896654068bef, zero account-poll failures since start, and Grafana read-back returned aggregate series counts: account info 5, API-key eligibility 10, quota used 8, model quota used 9, reset-after 4, credits balance 4. AC2 and AC7 remain unchecked at the recorded test and self-observability boundary.
+
+Wave 5 closure: a registered ManualReader callback collected through a real Poller while a second poll was blocked inside Store.Query, returned the previously published snapshot within 250 ms, and performed no callback database IO. Poll outcomes are now the bounded success/error/disabled counter and the deployed success series advanced from 1 to 4 across three two-minute intervals. CodeRabbit pass 2 had zero findings and L4 accepted all recurring-defect challenges.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -111,4 +113,6 @@ Resumed deployment evidence: the existing DSN was reused, the poller config was 
 Implemented the scheduled read-only account poller, immutable snapshots, account and eligibility gauges, disabled-by-default configuration, wiring, tests, dashboards, and live SQL proof. Parked because the required real Poller-to-registered-callback non-blocking seam test and a frozen poller self-observability counter are absent; Camden account_poller is also not enabled, so account gauges cannot be verified live.
 
 Correction after resumed authority: Camden account polling is now enabled and live. The production int4 reset_at scan defect was repaired at 88773a47, exact CI and publication passed, the container is healthy, and all six account metric families are non-empty in Grafana. The task remains Parked only because AC2 lacks a real Poller-to-registered-callback collection test and AC7 lacks the frozen self-observability counter.
+
+Wave 5 closed AC2 and AC7 at commit 13d3fe0: the observable seam is empirically non-blocking under real Poller database contention, failures remain isolated, and the outcome counter plus all six account families were proven live after exact-head CI and deployment.
 <!-- SECTION:FINAL_SUMMARY:END -->

@@ -3,11 +3,11 @@ id: CXO-0047
 title: >-
   Bound the account poller quota queries: both statements scan the whole
   relation every two minutes
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-12 16:54'
-updated_date: '2026-09-12 17:30'
+updated_date: '2026-09-12 18:11'
 labels:
   - enrichment
   - metrics
@@ -36,16 +36,16 @@ The bound must preserve two frozen properties: the latest-window expression stay
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 EXPLAIN (ANALYZE, BUFFERS) output for both usageSQL and modelQuotaSQL against the live read-only DSN at current table size is captured, showing the chosen plan node and actual rows scanned
-- [ ] #2 Both statements are bounded so their cost does not grow with total table size, with the plan proving it
-- [ ] #3 The latest-window expression is still COALESCE(quoted window, 'primary') and every reserved-word reference is still quoted, with the existing stub test that rejects an unquoted reference still passing
-- [ ] #4 A test proves an account whose most recent quota row predates the bound still produces its codexlb.account.info series and is not silently dropped
-- [ ] #5 just check passes and the deployed poller shows zero new failures over at least three poll intervals after rollout
+- [x] #1 EXPLAIN (ANALYZE, BUFFERS) output for both usageSQL and modelQuotaSQL against the live read-only DSN at current table size is captured, showing the chosen plan node and actual rows scanned
+- [x] #2 Both statements are bounded so their cost does not grow with total table size, with the plan proving it
+- [x] #3 The latest-window expression is still COALESCE(quoted window, 'primary') and every reserved-word reference is still quoted, with the existing stub test that rejects an unquoted reference still passing
+- [x] #4 A test proves an account whose most recent quota row predates the bound still produces its codexlb.account.info series and is not silently dropped
+- [x] #5 just check passes and the deployed poller shows zero new failures over at least three poll intervals after rollout
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -92,4 +92,12 @@ Every index the rewrite needs already exists. This task creates no index and iss
 Urgency: query_timeout is 2s and usageSQL is at 326 ms on a base growing ~120 rows/hour, so
 it doubles in roughly 24 days. Two to three doublings reach the timeout, at which point the
 poll fails, every account gauge goes stale, archive ingestion stays green and nothing pages.
+
+Wave 5 completion: account-driven lateral lookups preserve old quiet-account rows and use the existing quoted-window indexes. Fresh deployed EXPLAIN ANALYZE at 13d3fe0 measured usageSQL at 0.330 ms with 10 quota and 5 credits index searches versus 326.6 ms, and modelQuotaSQL at 0.217 ms with 20 index searches versus 204.0 ms. just check passed, exact-head CI 34709771715 passed, and the live success counter advanced 1 to 4 over three poll intervals with no error series.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Replaced two total-history DISTINCT ON scans with account-count-bounded lateral index probes, retained quiet-account coverage and quoted-window contracts, and verified sub-millisecond live plans plus three clean deployed poll intervals.
+<!-- SECTION:FINAL_SUMMARY:END -->
