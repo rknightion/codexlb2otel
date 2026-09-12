@@ -343,7 +343,7 @@ func TestEnrichmentFieldsFollowTheirFrozenClasses(t *testing.T) {
 // The registry is the contract; a duplicate key would silently shadow a field, and a
 // field with no extractor would panic at emit rather than at startup.
 func TestQuotaLimitNamesReachStructuredAndSpanAttributes(t *testing.T) {
-	tn := &turn.Turn{QuotaFailureLimits: []turn.QuotaFailureLimit{
+	tn := &turn.Turn{QuotaFailureActiveLimit: "premium", QuotaFailureLimits: []turn.QuotaFailureLimit{
 		{Family: "base_model_inference", LimitName: "gpt-reserve"},
 		{Family: "bengalfox", LimitName: "GPT-5.3-Codex-Spark"},
 	}}
@@ -353,7 +353,7 @@ func TestQuotaLimitNamesReachStructuredAndSpanAttributes(t *testing.T) {
 	} {
 		found := false
 		for _, kv := range attrs {
-			if kv.Key == QuotaLimitName && kv.Value == "GPT-5.3-Codex-Spark,gpt-reserve" {
+			if kv.Key == QuotaLimitName && kv.Value == "GPT-5.3-Codex-Spark,gpt-reserve,premium" {
 				found = true
 			}
 		}

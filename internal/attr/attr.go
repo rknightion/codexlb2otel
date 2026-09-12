@@ -757,7 +757,10 @@ func Only(kvs []KV, keys ...string) []KV {
 }
 
 func quotaLimitNames(t *turn.Turn) string {
-	names := make([]string, 0, len(t.QuotaFailureLimits))
+	names := make([]string, 0, len(t.QuotaFailureLimits)+1)
+	if t.QuotaFailureActiveLimit != "" {
+		names = append(names, t.QuotaFailureActiveLimit)
+	}
 	for _, limit := range t.QuotaFailureLimits {
 		if limit.LimitName != "" {
 			names = append(names, limit.LimitName)
