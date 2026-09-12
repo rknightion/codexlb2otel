@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-12 10:08'
+updated_date: '2026-09-12 10:46'
 labels:
   - wire
   - telemetry
@@ -30,11 +31,13 @@ Four additive shapes appear in the current capture and in none of the embedded b
 
 Also stale and cheap to fix while here: internal/attr `PlanType` records Observed as pro and business, but prolite is now live and appears in codex.rate_limits plan_type. Observed is documentation and the corpus test expectation, not a filter, so nothing broke - but the list is now wrong.
 
-Deliberately EXCLUDED, and these exclusions must not be revisited by the implementer:
-- `x-codex-turn-metadata.workspaces` is an object KEYED BY ABSOLUTE FILESYSTEM PATH of the operators local repositories. It is present on 187,430 records. It must never become a metric attribute, a Loki label, a span attribute or structured metadata. This is exactly the exposure class TestSignature_CarriesNoConversationContent exists to prevent.
-- `auto_review_enabled`, `node_repl_disabled` and `node_repl_auto_review_required` are present on 248,526 records and take a single constant value. A constant attribute is pure cardinality cost and zero information.
-- `context_window_id` is present on 248,526 records with 25 distinct values against 23 distinct thread ids, so it is thread-scoped and unbounded over time. Identity class only - never a metric attribute or a Loki label.
-- `x-codex-turn-state` is a per-response encrypted blob and is already in the profile redaction list. It stays there.
+Routing decisions for the four, and the standing policy they follow. Personal data reaching Grafana Cloud is NOT this exporters concern - the stack is the operators own and redacting on the way out buys nothing. Personal data reaching the public Git repository still is. The two guards that enforce the second boundary, TestNoArchivesAreTracked and TestSignature_CarriesNoConversationContent, and the redaction list in internal/profile/embedded.go that feeds the committed corpus.sig.json, all stay exactly as they are.
+
+- `x-codex-turn-metadata.workspaces` is an object keyed by absolute filesystem path, present on 187,430 records. It SHOULD be emitted, as an Identity-class field. Identity is a CARDINALITY classification, not a privacy one: an absolute path set is unbounded, so it belongs in Loki structured metadata and span attributes and must never be a metric attribute or a Loki stream label.
+- `x-codex-turn-state` is a per-response encrypted blob. Emit it as Identity, and leave it in the profile redaction list: that list controls what lands in the committed signature file, not what reaches telemetry.
+- The `attr.Sensitive` class exists solely to keep a field out of span attributes on privacy grounds and has exactly one member, SafetyID. With that rationale withdrawn the class earns nothing, so retire it and reclassify SafetyID as Identity.
+- `auto_review_enabled`, `node_repl_disabled` and `node_repl_auto_review_required` stay unemitted, and NOT for privacy: they are present on 248,526 records and each takes a single constant value, so an attribute for them is pure cardinality cost carrying zero information.
+- `context_window_id` is present on 248,526 records with 25 distinct values against 23 distinct thread ids, so it is thread-scoped and unbounded over time. Identity class, for the same cardinality reason - never a metric attribute or a Loki label.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -45,8 +48,11 @@ Deliberately EXCLUDED, and these exclusions must not be revisited by the impleme
 - [ ] #4 x-models-etag is reduced and emitted as an Identity-class field, not as a metric dimension
 - [ ] #5 The compaction block trigger, reason, implementation, phase and strategy are reduced and emitted as bounded attributes
 - [ ] #6 internal/attr PlanType Observed includes prolite
-- [ ] #7 A test asserts that workspaces, auto_review_enabled and the node_repl fields produce no attribute on any sink
-- [ ] #8 A test asserts context_window_id is classified Identity and is absent from metric attributes and Loki labels
+- [ ] #7 A test asserts context_window_id is classified Identity and is absent from metric attributes and Loki labels
+- [ ] #8 x-codex-turn-metadata.workspaces is emitted as an Identity-class field reaching Loki structured metadata and span attributes, and a test asserts it is never a metric attribute or a Loki stream label
+- [ ] #9 The attr Sensitive class is retired: its one member SafetyID becomes Identity, Guard loses its Sensitive gates, and TestRegistryIsWellFormed is updated accordingly
+- [ ] #10 x-codex-turn-state is emitted as an Identity-class field and remains redacted from internal/profile/embedded.go, so it reaches telemetry but never corpus.sig.json
+- [ ] #11 auto_review_enabled and the node_repl fields remain unemitted, and the comment saying so cites their constant value rather than privacy
 <!-- AC:END -->
 
 ## Definition of Done

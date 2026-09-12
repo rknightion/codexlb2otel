@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-12 10:09'
+updated_date: '2026-09-12 10:50'
 labels:
   - enrichment
   - metrics
@@ -45,7 +46,7 @@ Traps, all measured:
 - window is a RESERVED WORD in Postgres and must be quoted as "window" in every statement. An unquoted reference is a syntax error, not a silent wrong answer, so it fails loudly - but it fails.
 - usage_history.window is nullable; COALESCE("window", primary) is what the tables own covering indexes are built on, so the query should match that expression or lose the index.
 - accounts.id is shaped <uuid>_<8 hex>, while the archive account_id and therefore every existing codexlb.account.id attribute value is the BARE UUID. The database-sourced gauges must emit the uuid prefix, or they will not join with the archive-derived series and the two views will silently describe different things.
-- accounts.email is a direct human identifier and must never leave the database. Account id only.
+- accounts.email SHOULD be emitted, as a bounded attribute on the info gauge. Five accounts means five values, and the cap for every new bounded key this wave adds is 100 on the operators instruction of 2026-09-12, against a project cardinality budget of roughly 100,000 series. Personal data reaching the operators own Grafana stack is not this exporters concern, and an email is what makes an account identifiable in a dashboard without opening a database session. It must still never be written into the Git repository - not into a task, a test fixture, a comment or a commit message.
 - The obvious implementation - query inside the async observable callback - is the deadlock shape this codebase has already shipped once. A callback is code the metrics library calls at a moment of its choosing, and the PeriodicReader default 30s timeout is what expires, not otlp.timeout. The poller must run on its own schedule and publish a snapshot; the callback may only read that snapshot under a short lock and must never perform IO.
 - A database fault must disable these gauges and leave archive ingestion and every other sink running, exactly as the existing enrichment path does.
 
@@ -68,10 +69,10 @@ Measured query cost against the live database: the latest-per-account reads plan
 - [ ] #3 Every account in the accounts table produces a codexlb.account.info series whether or not it has served traffic
 - [ ] #4 codexlb.account.api_key_eligible is 0 for an account that no active key can reach and 1 otherwise, and a test covers the scope-enabled-but-unassigned case
 - [ ] #5 The account id attribute value is the bare uuid prefix and joins with the archive-derived rate limit series
-- [ ] #6 accounts.email is never selected, logged or emitted, and a test asserts the query text does not reference it
-- [ ] #7 Every quoted identifier for the window column is present, and a test executes the statements against a stub rejecting an unquoted reserved word
-- [ ] #8 A database fault disables only these gauges; archive ingestion, Loki and the existing metric path keep running, with the outcome visible in the self-observability counters
-- [ ] #9 The feature is disabled by default in config.example.yaml and TestLoad_ExampleConfigIsDeployable still passes
+- [ ] #6 Every quoted identifier for the window column is present, and a test executes the statements against a stub rejecting an unquoted reserved word
+- [ ] #7 A database fault disables only these gauges; archive ingestion, Loki and the existing metric path keep running, with the outcome visible in the self-observability counters
+- [ ] #8 The feature is disabled by default in config.example.yaml and TestLoad_ExampleConfigIsDeployable still passes
+- [ ] #9 accounts.email is selected and emitted as a bounded attribute on codexlb.account.info, so an account is identifiable in a dashboard without a database session
 <!-- AC:END -->
 
 ## Definition of Done
