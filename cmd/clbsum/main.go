@@ -23,7 +23,7 @@ import (
 	"syscall"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/rknightion/codexlb2otel/internal/config"
 	"github.com/rknightion/codexlb2otel/internal/live"
 	"github.com/rknightion/codexlb2otel/internal/summary"

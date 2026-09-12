@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/rknightion/codexlb2otel/internal/live"
 )
 
@@ -42,7 +42,7 @@ func (p *picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		// Leave room for the title, the help line and the blank separators.
 		p.height = max(3, msg.Height-6)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			p.quit = true
@@ -81,7 +81,7 @@ func (p *picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return p, nil
 }
 
-func (p *picker) View() string {
+func (p *picker) View() tea.View {
 	var b strings.Builder
 	b.WriteString(styleTitle.Render(fmt.Sprintf("%d sessions — space selects, a toggles all, enter summarises, q cancels", len(p.rows))))
 	b.WriteString("\n\n")
@@ -115,7 +115,7 @@ func (p *picker) View() string {
 	b.WriteString("\n")
 	b.WriteString(styleHelp.Render(fmt.Sprintf("%d selected", count(p.chosen))))
 	b.WriteString("\n")
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 // selected returns the chosen rows, or nil when the user cancelled.
