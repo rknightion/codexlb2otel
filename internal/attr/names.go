@@ -728,6 +728,7 @@ const (
 	// this feature's own delivery notes for what was left out and why).
 	MetricSelfSinkPending = "codexlb.selfobs.sink_pending" // gauge, {record}, by codexlb.selfobs.sink
 
+	MetricSelfAccountPolls         = "codexlb.selfobs.account_polls"          // counter, {poll}, by codexlb.selfobs.result
 	MetricSelfEnrichLookups        = "codexlb.selfobs.enrich_lookups"         // counter, {lookup}, by codexlb.selfobs.result
 	MetricSelfEnrichLookupDuration = "codexlb.selfobs.enrich_lookup_duration" // histogram, s
 	MetricSelfEnrichCacheEntries   = "codexlb.selfobs.enrich_cache_entries"   // gauge, {entry}

@@ -3,11 +3,11 @@ id: CXO-0044
 title: >-
   Per-account quota and key-eligibility gauges from Postgres, covering accounts
   that serve no traffic
-status: Parked
+status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-09-12 10:09'
-updated_date: '2026-09-12 13:01'
+updated_date: '2026-09-12 17:30'
 labels:
   - enrichment
   - metrics
@@ -91,6 +91,8 @@ Measured query cost against the live database: the latest-per-account reads plan
 4. Reproduce the live int4 reset_at scan failure test-first and make both quota queries return timestamp values without changing the snapshot contract.
 
 5. Run focused and integrated gates, obtain a fresh read-only review, push exact code, redeploy with the authorized Camden stop/pull/up path, and require non-empty account-family series.
+
+6. Wave 5: add the real registered-callback non-blocking seam regression, publish the bounded poll outcome counter, wire it through the application, and prove it live after exact-SHA deployment.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

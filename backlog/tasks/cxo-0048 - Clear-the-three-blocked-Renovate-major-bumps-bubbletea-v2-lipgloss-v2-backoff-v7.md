@@ -3,10 +3,11 @@ id: CXO-0048
 title: >-
   Clear the three blocked Renovate major bumps: bubbletea v2, lipgloss v2,
   backoff v7
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-12 16:54'
-updated_date: '2026-09-12 16:54'
+updated_date: '2026-09-12 17:30'
 labels:
   - deps
 dependencies: []
@@ -43,3 +44,9 @@ bubbletea and lipgloss should be taken together - they share the charmbracelet v
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Migrate bubbletea and lipgloss v2 together and validate all TUI tools. 2. Migrate backoff v7 separately, document the retry-semantics delta, and add focused sink retry coverage. 3. Verify main CI jobs and reconcile the superseded Renovate pull requests without touching release PR 79.
+<!-- SECTION:PLAN:END -->

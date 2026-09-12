@@ -3,10 +3,11 @@ id: CXO-0047
 title: >-
   Bound the account poller quota queries: both statements scan the whole
   relation every two minutes
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-12 16:54'
-updated_date: '2026-09-12 17:00'
+updated_date: '2026-09-12 17:30'
 labels:
   - enrichment
   - metrics
@@ -46,6 +47,12 @@ The bound must preserve two frozen properties: the latest-window expression stay
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Replace both unbounded DISTINCT ON statements with account-count-bounded lateral lookups using existing indexes. 2. Add failing-first correctness coverage for a quiet account whose latest row is old. 3. Verify focused and integrated gates, then compare fresh live EXPLAIN ANALYZE plans against the recorded baselines and observe three deployed poll intervals.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
