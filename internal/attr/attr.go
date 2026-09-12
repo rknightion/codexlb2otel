@@ -147,7 +147,7 @@ var registry = []Field{
 	{Key: QuotaLimitFamily, Class: Bounded, Cap: 100,
 		Observed: []string{"codex", "bengalfox", "base_model_inference"}},
 	{Key: QuotaLimitName, Class: Bounded, Cap: 100,
-		Observed: []string{"GPT-5.3-Codex-Spark", "gpt-reserve"}},
+		Observed: []string{"GPT-5.3-Codex-Spark", "gpt-reserve"}, Of: quotaLimitNames},
 	{Key: QuotaActiveLimit, Class: Bounded, Cap: 100, Observed: []string{"premium"},
 		Of: func(t *turn.Turn) string { return t.QuotaFailureActiveLimit }},
 	{Key: QuotaWindow, Class: Bounded, Cap: 100, Observed: []string{"primary", "secondary"}},
@@ -754,6 +754,17 @@ func Only(kvs []KV, keys ...string) []KV {
 		}
 	}
 	return out
+}
+
+func quotaLimitNames(t *turn.Turn) string {
+	names := make([]string, 0, len(t.QuotaFailureLimits))
+	for _, limit := range t.QuotaFailureLimits {
+		if limit.LimitName != "" {
+			names = append(names, limit.LimitName)
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, ",")
 }
 
 // With appends one-off attributes that are not Turn-derived - a token type on a token
