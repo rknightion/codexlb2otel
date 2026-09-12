@@ -7,7 +7,7 @@ status: Parked
 assignee:
   - '@codex'
 created_date: '2026-09-12 10:09'
-updated_date: '2026-09-12 12:27'
+updated_date: '2026-09-12 13:01'
 labels:
   - enrichment
   - metrics
@@ -78,7 +78,7 @@ Measured query cost against the live database: the latest-per-account reads plan
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -87,16 +87,26 @@ Measured query cost against the live database: the latest-per-account reads plan
 1. Freeze account-poller config, snapshot and metric contracts.
 2. Implement a scheduled read-only poller publishing immutable snapshots.
 3. Wire non-blocking observable gauges and verify focused, integration and live evidence.
+
+4. Reproduce the live int4 reset_at scan failure test-first and make both quota queries return timestamp values without changing the snapshot contract.
+
+5. Run focused and integrated gates, obtain a fresh read-only review, push exact code, redeploy with the authorized Camden stop/pull/up path, and require non-empty account-family series.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Park boundary: add an end-to-end test that publishes a real Poller snapshot and collects it through the registered observable callbacks while proving collection cannot wait on poller database I/O or locks; add the missing frozen poller self-observability counter contract; then enable account_poller in Camden configuration under deployment authority and verify codexlb_account_info live. The current code, read-only Postgres statements, disabled-by-default config, and dashboard panels are present, but AC2 and AC7 remain unproven and Camden configuration is intentionally unchanged.
+
+Deployment-config authority was granted on 2026-09-12. Camden was backed up, account_poller was enabled with the existing read-only DSN, Compose validation passed, and the authorized stop/pull/up completed. The first real poll failed safely with: accountpoll: scan usage history: cannot scan int4 (OID 23) in binary format into **time.Time. The task is reopened for this production-shape bug; no account data was exposed.
+
+Resumed deployment evidence: the existing DSN was reused, the poller config was enabled after a timestamped backup, and the first old-image poll exposed reset_at as int4 rather than timestamptz. A failing regression pinned to_timestamp(reset_at) on both quota statements; focused race tests, a real DSN-gated Poller scan, integrated just check, CodeRabbit with zero findings, and fresh read-only L7 review followed. Exact CI 34694991455 and publish 34694991713 succeeded at 88773a47c9e56005ea759e73a7774c6971f4d04a. The healthy deployed image has manifest digest sha256:69c38f727568d63ea61527e03de6bb6e9df70bc8e2e13801b70b896654068bef, zero account-poll failures since start, and Grafana read-back returned aggregate series counts: account info 5, API-key eligibility 10, quota used 8, model quota used 9, reset-after 4, credits balance 4. AC2 and AC7 remain unchecked at the recorded test and self-observability boundary.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Implemented the scheduled read-only account poller, immutable snapshots, account and eligibility gauges, disabled-by-default configuration, wiring, tests, dashboards, and live SQL proof. Parked because the required real Poller-to-registered-callback non-blocking seam test and a frozen poller self-observability counter are absent; Camden account_poller is also not enabled, so account gauges cannot be verified live.
+
+Correction after resumed authority: Camden account polling is now enabled and live. The production int4 reset_at scan defect was repaired at 88773a47, exact CI and publication passed, the container is healthy, and all six account metric families are non-empty in Grafana. The task remains Parked only because AC2 lacks a real Poller-to-registered-callback collection test and AC7 lacks the frozen self-observability counter.
 <!-- SECTION:FINAL_SUMMARY:END -->
