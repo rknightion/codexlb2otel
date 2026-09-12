@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+func TestNewWithStoreRejectsTypedNil(t *testing.T) {
+	var store *fakeStore
+	poller, err := NewWithStore(store, Options{Interval: time.Minute, QueryTimeout: time.Second})
+	if err == nil || err.Error() != "accountpoll: store is required" {
+		t.Fatalf("NewWithStore() error = %v, want accountpoll: store is required", err)
+	}
+	if poller != nil {
+		t.Fatalf("NewWithStore() poller = %#v, want nil", poller)
+	}
+}
+
 func TestPollerSnapshotDoesNotBlockWhilePollQueries(t *testing.T) {
 	store := &blockingStore{started: make(chan struct{}), release: make(chan struct{})}
 	poller := newPoller(store, Options{Interval: time.Minute, QueryTimeout: time.Second})
@@ -86,10 +97,11 @@ func TestPollerQueriesFrozenSourcesAndQuotesWindow(t *testing.T) {
 	if err := poller.Poll(context.Background()); err != nil {
 		t.Fatalf("Poll() error = %v", err)
 	}
-	for _, query := range []string{usageSQL, modelQuotaSQL} {
-		if !strings.Contains(query, `COALESCE("window", 'primary')`) {
-			t.Fatalf("query does not use indexed window expression:\n%s", query)
-		}
+	if !strings.Contains(usageSQL, `COALESCE("window", 'primary')`) {
+		t.Fatalf("usage query does not use indexed nullable window expression:\n%s", usageSQL)
+	}
+	if !strings.Contains(modelQuotaSQL, `history."window"`) {
+		t.Fatalf("model query does not quote the window column:\n%s", modelQuotaSQL)
 	}
 	if !strings.Contains(apiKeyEligibilitySQL, "api_keys") || !strings.Contains(apiKeyEligibilitySQL, "api_key_accounts") {
 		t.Fatalf("eligibility query does not read both key sources:\n%s", apiKeyEligibilitySQL)
@@ -104,6 +116,25 @@ func TestQuotaQueriesConvertEpochResetAtToTimestamp(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if !strings.Contains(query, "to_timestamp(reset_at)") {
 				t.Fatalf("query scans integer reset_at without converting it to a timestamp:\n%s", query)
+			}
+		})
+	}
+}
+
+func TestQuotaQueriesKeepQuietAccountsWithOldLatestRows(t *testing.T) {
+	for name, query := range map[string]string{
+		"usage history":            usageSQL,
+		"additional usage history": modelQuotaSQL,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(query, "FROM accounts AS account") {
+				t.Fatalf("query is not driven by the bounded accounts population:\n%s", query)
+			}
+			if !strings.Contains(query, "CROSS JOIN (VALUES ('primary'), ('secondary'))") {
+				t.Fatalf("query does not use the known bounded window population:\n%s", query)
+			}
+			if strings.Contains(query, "recorded_at >=") || strings.Contains(query, "recorded_at >") {
+				t.Fatalf("query drops a quiet account whose latest quota row predates a time cutoff:\n%s", query)
 			}
 		})
 	}
@@ -165,6 +196,27 @@ func TestPollerKeepsLastSnapshotWhenDatabaseFails(t *testing.T) {
 	}
 	if got := poller.Snapshot(); len(got.Accounts) != 1 || got.CollectedAt != now {
 		t.Fatalf("Snapshot() after failed poll = %#v, want prior published snapshot", got)
+	}
+}
+
+func TestPollerReportsCompletedOutcomes(t *testing.T) {
+	reporter := &recordingReporter{}
+	store := &fakeStore{rows: map[string][][]any{
+		accountsSQL:          nil,
+		usageSQL:             nil,
+		modelQuotaSQL:        nil,
+		apiKeyEligibilitySQL: nil,
+	}}
+	poller := newPoller(store, Options{Interval: time.Minute, QueryTimeout: time.Second, Reporter: reporter})
+	if err := poller.Poll(context.Background()); err != nil {
+		t.Fatalf("successful Poll() error = %v", err)
+	}
+	store.err = errors.New("database unavailable")
+	if err := poller.Poll(context.Background()); err == nil {
+		t.Fatal("failed Poll() error = nil")
+	}
+	if got, want := reporter.Results(), []string{"success", "error"}; !equalStrings(got, want) {
+		t.Fatalf("ReportPoll calls = %q, want %q", got, want)
 	}
 }
 
@@ -233,7 +285,7 @@ type blockingStore struct {
 	once    sync.Once
 }
 
-func (s *blockingStore) Query(context.Context, string, ...any) (rows, error) {
+func (s *blockingStore) Query(context.Context, string, ...any) (Rows, error) {
 	s.once.Do(func() {
 		close(s.started)
 		<-s.release
@@ -248,12 +300,41 @@ type errorStore struct {
 	once    sync.Once
 }
 
-func (s *errorStore) Query(context.Context, string, ...any) (rows, error) {
+func (s *errorStore) Query(context.Context, string, ...any) (Rows, error) {
 	s.once.Do(func() { close(s.started) })
 	return nil, errors.New("database unavailable")
 }
 
 func (s *errorStore) Close() {}
+
+type recordingReporter struct {
+	mu      sync.Mutex
+	results []string
+}
+
+func (r *recordingReporter) ReportPoll(result string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.results = append(r.results, result)
+}
+
+func (r *recordingReporter) Results() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.results...)
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for index := range got {
+		if got[index] != want[index] {
+			return false
+		}
+	}
+	return true
+}
 
 type fakeStore struct {
 	rows    map[string][][]any
@@ -261,7 +342,7 @@ type fakeStore struct {
 	err     error
 }
 
-func (s *fakeStore) Query(_ context.Context, query string, _ ...any) (rows, error) {
+func (s *fakeStore) Query(_ context.Context, query string, _ ...any) (Rows, error) {
 	s.queries = append(s.queries, query)
 	if s.err != nil {
 		return nil, s.err
@@ -273,7 +354,7 @@ func (s *fakeStore) Close() {}
 
 type windowCheckingStore struct{ store *fakeStore }
 
-func (s *windowCheckingStore) Query(ctx context.Context, query string, args ...any) (rows, error) {
+func (s *windowCheckingStore) Query(ctx context.Context, query string, args ...any) (Rows, error) {
 	if strings.Contains(query, " window") || strings.Contains(query, ".window") {
 		return nil, errors.New("unquoted reserved word window")
 	}

@@ -48,6 +48,7 @@ codexlb.responsesapi_excl_client_tools
 codexlb.routing_hint_agreement
 codexlb.safety_buffering_events
 codexlb.sampling_and_stream
+codexlb.selfobs.account_polls
 codexlb.selfobs.bytes_read
 codexlb.selfobs.current_file_offset
 codexlb.selfobs.decode_errors

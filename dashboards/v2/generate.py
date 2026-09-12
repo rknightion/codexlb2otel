@@ -60,7 +60,7 @@ ALL_METRICS = [
     "codexlb.responses_excl_engine_and_tool", "codexlb.responses_excl_engine_wait_sampling",
     "codexlb.responses_excl_engine_wait_sampling_iapi", "codexlb.responsesapi_excl_client_tools",
     "codexlb.routing_hint_agreement", "codexlb.safety_buffering_events", "codexlb.sampling_and_stream",
-    "codexlb.selfobs.bytes_read", "codexlb.selfobs.current_file_offset",
+    "codexlb.selfobs.account_polls", "codexlb.selfobs.bytes_read", "codexlb.selfobs.current_file_offset",
     "codexlb.selfobs.decode_errors", "codexlb.selfobs.file_replacements",
     "codexlb.selfobs.enrich_cache_entries", "codexlb.selfobs.enrich_lookup_duration",
     "codexlb.selfobs.enrich_lookups", "codexlb.selfobs.files_reclaimed", "codexlb.selfobs.files_watched",
@@ -134,6 +134,7 @@ PROM_NAME = {
     "codexlb.routing_hint_agreement": "codexlb_routing_hint_agreement_total",
     "codexlb.safety_buffering_events": "codexlb_safety_buffering_events_total",
     "codexlb.sampling_and_stream": "codexlb_sampling_and_stream_seconds",
+    "codexlb.selfobs.account_polls": "codexlb_selfobs_account_polls_total",
     "codexlb.selfobs.bytes_read": "codexlb_selfobs_bytes_read_bytes_total",
     "codexlb.selfobs.current_file_offset": "codexlb_selfobs_current_file_offset_bytes",
     "codexlb.selfobs.decode_errors": "codexlb_selfobs_decode_errors_total",
@@ -2015,6 +2016,14 @@ One trap worth stating: `files_reclaimed` staying flat while retention is enable
         desc="The rate panel goes flat once rejections stop. This panel counts only "
              "rejections that occurred inside the selected range and handles process "
              "counter resets."))
+    account_polls = prom("codexlb.selfobs.account_polls")
+    p.append(panel(
+        "Account polls by result", [
+            q(f'sum by (codexlb_selfobs_result) (rate({account_polls}{{{JOB}}}[$__rate_interval]))',
+              "{{codexlb_selfobs_result}}"),
+        ], unit="reqps", opts=LEG,
+        desc="Scheduled account-poller outcomes: success, error, or disabled. An error leaves the "
+             "last successful account snapshot published while archive ingestion and other sinks continue."))
     lookups = prom("codexlb.selfobs.enrich_lookups")
     p.append(panel(
         "Enrichment lookups by result", [

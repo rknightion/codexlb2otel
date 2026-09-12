@@ -85,6 +85,7 @@ type instruments struct {
 	stickyRouting         otelmetric.Int64Counter
 	proxyLatency          otelmetric.Float64Histogram
 	proxyFirstToken       otelmetric.Float64Histogram
+	accountPolls          otelmetric.Int64Counter
 
 	accountQuotaUsed      otelmetric.Float64ObservableGauge
 	accountQuotaReset     otelmetric.Float64ObservableGauge
@@ -529,6 +530,11 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 		otelmetric.WithDescription("Proxy time to first token."),
 		otelmetric.WithUnit("s"))
 	must(attr.MetricProxyFirstToken, err)
+
+	i.accountPolls, err = meter.Int64Counter(attr.MetricSelfAccountPolls,
+		otelmetric.WithDescription("Account poller attempts by bounded result."),
+		otelmetric.WithUnit("{poll}"))
+	must(attr.MetricSelfAccountPolls, err)
 
 	// Account gauges are asynchronous: the callback is registered only after root
 	// supplies L3's poller. That keeps optional database configuration from changing

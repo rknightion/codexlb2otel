@@ -262,6 +262,9 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 
 func buildAccountPoller(ctx context.Context, cfg config.AccountPoller, metrics *otlpmetric.Sink, log *slog.Logger) *accountpoll.Poller {
 	if !cfg.Enabled {
+		if metrics != nil {
+			metrics.ReportPoll("disabled")
+		}
 		return nil
 	}
 	if metrics == nil {
@@ -282,6 +285,7 @@ func buildAccountPoller(ctx context.Context, cfg config.AccountPoller, metrics *
 	poller, err := accountpoll.New(ctx, dsn, accountpoll.Options{
 		Interval:     cfg.Interval,
 		QueryTimeout: cfg.QueryTimeout,
+		Reporter:     metrics,
 		OnError: func(err error) {
 			log.Warn("account poll failed; retaining last snapshot", "err", err)
 		},

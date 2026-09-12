@@ -35,3 +35,17 @@ a query timeout, and `disabled` once at construction when polling is configured 
 
 The metric sink owns the consuming implementation and instrument registration. The poller never
 imports the metric sink.
+
+## Amendment 1 - store injection for the seam regression
+
+Frozen by the root after dispatch under the delegated current-wave seam authority. The required
+cross-package regression cannot construct a real `Poller` around a blocking store while the
+poller's store and rows interfaces and its store-injected constructor are package-private. Moving
+the test into `accountpoll` would import `otlpmetric` back into the package that it already imports,
+creating a cycle.
+
+`internal/accountpoll` therefore exports its existing minimal `Rows` and `Store` interfaces and a
+`NewWithStore(source Store, opts Options) (*Poller, error)` constructor. The constructor validates
+options and rejects a nil store. `New` remains the production pgx-pool constructor. These names are
+reachable only inside this module because Go's `internal` boundary remains in force; they do not
+change a telemetry name, attribute set, poll outcome, or database query.

@@ -43,6 +43,8 @@ const meterScope = "github.com/rknightion/codexlb2otel/internal/sink/otlpmetric"
 // putting a response ID on the metric or growing state without bound.
 const costResponseLimit = 65536
 
+var _ accountpoll.OutcomeReporter = (*Sink)(nil)
+
 // Sink exports reduced Turns as OTLP metrics.
 //
 // Safe for concurrent use: OTel instrument methods are concurrency-safe, and the
@@ -143,6 +145,25 @@ func (s *Sink) RegisterAccountPoller(poller *accountpoll.Poller) error {
 		return fmt.Errorf("otlpmetric: account poller must not be nil")
 	}
 	return s.registerAccountSnapshot(poller.Snapshot)
+}
+
+// ReportPoll records the bounded outcome of one whole account-poller attempt.
+// It deliberately carries no account identifier: a poll outcome describes one
+// scheduled query sequence, not each account in the resulting snapshot.
+//
+// accountpoll invokes this while holding its poll lock, so this method must remain
+// a lock-free, synchronous OTel counter write.
+func (s *Sink) ReportPoll(result string) {
+	if s == nil {
+		return
+	}
+	switch result {
+	case "success", "error", "disabled":
+	default:
+		return
+	}
+	s.inst.accountPolls.Add(context.Background(), 1,
+		otelmetric.WithAttributes(attribute.String(attr.SelfObsResult, result)))
 }
 
 func (s *Sink) registerAccountSnapshot(source func() accountpoll.Snapshot) error {

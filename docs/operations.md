@@ -124,6 +124,11 @@ balance, and key eligibility from five account tables, then publishes an immutab
 the metric callbacks. Those callbacks never query the database. An invalid DSN or a polling failure
 disables or degrades this optional signal only; archive tailing and the other sinks continue.
 
+Inspect `codexlb.selfobs.account_polls` by `codexlb.selfobs.result` to distinguish successful polls,
+query errors, and a deliberately disabled poller. The counter records one result for the whole poll,
+not one per account. On error, the last successful account snapshot stays published while archive
+ingestion and every other sink continue.
+
 ## Camden deployment
 
 Release automation publishes the image to GHCR. Camden consumes that image from its dedicated Compose

@@ -12173,6 +12173,72 @@
         "kind": "Panel",
         "spec": {
           "id": 163,
+          "title": "Account polls by result",
+          "description": "Scheduled account-poller outcomes: success, error, or disabled. An error leaves the last successful account snapshot published while archive ingestion and other sinks continue.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "spec": {
+                        "expr": "sum by (codexlb_selfobs_result) (rate(codexlb_selfobs_account_polls_total{job=\"codexlb2otel\"}[$__rate_interval]))",
+                        "legendFormat": "{{codexlb_selfobs_result}}"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "v0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "lastNotNull"
+                  ]
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "reqps"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-164": {
+        "kind": "Panel",
+        "spec": {
+          "id": 164,
           "title": "Enrichment lookups by result",
           "description": "Postgres enrichment outcomes: cache_hit, db_hit, miss, error, or disabled.",
           "links": [],
@@ -12235,10 +12301,10 @@
           }
         }
       },
-      "panel-164": {
+      "panel-165": {
         "kind": "Panel",
         "spec": {
-          "id": 164,
+          "id": 165,
           "title": "Enrichment cache hit rate",
           "description": "Cache hits as a share of every enrichment attempt. Disabled enrichment is included so a configuration change remains visible.",
           "links": [],
@@ -12305,10 +12371,10 @@
           }
         }
       },
-      "panel-165": {
+      "panel-166": {
         "kind": "Panel",
         "spec": {
-          "id": 165,
+          "id": 166,
           "title": "Enrichment lookup latency",
           "description": "Database-attempt lookup latency. Cache hits and disabled enrichment deliberately have no synthetic zero observation.",
           "links": [],
@@ -12390,10 +12456,10 @@
           }
         }
       },
-      "panel-166": {
+      "panel-167": {
         "kind": "Panel",
         "spec": {
-          "id": 166,
+          "id": 167,
           "title": "Enrichment cache entries",
           "description": "Response rows currently held by the enrichment LRU.",
           "links": [],
@@ -12456,10 +12522,10 @@
           }
         }
       },
-      "panel-167": {
+      "panel-168": {
         "kind": "Panel",
         "spec": {
-          "id": 167,
+          "id": 168,
           "title": "Breaking archive drift findings",
           "description": "Current breaking differences from the embedded archive baseline.",
           "links": [],
@@ -12533,10 +12599,10 @@
           }
         }
       },
-      "panel-168": {
+      "panel-169": {
         "kind": "Panel",
         "spec": {
-          "id": 168,
+          "id": 169,
           "title": "Exporter log stream",
           "description": "codexlb2otel's OWN stdout, collected by the docker integration - a different stream from the conversation records it pushes. This is where a flush failure or a config fault says so in words.",
           "links": [],
@@ -14941,6 +15007,19 @@
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-168"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 72,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-169"
                         }
                       }
                     }

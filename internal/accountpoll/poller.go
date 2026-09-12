@@ -6,6 +6,7 @@ package accountpoll
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -56,12 +57,19 @@ type APIKeyEligibility struct {
 	Eligible bool
 }
 
+// OutcomeReporter receives one call per completed poll attempt.
+// Implementations must not block: the poller calls this while holding pollMu.
+type OutcomeReporter interface {
+	ReportPoll(result string)
+}
+
 // Options controls the polling schedule and the bounded lifetime of each query.
 type Options struct {
 	Interval     time.Duration
 	QueryTimeout time.Duration
 	Now          func() time.Time
 	OnError      func(error)
+	Reporter     OutcomeReporter
 }
 
 // Poller reads account state on its own schedule and retains its most recent
@@ -69,7 +77,7 @@ type Options struct {
 // that work: its lock protects only replacing or copying an already-published
 // value.
 type Poller struct {
-	store store
+	store Store
 	opts  Options
 
 	pollMu sync.Mutex
@@ -87,7 +95,29 @@ func New(ctx context.Context, dsn string, opts Options) (*Poller, error) {
 	if err != nil {
 		return nil, fmt.Errorf("accountpoll: create pool: %w", err)
 	}
-	return newPoller(&poolStore{pool: pool}, opts), nil
+	return NewWithStore(&poolStore{pool: pool}, opts)
+}
+
+// NewWithStore creates a poller backed by source. It is intended for internal
+// integrations that provide their own read-only database store.
+func NewWithStore(source Store, opts Options) (*Poller, error) {
+	if err := validateOptions(opts); err != nil {
+		return nil, err
+	}
+	if source == nil || isNilStore(source) {
+		return nil, fmt.Errorf("accountpoll: store is required")
+	}
+	return newPoller(source, opts), nil
+}
+
+func isNilStore(source Store) bool {
+	value := reflect.ValueOf(source)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 // Close releases the poller's database pool. It is safe to call more than once.
@@ -134,13 +164,21 @@ func (p *Poller) Poll(ctx context.Context) error {
 
 	snapshot, err := readSnapshot(ctx, p.store, p.opts.Now(), p.opts.QueryTimeout)
 	if err != nil {
+		p.reportPoll("error")
 		return err
 	}
 
 	p.snapMu.Lock()
 	p.snap = cloneSnapshot(snapshot)
 	p.snapMu.Unlock()
+	p.reportPoll("success")
 	return nil
+}
+
+func (p *Poller) reportPoll(result string) {
+	if p.opts.Reporter != nil {
+		p.opts.Reporter.ReportPoll(result)
+	}
 }
 
 // Snapshot returns a deep copy of the latest successful polling result. It does
@@ -156,7 +194,7 @@ func (p *Poller) Snapshot() Snapshot {
 	return cloneSnapshot(snapshot)
 }
 
-func newPoller(store store, opts Options) *Poller {
+func newPoller(store Store, opts Options) *Poller {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
@@ -173,15 +211,17 @@ func validateOptions(opts Options) error {
 	return nil
 }
 
-type rows interface {
+// Rows is the result stream returned by Store.Query.
+type Rows interface {
 	Next() bool
 	Scan(dest ...any) error
 	Err() error
 	Close()
 }
 
-type store interface {
-	Query(context.Context, string, ...any) (rows, error)
+// Store reads the five account-poller sources and releases its database resources.
+type Store interface {
+	Query(context.Context, string, ...any) (Rows, error)
 	Close()
 }
 
@@ -189,7 +229,7 @@ type poolStore struct {
 	pool *pgxpool.Pool
 }
 
-func (s *poolStore) Query(ctx context.Context, query string, args ...any) (rows, error) {
+func (s *poolStore) Query(ctx context.Context, query string, args ...any) (Rows, error) {
 	return s.pool.Query(ctx, query, args...)
 }
 
@@ -199,7 +239,7 @@ func (s *poolStore) Close() {
 	}
 }
 
-func readSnapshot(ctx context.Context, source store, collectedAt time.Time, queryTimeout time.Duration) (Snapshot, error) {
+func readSnapshot(ctx context.Context, source Store, collectedAt time.Time, queryTimeout time.Duration) (Snapshot, error) {
 	accounts, err := readAccounts(ctx, source, queryTimeout)
 	if err != nil {
 		return Snapshot{}, err
@@ -220,7 +260,7 @@ func readSnapshot(ctx context.Context, source store, collectedAt time.Time, quer
 	return Snapshot{CollectedAt: collectedAt, Accounts: accounts}, nil
 }
 
-func readAccounts(ctx context.Context, source store, queryTimeout time.Duration) ([]Account, error) {
+func readAccounts(ctx context.Context, source Store, queryTimeout time.Duration) ([]Account, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 	rows, err := source.Query(queryCtx, accountsSQL)
@@ -244,7 +284,7 @@ func readAccounts(ctx context.Context, source store, queryTimeout time.Duration)
 	return accounts, nil
 }
 
-func readQuotas(ctx context.Context, source store, accounts map[string]*Account, collectedAt time.Time, queryTimeout time.Duration) error {
+func readQuotas(ctx context.Context, source Store, accounts map[string]*Account, collectedAt time.Time, queryTimeout time.Duration) error {
 	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 	rows, err := source.Query(queryCtx, usageSQL)
@@ -277,7 +317,7 @@ func readQuotas(ctx context.Context, source store, accounts map[string]*Account,
 	return nil
 }
 
-func readModelQuotas(ctx context.Context, source store, accounts map[string]*Account, collectedAt time.Time, queryTimeout time.Duration) error {
+func readModelQuotas(ctx context.Context, source Store, accounts map[string]*Account, collectedAt time.Time, queryTimeout time.Duration) error {
 	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 	rows, err := source.Query(queryCtx, modelQuotaSQL)
@@ -308,7 +348,7 @@ func readModelQuotas(ctx context.Context, source store, accounts map[string]*Acc
 	return nil
 }
 
-func readAPIKeys(ctx context.Context, source store, accounts map[string]*Account, queryTimeout time.Duration) error {
+func readAPIKeys(ctx context.Context, source Store, accounts map[string]*Account, queryTimeout time.Duration) error {
 	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 	rows, err := source.Query(queryCtx, apiKeyEligibilitySQL)
@@ -390,34 +430,67 @@ FROM accounts
 ORDER BY id`
 
 const usageSQL = `
-SELECT DISTINCT ON (account_id, COALESCE("window", 'primary'))
-	account_id,
-	COALESCE("window", 'primary') AS quota_window,
-	used_percent,
-	to_timestamp(reset_at) AS reset_at,
+SELECT
+	quota.account_id,
+	quota.label,
+	quota.used_percent,
+	quota.reset_at AS reset_at,
 	window_minutes,
-	(
-		SELECT latest.credits_balance
-		FROM usage_history latest
-		WHERE latest.account_id = usage_history.account_id
-			AND latest.credits_balance IS NOT NULL
-		ORDER BY latest.recorded_at DESC
-		LIMIT 1
-	) AS credits_balance
-FROM usage_history
-ORDER BY account_id, COALESCE("window", 'primary'), recorded_at DESC`
+	credits.credits_balance
+FROM accounts AS account
+CROSS JOIN (VALUES ('primary'), ('secondary')) AS quota_windows(label)
+CROSS JOIN LATERAL (
+	SELECT
+		history.account_id,
+		COALESCE("window", 'primary') AS label,
+		history.used_percent,
+		to_timestamp(reset_at) AS reset_at,
+		window_minutes
+	FROM usage_history AS history
+	WHERE history.account_id = account.id
+		AND COALESCE("window", 'primary') = quota_windows.label
+	ORDER BY history.recorded_at DESC
+	LIMIT 1
+) AS quota
+LEFT JOIN LATERAL (
+	SELECT latest.credits_balance
+	FROM usage_history AS latest
+	WHERE latest.account_id = account.id
+		AND latest.credits_balance IS NOT NULL
+	ORDER BY latest.recorded_at DESC
+	LIMIT 1
+) AS credits ON true
+ORDER BY quota.account_id, quota.label`
 
 const modelQuotaSQL = `
-SELECT DISTINCT ON (account_id, quota_key, COALESCE("window", 'primary'))
-	account_id,
-	quota_key,
-	limit_name,
-	COALESCE("window", 'primary') AS quota_window,
-	used_percent,
-	to_timestamp(reset_at) AS reset_at,
+SELECT
+	quota.account_id,
+	quota.quota_key,
+	quota.limit_name,
+	quota.label,
+	quota.used_percent,
+	quota.reset_at AS reset_at,
 	window_minutes
-FROM additional_usage_history
-ORDER BY account_id, quota_key, COALESCE("window", 'primary'), recorded_at DESC`
+FROM accounts AS account
+CROSS JOIN (VALUES ('codex_spark'), ('gpt_reserve')) AS quota_keys(quota_key)
+CROSS JOIN (VALUES ('primary'), ('secondary')) AS quota_windows(label)
+CROSS JOIN LATERAL (
+	SELECT
+		history.account_id,
+		history.quota_key,
+		history.limit_name,
+		history."window" AS label,
+		history.used_percent,
+		to_timestamp(reset_at) AS reset_at,
+		window_minutes
+	FROM additional_usage_history AS history
+	WHERE history.account_id = account.id
+		AND history.quota_key = quota_keys.quota_key
+		AND history."window" = quota_windows.label
+	ORDER BY history.recorded_at DESC
+	LIMIT 1
+) AS quota
+ORDER BY quota.account_id, quota.quota_key, quota.label`
 
 // #nosec G101 -- the SQL names api_keys; it contains no credential.
 const apiKeyEligibilitySQL = `
@@ -435,4 +508,4 @@ FROM accounts a
 CROSS JOIN api_keys k
 ORDER BY a.id, k.name`
 
-var _ store = (*poolStore)(nil)
+var _ Store = (*poolStore)(nil)
