@@ -158,7 +158,8 @@ dashboard-sidecar:
     target=dashboards/v2/.metrics_from_code.txt
     tmp=$(mktemp "${target}.XXXXXX")
     trap 'rm -f "$tmp"' EXIT
-    grep -E 'Metric[A-Za-z0-9]+[[:space:]]*=[[:space:]]*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > "$tmp"
+    # LC_ALL=C or collation decides whether codexlb.proxy.wait sorts before codexlb.proxy_first_token
+    grep -E 'Metric[A-Za-z0-9]+[[:space:]]*=[[:space:]]*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | LC_ALL=C sort -u > "$tmp"
     test -s "$tmp"
     chmod 0644 "$tmp"
     mv "$tmp" "$target"
@@ -183,7 +184,8 @@ dashboard-check:
     set -euo pipefail
     tmp=$(mktemp)
     trap 'rm -f "$tmp"' EXIT
-    grep -E 'Metric[A-Za-z0-9]+[[:space:]]*=[[:space:]]*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | sort -u > "$tmp"
+    # LC_ALL=C matches dashboard-sidecar; without it a non-C shell fails the gate on an unchanged tree
+    grep -E 'Metric[A-Za-z0-9]+[[:space:]]*=[[:space:]]*"' internal/attr/names.go | sed -E 's/.*= *"([^"]+)".*/\1/' | LC_ALL=C sort -u > "$tmp"
     cmp -s "$tmp" dashboards/v2/.metrics_from_code.txt || { diff -u dashboards/v2/.metrics_from_code.txt "$tmp"; exit 1; }
     python3 dashboards/v2/generate.py > "$tmp"
     cmp -s "$tmp" dashboards/v2/codexlb2otel-full.json || { diff -u dashboards/v2/codexlb2otel-full.json "$tmp"; exit 1; }
