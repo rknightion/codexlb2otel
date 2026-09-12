@@ -3,11 +3,11 @@ id: CXO-0048
 title: >-
   Clear the three blocked Renovate major bumps: bubbletea v2, lipgloss v2,
   backoff v7
-status: Parked
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-12 16:54'
-updated_date: '2026-09-12 18:11'
+updated_date: '2026-09-12 18:13'
 labels:
   - deps
 dependencies: []
@@ -36,7 +36,7 @@ bubbletea and lipgloss should be taken together - they share the charmbracelet v
 <!-- AC:BEGIN -->
 - [x] #1 bubbletea v2 and lipgloss v2 land together in one commit; every TUI tool compiles and just check passes
 - [x] #2 backoff v7 lands as its own commit, with the retry-semantics change between v5 and v7 stated explicitly and a test covering the sink retry path that this codebase depends on
-- [ ] #3 All three Renovate PRs are closed or merged and no new red PR is left behind
+- [x] #3 All three Renovate PRs are closed or merged and no new red PR is left behind
 - [x] #4 govulncheck and the docker image build both pass on main at the resulting SHA
 <!-- AC:END -->
 
@@ -55,10 +55,14 @@ bubbletea and lipgloss should be taken together - they share the charmbracelet v
 
 <!-- SECTION:NOTES:BEGIN -->
 Wave 5 implementation complete: Charm v2 landed together in 3fdcfff using the canonical charm.land module paths; backoff v7 and explicit retry-semantics tests landed separately in 5848d14; all CLIs build, just check passes, and exact-head CI 34709771715 includes successful govulncheck and docker image jobs. AC3 remains open because superseded Renovate PRs 54, 55 and 56 are still OPEN; external-write authority did not grant manual PR mutation.
+
+Automated reconciliation condition observed: GitHub reports PRs 54, 55 and 56 CLOSED at 2026-09-12T18:12:02Z through 18:12:07Z after the tracker commit; no manual PR write was made, and release PR 79 remains OPEN and untouched.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Parked only at external bot reconciliation. Resume when live GitHub state shows PRs 54, 55 and 56 closed or merged with no replacement red PR; then check AC3 and mark Done without changing code. PR 79 remains untouched.
+
+The recorded park condition cleared automatically: Renovate closed all three superseded dependency PRs, so AC3 is now proven and the task is Done.
 <!-- SECTION:FINAL_SUMMARY:END -->
