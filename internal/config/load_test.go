@@ -56,6 +56,9 @@ archive:
 postgres:
   lookup_timeout: "2s"
   prefetch_interval: "5s"
+account_poller:
+  interval: "2m"
+  query_timeout: "3s"
 probe:
   interval: "24h"
 loki:
@@ -85,6 +88,8 @@ otlp:
 		{"archive.delete_after", cfg.Archive.DeleteAfter, 72 * time.Hour},
 		{"postgres.lookup_timeout", cfg.Postgres.LookupTimeout, 2 * time.Second},
 		{"postgres.prefetch_interval", cfg.Postgres.PrefetchInterval, 5 * time.Second},
+		{"account_poller.interval", cfg.AccountPoller.Interval, 2 * time.Minute},
+		{"account_poller.query_timeout", cfg.AccountPoller.QueryTimeout, 3 * time.Second},
 		{"probe.interval", cfg.Probe.Interval, 24 * time.Hour},
 		{"loki.batch_wait", cfg.Loki.BatchWait, 3 * time.Second},
 		{"loki.timeout", cfg.Loki.Timeout, 10 * time.Second},

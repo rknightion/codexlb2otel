@@ -1,7 +1,15 @@
+codexlb.account.api_key_eligible
+codexlb.account.credits_balance
+codexlb.account.info
+codexlb.account.model_quota_used_percent
+codexlb.account.quota_reset_after
+codexlb.account.quota_used_percent
 codexlb.archive_drift_findings
 codexlb.attributes_rejected
 codexlb.baseline_resets
 codexlb.client_tool_pause
+codexlb.compactions
+codexlb.content_item_kinds
 codexlb.cost_usd
 codexlb.credits.balance
 codexlb.credits.unlimited
@@ -21,6 +29,13 @@ codexlb.image_gen_tokens
 codexlb.pre_inference
 codexlb.proxy.wait
 codexlb.proxy.wait_coverage
+codexlb.proxy_first_token
+codexlb.proxy_latency
+codexlb.quota_failure.reset_after
+codexlb.quota_failure.used_percent
+codexlb.quota_failures
+codexlb.rate_limit.limit_reached
+codexlb.rate_limit.model_limit_reached
 codexlb.rate_limit.model_used_percent
 codexlb.rate_limit.reset_after
 codexlb.rate_limit.secondary_used_percent
@@ -30,6 +45,7 @@ codexlb.responses_excl_engine_and_tool
 codexlb.responses_excl_engine_wait_sampling
 codexlb.responses_excl_engine_wait_sampling_iapi
 codexlb.responsesapi_excl_client_tools
+codexlb.routing_hint_agreement
 codexlb.safety_buffering_events
 codexlb.sampling_and_stream
 codexlb.selfobs.bytes_read
@@ -53,6 +69,8 @@ codexlb.selfobs.sink_rejections
 codexlb.selfobs.turns_emitted
 codexlb.selfobs.turns_evicted
 codexlb.selfobs.undecodable_lines
+codexlb.service_tier_outcome
+codexlb.sticky_routing
 codexlb.tokens
 codexlb.tool_calls
 codexlb.transport_events

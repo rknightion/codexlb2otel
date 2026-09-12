@@ -88,6 +88,18 @@ postgres:
   prefetch_interval: 5s
   cache_entries: 50000
 
+account_poller:
+  # Database-sourced account and quota gauges are independent of per-request
+  # enrichment and ship disabled. Enable only with the existing SELECT-only role;
+  # it reads accounts, api_keys, api_key_accounts, usage_history and
+  # additional_usage_history and never changes grants or schema.
+  enabled: false
+  dsn: "${CODEXLB2OTEL_POSTGRES_DSN}"
+  # The source tables refresh roughly every two minutes. Poll independently of OTLP
+  # collection so an observable callback performs no database IO.
+  interval: 2m
+  query_timeout: 2s
+
 probe:
   # The in-process drift scan ships disabled; deployments with the live archive turn
   # it on deliberately. One scan runs immediately, then at interval. Sampled scans

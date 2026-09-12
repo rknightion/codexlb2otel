@@ -1,9 +1,11 @@
 ---
 id: CXO-0041
 title: 'Capture the quota snapshot the 429 error event carries, and emit limit_reached'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-12 10:07'
+updated_date: '2026-09-12 11:03'
 labels:
   - wire
   - telemetry
@@ -59,3 +61,11 @@ Per-model, the same two fields are decoded into rateLimitBlock and then discarde
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Freeze quota Turn carriers, attributes and metric names.
+2. Reduce the patterned 429 quota snapshot and rate-limit booleans test-first.
+3. Emit the frozen instruments and verify focused, integrated and live evidence.
+<!-- SECTION:PLAN:END -->

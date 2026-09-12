@@ -51,6 +51,33 @@ var semconvJustified = map[string]string{
 	UpstreamStatusCode:          "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
 	UpstreamErrorCode:           "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
 	UpstreamTransport:           "proxy wait, upstream diagnostic or cross-response correlation without a GenAI equivalent",
+	QuotaLimitFamily:            "provider quota family has no GenAI equivalent",
+	QuotaLimitName:              "provider quota limit name has no GenAI equivalent",
+	QuotaActiveLimit:            "provider active quota selection has no GenAI equivalent",
+	QuotaWindow:                 "provider quota window name has no GenAI equivalent",
+	QuotaKey:                    "provider model quota key has no GenAI equivalent",
+	RoutingHintAgreement:        "proxy connection hint agreement has no GenAI equivalent",
+	ContentItemKind:             "Codex prompt-composition item kind has no GenAI equivalent",
+	CompactionTrigger:           "Codex compaction trigger has no GenAI equivalent",
+	CompactionReason:            "Codex compaction reason has no GenAI equivalent",
+	CompactionImplementation:    "Codex compaction implementation has no GenAI equivalent",
+	CompactionPhase:             "Codex compaction phase has no GenAI equivalent",
+	CompactionStrategy:          "Codex compaction strategy has no GenAI equivalent",
+	ServiceTierOutcome:          "requested-versus-granted proxy tier outcome has no GenAI equivalent",
+	StickyKind:                  "codex-lb sticky-routing kind has no GenAI equivalent",
+	StickyKeySource:             "codex-lb sticky-routing key source has no GenAI equivalent",
+	ProxyRouteMode:              "codex-lb upstream proxy route mode has no GenAI equivalent",
+	AccountStatus:               "load-balanced account lifecycle status has no GenAI equivalent",
+	AccountRoutingPolicy:        "codex-lb account routing policy has no GenAI equivalent",
+	AccountEmail:                "operator-facing load-balanced account identity has no GenAI equivalent",
+	Workspaces:                  "Codex workspace metadata has no GenAI equivalent",
+	TurnState:                   "Codex encrypted turn state has no GenAI equivalent",
+	ConversationID:              idJustification,
+	ProxySessionID:              idJustification,
+	ModelsETag:                  "Codex model-registry version has no GenAI equivalent",
+	ContextWindowID:             idJustification,
+	PassthroughTurnID:           idJustification,
+	PassthroughCreateTime:       "Codex passthrough creation timestamp has no GenAI equivalent",
 
 	// --- pipeline concepts the convention has no notion of ---
 	Status: "answers pipeline-observed-completion, not model finish reason - see the " +
@@ -131,8 +158,7 @@ var semconvJustified = map[string]string{
 	InstructionsHash:                 idJustification,
 	ErrorMessage:                     idJustification,
 
-	// --- sensitive ---
-	SafetyID: "maps 1:1 to a human; the convention has no notion of an operator identity at all",
+	SafetyID: "provider safety identifier has no GenAI equivalent",
 }
 
 // TestNoUnjustifiedCodexlbKey is issue #18's acceptance criterion, live against the

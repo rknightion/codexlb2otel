@@ -1,9 +1,11 @@
 ---
 id: CXO-0043
 title: Widen Postgres enrichment to the populated request_logs columns it ignores
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-12 10:08'
+updated_date: '2026-09-12 11:03'
 labels:
   - enrichment
   - metrics
@@ -76,3 +78,11 @@ Enum inventories measured over 24h, for capping in internal/attr:
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Freeze enrichment Turn fields and bounded attribute names.
+2. Widen lookup and prefetch statements while retaining request_id and the index-compatible filter.
+3. Verify focused tests, live read-only SQL execution and query plans.
+<!-- SECTION:PLAN:END -->

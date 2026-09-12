@@ -64,10 +64,6 @@ const (
 	// exactly the Identity contract regardless of whether the value happens to be an
 	// identifier or a blob of tool output.
 	Identity
-	// Sensitive fields map 1:1 to a human. Structured metadata only: not a metric
-	// attribute, not a Loki label, and not a span attribute either, because Tempo
-	// indexes span attributes for search.
-	Sensitive
 )
 
 // Field is one attribute this service knows how to emit.
@@ -76,8 +72,8 @@ type Field struct {
 	ContentOnly bool
 	Key         string
 	Class       Class
-	// Cap bounds distinct values at runtime. Ignored for Identity and Sensitive, which
-	// are never indexed by value in the first place.
+	// Cap bounds distinct values at runtime. Ignored for Identity, which is never
+	// indexed by value in the first place.
 	Cap int
 	// Observed is the measured value set as of 2026-08-07, across 1.32M records and
 	// 6,936 turns. It is DOCUMENTATION and the corpus test's expectation - deliberately
@@ -108,11 +104,7 @@ type Field struct {
 	// Guard.With applies the same cap it would if the value came from a Turn) or
 	// Identity (ToolCallID, ToolCallArguments, ToolCallResult - per-invocation,
 	// unbounded by nature, so Guard.With passes them through uncapped, same as it
-	// would for any other Identity field). It must never be Sensitive: With has no
-	// per-class gate of its own the way SpanAttrs/MetricAttrs/Labels do, so a
-	// Sensitive caller-supplied field would be the one path around the "never a span
-	// attribute" guarantee - see TestRegistryIsWellFormed, which is what closes that
-	// off at registration time rather than trusting every call site to remember.
+	// would for any other Identity field).
 	Of func(t *turn.Turn) string
 }
 
@@ -148,6 +140,52 @@ var registry = []Field{
 	}},
 	{Key: UpstreamErrorCode, Class: Bounded, Cap: 32, ContentOnly: true, Of: func(t *turn.Turn) string { return t.UpstreamErrorCode }},
 	{Key: UpstreamTransport, Class: Bounded, Cap: 8, ContentOnly: true, Of: func(t *turn.Turn) string { return t.UpstreamTransport }},
+
+	// Wave 4 bounded contracts. Slice- and snapshot-derived values have no Of
+	// function and are supplied through Guard.With by the instrument that iterates
+	// them. Every new bounded key uses the frozen cap of 100.
+	{Key: QuotaLimitFamily, Class: Bounded, Cap: 100,
+		Observed: []string{"codex", "bengalfox", "base_model_inference"}},
+	{Key: QuotaLimitName, Class: Bounded, Cap: 100,
+		Observed: []string{"GPT-5.3-Codex-Spark", "gpt-reserve"}},
+	{Key: QuotaActiveLimit, Class: Bounded, Cap: 100, Observed: []string{"premium"},
+		Of: func(t *turn.Turn) string { return t.QuotaFailureActiveLimit }},
+	{Key: QuotaWindow, Class: Bounded, Cap: 100, Observed: []string{"primary", "secondary"}},
+	{Key: QuotaKey, Class: Bounded, Cap: 100, Observed: []string{"codex_spark", "gpt_reserve"}},
+	{Key: RoutingHintAgreement, Class: Bounded, Cap: 100,
+		Observed: []string{"agree", "disagree", "absent"},
+		Of:       func(t *turn.Turn) string { return t.RoutingHintAgreement }},
+	{Key: ContentItemKind, Class: Bounded, Cap: 100,
+		Observed: []string{"model.base_instructions", "model_switch.instructions", "memories.instructions",
+			"host_skills.instructions", "permissions.instructions", "collaboration_mode.instructions",
+			"apps.instructions", "plugins.usage_instructions", "plugins.recommendations",
+			"multi_agent.usage_hint", "multi_agent.mode_instructions", "multi_agent.role_instructions",
+			"agents_md.instructions", "environments.environment_context", "hooks.additional_context",
+			"user.text", "generic.turn_aborted", "unknown"}},
+	{Key: CompactionTrigger, Class: Bounded, Cap: 100, Observed: []string{"manual"},
+		Of: func(t *turn.Turn) string { return t.CompactionTrigger }},
+	{Key: CompactionReason, Class: Bounded, Cap: 100, Observed: []string{"user_requested"},
+		Of: func(t *turn.Turn) string { return t.CompactionReason }},
+	{Key: CompactionImplementation, Class: Bounded, Cap: 100, Observed: []string{"responses_compaction_v2"},
+		Of: func(t *turn.Turn) string { return t.CompactionImplementation }},
+	{Key: CompactionPhase, Class: Bounded, Cap: 100, Observed: []string{"standalone_turn"},
+		Of: func(t *turn.Turn) string { return t.CompactionPhase }},
+	{Key: CompactionStrategy, Class: Bounded, Cap: 100, Observed: []string{"memento"},
+		Of: func(t *turn.Turn) string { return t.CompactionStrategy }},
+	{Key: ServiceTierOutcome, Class: Bounded, Cap: 100,
+		Observed: []string{"granted", "downgraded", "not_requested", "unknown"},
+		Of:       func(t *turn.Turn) string { return t.ServiceTierOutcome }},
+	{Key: StickyKind, Class: Bounded, Cap: 100, Observed: []string{"prompt_cache"},
+		Of: func(t *turn.Turn) string { return t.StickyKind }},
+	{Key: StickyKeySource, Class: Bounded, Cap: 100, Observed: []string{"thread_header"},
+		Of: func(t *turn.Turn) string { return t.StickyKeySource }},
+	{Key: ProxyRouteMode, Class: Bounded, Cap: 100, Observed: []string{"direct"},
+		Of: func(t *turn.Turn) string { return t.ProxyRouteMode }},
+	{Key: AccountStatus, Class: Bounded, Cap: 100,
+		Observed: []string{"active", "rate_limited", "quota_exceeded", "paused", "reauth_required", "deactivated"}},
+	{Key: AccountRoutingPolicy, Class: Bounded, Cap: 100,
+		Observed: []string{"burn_first", "normal", "preserve"}},
+	{Key: AccountEmail, Class: Bounded, Cap: 100},
 
 	// --- bounded: metric attributes, and promotable to labels ---
 	{Key: GenAIRequestModel, Class: Bounded, Cap: 32,
@@ -359,6 +397,16 @@ var registry = []Field{
 	// event, and prose is not an enum however few distinct strings a capture happens to
 	// hold. FrameType above is the bounded classification of the same event.
 	{Key: TransportEvent, Class: Identity, Of: func(t *turn.Turn) string { return t.TransportEvent }},
+	{Key: Workspaces, Class: Identity, ContentOnly: true, Of: func(t *turn.Turn) string { return t.Workspaces }},
+	{Key: TurnState, Class: Identity, ContentOnly: true, Of: func(t *turn.Turn) string { return t.TurnState }},
+	{Key: ConversationID, Class: Identity, ContentOnly: true, Of: func(t *turn.Turn) string { return t.ConversationID }},
+	{Key: ProxySessionID, Class: Identity, ContentOnly: true, Of: func(t *turn.Turn) string { return t.ProxySessionID }},
+	{Key: ModelsETag, Class: Identity, ContentOnly: true, Of: func(t *turn.Turn) string { return t.ModelsETag }},
+	{Key: ContextWindowID, Class: Identity, ContentOnly: true, Of: func(t *turn.Turn) string { return t.ContextWindowID }},
+	{Key: PassthroughTurnID, Class: Identity, ContentOnly: true, Of: func(t *turn.Turn) string { return t.PassthroughTurnID }},
+	{Key: PassthroughCreateTime, Class: Identity, ContentOnly: true, Of: func(t *turn.Turn) string {
+		return positiveFloat(t.PassthroughCreateTime)
+	}},
 
 	// Token usage as span attributes (issue #18) - Turn already carries all six
 	// fields; before this they existed only as the codexlb.tokens counter, split by
@@ -390,8 +438,7 @@ var registry = []Field{
 	// would have collapsed to _other.
 	{Key: SubagentTask, Class: Identity},
 
-	// --- sensitive ---
-	{Key: SafetyID, Class: Sensitive, Of: func(t *turn.Turn) string { return t.SafetyID }},
+	{Key: SafetyID, Class: Identity, Of: func(t *turn.Turn) string { return t.SafetyID }},
 }
 
 // AgentName is the Codex coding-agent identity for one turn. The dedicated Codex
@@ -516,8 +563,6 @@ func (c Class) String() string {
 		return "bounded"
 	case Identity:
 		return "identity"
-	case Sensitive:
-		return "sensitive"
 	}
 	return "unknown"
 }
@@ -677,15 +722,11 @@ func (g *Guard) Metadata(t *turn.Turn, promoted []string) []KV {
 	return out
 }
 
-// SpanAttrs builds span attributes: bounded and identity fields, never sensitive ones.
-//
-// Sensitive is excluded here and not only from metrics because Tempo indexes span
-// attributes for search, so a span attribute is a lookup key in a way structured
-// metadata is not.
+// SpanAttrs builds bounded and identity span attributes.
 func (g *Guard) SpanAttrs(t *turn.Turn) []KV {
 	out := make([]KV, 0, len(registry))
 	for _, f := range registry {
-		if f.Class == Sensitive || f.Of == nil {
+		if f.Of == nil {
 			continue
 		}
 		v := f.Of(t)
@@ -731,13 +772,7 @@ func (g *Guard) With(kvs []KV, extra ...KV) []KV {
 			continue
 		}
 		f, known := byKey[kv.Key]
-		// Sensitive is rejected here too, not only omitted from SpanAttrs/MetricAttrs/
-		// Labels: those three enforce the class by construction (they walk the
-		// registry and skip Sensitive themselves), but With takes an arbitrary caller
-		// KV and would otherwise happily cap-and-forward a Sensitive key straight past
-		// that enforcement - the one path a sink could use to put safety_identifier on
-		// a span. Nothing does that today; this closes the path before something does.
-		if !known || f.Class == Sensitive {
+		if !known {
 			g.mu.Lock()
 			g.rejected[kv.Key]++
 			g.mu.Unlock()

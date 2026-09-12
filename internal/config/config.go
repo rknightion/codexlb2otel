@@ -78,17 +78,18 @@ func (s Secret) Resolve() (string, error) {
 
 // Config is the whole service configuration.
 type Config struct {
-	Service   Service   `yaml:"service" json:"service"`
-	Archive   Archive   `yaml:"archive" json:"archive"`
-	Postgres  Postgres  `yaml:"postgres" json:"postgres"`
-	Probe     Probe     `yaml:"probe" json:"probe"`
-	Loki      Loki      `yaml:"loki" json:"loki"`
-	OTLP      OTLP      `yaml:"otlp" json:"otlp"`
-	AgentO11y AgentO11y `yaml:"agento11y" json:"agento11y"`
-	Health    Health    `yaml:"health" json:"health"`
-	Live      Live      `yaml:"live" json:"live"`
-	Summarize Summarize `yaml:"summarize" json:"summarize"`
-	Log       Log       `yaml:"log" json:"log"`
+	Service       Service       `yaml:"service" json:"service"`
+	Archive       Archive       `yaml:"archive" json:"archive"`
+	Postgres      Postgres      `yaml:"postgres" json:"postgres"`
+	AccountPoller AccountPoller `yaml:"account_poller" json:"account_poller"`
+	Probe         Probe         `yaml:"probe" json:"probe"`
+	Loki          Loki          `yaml:"loki" json:"loki"`
+	OTLP          OTLP          `yaml:"otlp" json:"otlp"`
+	AgentO11y     AgentO11y     `yaml:"agento11y" json:"agento11y"`
+	Health        Health        `yaml:"health" json:"health"`
+	Live          Live          `yaml:"live" json:"live"`
+	Summarize     Summarize     `yaml:"summarize" json:"summarize"`
+	Log           Log           `yaml:"log" json:"log"`
 }
 
 // Service identifies this deployment.
@@ -146,6 +147,16 @@ type Postgres struct {
 	LookupTimeout    time.Duration `yaml:"lookup_timeout" json:"lookup_timeout"`
 	PrefetchInterval time.Duration `yaml:"prefetch_interval" json:"prefetch_interval"`
 	CacheEntries     int           `yaml:"cache_entries" json:"cache_entries"`
+}
+
+// AccountPoller configures the optional database-sourced account and quota snapshot.
+// It is independent of per-request enrichment and ships disabled: a database fault
+// must remove only these gauges, never stop archive ingestion or another sink.
+type AccountPoller struct {
+	Enabled      bool          `yaml:"enabled" json:"enabled"`
+	DSN          Secret        `yaml:"dsn" json:"dsn"`
+	Interval     time.Duration `yaml:"interval" json:"interval"`
+	QueryTimeout time.Duration `yaml:"query_timeout" json:"query_timeout"`
 }
 
 // Probe configures the in-process archive drift scan. It ships disabled and is
@@ -395,6 +406,12 @@ func Default() Config {
 			LookupTimeout:    2 * time.Second,
 			PrefetchInterval: 5 * time.Second,
 			CacheEntries:     50000,
+		},
+		AccountPoller: AccountPoller{
+			Enabled:      false,
+			DSN:          "${CODEXLB2OTEL_POSTGRES_DSN}",
+			Interval:     2 * time.Minute,
+			QueryTimeout: 2 * time.Second,
 		},
 		Probe: Probe{Enabled: false, Interval: 24 * time.Hour, Sampled: true},
 		Loki: Loki{

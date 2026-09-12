@@ -3,10 +3,11 @@ id: CXO-0042
 title: >-
   Adopt the remaining September wire additions: routing hint, passthrough
   metadata, models etag, compaction block
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-12 10:08'
-updated_date: '2026-09-12 10:46'
+updated_date: '2026-09-12 11:03'
 labels:
   - wire
   - telemetry
@@ -59,3 +60,11 @@ Routing decisions for the four, and the standing policy they follow. Personal da
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Freeze September wire Turn fields, attributes and metric names.
+2. Reduce routing, passthrough, metadata and compaction shapes.
+3. Route Identity fields to non-indexed sinks and verify bounded metrics.
+<!-- SECTION:PLAN:END -->

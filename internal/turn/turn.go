@@ -80,6 +80,17 @@ type Turn struct {
 	ProxyFailurePhase             string   `json:"proxy_failure_phase,omitempty"`
 	ProxyResponseCreatedMS        float64  `json:"proxy_response_created_ms,omitempty"`
 	ProxyFirstUpstreamEventMS     float64  `json:"proxy_first_upstream_event_ms,omitempty"`
+	ProxyLatencyMS                float64  `json:"proxy_latency_ms,omitempty"`
+	ProxyFirstTokenMS             float64  `json:"proxy_first_token_ms,omitempty"`
+	ConversationID                string   `json:"conversation_id,omitempty"`
+	ProxySessionID                string   `json:"proxy_session_id,omitempty"`
+	ProxyServiceTier              string   `json:"proxy_service_tier,omitempty"`
+	ProxyActualServiceTier        string   `json:"proxy_actual_service_tier,omitempty"`
+	ProxyRequestedServiceTier     string   `json:"proxy_requested_service_tier,omitempty"`
+	ServiceTierOutcome            string   `json:"service_tier_outcome,omitempty"`
+	StickyKind                    string   `json:"sticky_kind,omitempty"`
+	StickyKeySource               string   `json:"sticky_key_source,omitempty"`
+	ProxyRouteMode                string   `json:"proxy_route_mode,omitempty"`
 
 	// Low cardinality - safe as metric attributes.
 	Model     string `json:"model,omitempty"`
@@ -165,10 +176,27 @@ type Turn struct {
 
 	// Error detail, set when Status is StatusError. ErrorType and ErrorCode are
 	// enum-like and safe as metric attributes; ErrorMessage embeds ids and is a log
-	// field only.
+	// field only. The archive error event has never carried error.code in the full
+	// corpus, so ErrorCode is database-sourced rather than a missing reducer field.
 	ErrorType    string `json:"error_type,omitempty"`
 	ErrorCode    string `json:"error_code,omitempty"`
 	ErrorMessage string `json:"error_message,omitempty"`
+
+	// September wire metadata. Identity values remain per-record metadata and span
+	// attributes; bounded classifications are the dimensions used by wave 4 metrics.
+	RoutingHintAgreement     string         `json:"routing_hint_agreement,omitempty"`
+	ContentItemKinds         map[string]int `json:"content_item_kinds,omitempty"`
+	CompactionTrigger        string         `json:"compaction_trigger,omitempty"`
+	CompactionReason         string         `json:"compaction_reason,omitempty"`
+	CompactionImplementation string         `json:"compaction_implementation,omitempty"`
+	CompactionPhase          string         `json:"compaction_phase,omitempty"`
+	CompactionStrategy       string         `json:"compaction_strategy,omitempty"`
+	Workspaces               string         `json:"workspaces,omitempty"`
+	TurnState                string         `json:"turn_state,omitempty"`
+	ModelsETag               string         `json:"models_etag,omitempty"`
+	ContextWindowID          string         `json:"context_window_id,omitempty"`
+	PassthroughTurnID        string         `json:"passthrough_turn_id,omitempty"`
+	PassthroughCreateTime    float64        `json:"passthrough_create_time,omitempty"`
 
 	// EngineIDs can be a comma-joined list and rotates over time. Log field only.
 	EngineIDs string `json:"engine_ids,omitempty"`
@@ -285,6 +313,21 @@ type Turn struct {
 	// the primary and secondary plan windows; retaining only the percentage loses
 	// which quota the reading describes.
 	ExtraRateLimits map[string][]RateLimitWindow `json:"extra_rate_limits,omitempty"`
+	// The maps preserve presence separately from the boolean value: false is an
+	// observed answer, while an absent model key means the wire supplied no answer.
+	ExtraRateLimitAllowed map[string]bool `json:"extra_rate_limit_allowed,omitempty"`
+	ExtraRateLimitReached map[string]bool `json:"extra_rate_limit_reached,omitempty"`
+
+	// QuotaFailureLimits is the patterned header snapshot attached to a refused
+	// request. Pointer measurements distinguish an omitted or empty-string header
+	// from a real observed zero.
+	QuotaFailureLimits           []QuotaFailureLimit `json:"quota_failure_limits,omitempty"`
+	QuotaFailureActiveLimit      string              `json:"quota_failure_active_limit,omitempty"`
+	QuotaFailureResetsAt         *float64            `json:"quota_failure_resets_at,omitempty"`
+	QuotaFailureResetsInSeconds  *float64            `json:"quota_failure_resets_in_seconds,omitempty"`
+	QuotaFailureCreditsHas       *bool               `json:"quota_failure_credits_has,omitempty"`
+	QuotaFailureCreditsUnlimited *bool               `json:"quota_failure_credits_unlimited,omitempty"`
+	QuotaFailureCreditsBalance   string              `json:"quota_failure_credits_balance,omitempty"`
 
 	CreditsBalance   string `json:"credits_balance,omitempty"`
 	CreditsUnlimited bool   `json:"credits_unlimited,omitempty"`
@@ -330,6 +373,25 @@ type RateLimitWindow struct {
 	UsedPercent  float64 `json:"used_percent"`
 	WindowMin    int     `json:"window_minutes"`
 	ResetSeconds float64 `json:"reset_after_seconds,omitempty"`
+	ResetAt      float64 `json:"reset_at,omitempty"`
+}
+
+// QuotaFailureLimit is one bounded quota family decoded from an error header block.
+// A family owns primary and secondary windows and may name the model limit it covers.
+type QuotaFailureLimit struct {
+	Family                           string               `json:"family"`
+	LimitName                        string               `json:"limit_name,omitempty"`
+	PrimaryOverSecondaryLimitPercent *float64             `json:"primary_over_secondary_limit_percent,omitempty"`
+	Windows                          []QuotaFailureWindow `json:"windows,omitempty"`
+}
+
+// QuotaFailureWindow preserves presence for every numeric string in one quota window.
+type QuotaFailureWindow struct {
+	Window            string   `json:"window"`
+	UsedPercent       *float64 `json:"used_percent,omitempty"`
+	WindowMinutes     *int     `json:"window_minutes,omitempty"`
+	ResetAt           *float64 `json:"reset_at,omitempty"`
+	ResetAfterSeconds *float64 `json:"reset_after_seconds,omitempty"`
 }
 
 // ToolDef is one entry of a re-sent tool catalogue, deduplicated onto Turn.Tools by

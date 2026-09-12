@@ -3,9 +3,11 @@ id: CXO-0040
 title: >-
   Fix archive error-event decoding: the wrong key, the dead field, and the
   always-empty upstream status
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-12 10:07'
+updated_date: '2026-09-12 11:03'
 labels:
   - wire
   - telemetry
@@ -43,3 +45,11 @@ The wire carries TWO error shapes. The rate-limit shape has `status_code` (numbe
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Freeze the shared Turn and attribute seams.
+2. Reduce both error status keys test-first and preserve the database fallback.
+3. Verify focused tests, integrated gates, review, deployment and live evidence.
+<!-- SECTION:PLAN:END -->

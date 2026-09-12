@@ -1,10 +1,11 @@
 ---
 id: CXO-0045
 title: 'Panels, naming checks and documentation for every metric this wave adds'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-12 10:09'
-updated_date: '2026-09-12 10:09'
+updated_date: '2026-09-12 11:03'
 labels:
   - dashboards
   - docs
@@ -48,3 +49,11 @@ Documentation that is stale as of 2026-09-12 and belongs here:
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Consume the frozen metric registry after wave 0.
+2. Add one panel per new metric and update operations and role documentation.
+3. Regenerate artifacts once and validate naming, dashboard coverage and links.
+<!-- SECTION:PLAN:END -->

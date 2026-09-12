@@ -322,6 +322,37 @@ const (
 	PromptCacheMode       = "codexlb.prompt_cache.mode"
 	PromptCacheTTL        = "codexlb.prompt_cache.ttl"
 	PromptCacheDiagnostic = "codexlb.prompt_cache.diagnostic"
+
+	// Wave 4 quota, routing, compaction and account-poller dimensions. The bounded
+	// values are capped in the registry; the identity values are content metadata
+	// and span attributes only.
+	QuotaLimitFamily         = "codexlb.quota.limit_family"
+	QuotaLimitName           = "codexlb.quota.limit_name"
+	QuotaActiveLimit         = "codexlb.quota.active_limit"
+	QuotaWindow              = "codexlb.quota.window"
+	QuotaKey                 = "codexlb.quota.key"
+	RoutingHintAgreement     = "codexlb.routing_hint.agreement"
+	ContentItemKind          = "codexlb.content_item_kind"
+	CompactionTrigger        = "codexlb.compaction.trigger"
+	CompactionReason         = "codexlb.compaction.reason"
+	CompactionImplementation = "codexlb.compaction.implementation"
+	CompactionPhase          = "codexlb.compaction.phase"
+	CompactionStrategy       = "codexlb.compaction.strategy"
+	ServiceTierOutcome       = "codexlb.service_tier.outcome"
+	StickyKind               = "codexlb.sticky.kind"
+	StickyKeySource          = "codexlb.sticky.key_source"
+	ProxyRouteMode           = "codexlb.proxy.route_mode"
+	AccountStatus            = "codexlb.account.status"
+	AccountRoutingPolicy     = "codexlb.account.routing_policy"
+	AccountEmail             = "codexlb.account.email"
+	Workspaces               = "codexlb.workspaces"
+	TurnState                = "codexlb.turn_state"
+	ConversationID           = "codexlb.conversation_id"
+	ProxySessionID           = "codexlb.proxy.session_id"
+	ModelsETag               = "codexlb.models_etag"
+	ContextWindowID          = "codexlb.context_window_id"
+	PassthroughTurnID        = "codexlb.passthrough.turn_id"
+	PassthroughCreateTime    = "codexlb.passthrough.create_time"
 	// CostUSD and the proxy timings are measurements carried on response spans. They
 	// are registered as Identity-class values so they can never become metric labels;
 	// the dedicated cost counter is the aggregation surface.
@@ -596,6 +627,27 @@ const (
 	MetricRateLimitPerModel = "codexlb.rate_limit.model_used_percent"     // gauge, %, by GenAIRequestModel
 	MetricCreditsBalance    = "codexlb.credits.balance"                   // gauge
 	MetricCreditsUnlimited  = "codexlb.credits.unlimited"                 // gauge, 0|1
+
+	// Wave 4 instruments. These names are frozen before their producers fork so
+	// code, generated dashboards and live queries cannot drift apart.
+	MetricRateLimitReached      = "codexlb.rate_limit.limit_reached"         // gauge, 0|1
+	MetricRateLimitModelReached = "codexlb.rate_limit.model_limit_reached"   // gauge, 0|1
+	MetricQuotaFailures         = "codexlb.quota_failures"                   // counter, {failure}
+	MetricQuotaFailureUsed      = "codexlb.quota_failure.used_percent"       // gauge, %
+	MetricQuotaFailureReset     = "codexlb.quota_failure.reset_after"        // gauge, s
+	MetricRoutingHintAgreement  = "codexlb.routing_hint_agreement"           // counter, {response}
+	MetricContentItemKinds      = "codexlb.content_item_kinds"               // counter, {item}
+	MetricCompactions           = "codexlb.compactions"                      // counter, {compaction}
+	MetricServiceTierOutcome    = "codexlb.service_tier_outcome"             // counter, {response}
+	MetricStickyRouting         = "codexlb.sticky_routing"                   // counter, {response}
+	MetricProxyLatency          = "codexlb.proxy_latency"                    // histogram, s
+	MetricProxyFirstToken       = "codexlb.proxy_first_token"                // histogram, s
+	MetricAccountQuotaUsed      = "codexlb.account.quota_used_percent"       // gauge, %
+	MetricAccountQuotaReset     = "codexlb.account.quota_reset_after"        // gauge, s
+	MetricAccountModelQuotaUsed = "codexlb.account.model_quota_used_percent" // gauge, %
+	MetricAccountCreditsBalance = "codexlb.account.credits_balance"          // gauge
+	MetricAccountInfo           = "codexlb.account.info"                     // gauge, 1
+	MetricAccountAPIKeyEligible = "codexlb.account.api_key_eligible"         // gauge, 0|1
 )
 
 // Self-observability metrics (issue #8): this service's own operational state, not

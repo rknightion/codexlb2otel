@@ -3,10 +3,11 @@ id: CXO-0044
 title: >-
   Per-account quota and key-eligibility gauges from Postgres, covering accounts
   that serve no traffic
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-12 10:09'
-updated_date: '2026-09-12 10:50'
+updated_date: '2026-09-12 11:03'
 labels:
   - enrichment
   - metrics
@@ -79,3 +80,11 @@ Measured query cost against the live database: the latest-per-account reads plan
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Freeze account-poller config, snapshot and metric contracts.
+2. Implement a scheduled read-only poller publishing immutable snapshots.
+3. Wire non-blocking observable gauges and verify focused, integration and live evidence.
+<!-- SECTION:PLAN:END -->
