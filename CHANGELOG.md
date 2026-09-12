@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.6.0](https://github.com/rknightion/codexlb2otel/compare/v0.5.0...v0.6.0) (2026-09-12)
+
+
+### Features
+
+* add connection and client cohorts to turn metrics ([1b01503](https://github.com/rknightion/codexlb2otel/commit/1b015038ceeced3de30395e0c4ca558bb5f8c864))
+* enrich turns with client and connection classifications ([7cf4446](https://github.com/rknightion/codexlb2otel/commit/7cf44460381d1bc034ff0e1c49d21714ae3c8d86))
+* export wave 4 account and routing telemetry ([df40cbd](https://github.com/rknightion/codexlb2otel/commit/df40cbda215857b5334ee0570a66f61234bfc1bf))
+* expose client cohorts and prewarm share in dashboards ([efbc468](https://github.com/rknightion/codexlb2otel/commit/efbc4684d8ee7455ab666a32e7cc080a5837309a))
+* freeze account poll outcome metric ([0cb8b76](https://github.com/rknightion/codexlb2otel/commit/0cb8b761f5db80dafabb59a9fc28ea7ac23d0b63))
+* freeze wave 3 enrichment and correlation seams ([62a1e01](https://github.com/rknightion/codexlb2otel/commit/62a1e018223dbb9a4178dd5eb02a77c28f46af85))
+* freeze wave 4 telemetry seams ([365babc](https://github.com/rknightion/codexlb2otel/commit/365babc8ff5b9a10c4a186f82ed23bd6126f0aed))
+* migrate Charm TUI dependencies to v2 ([3fdcfff](https://github.com/rknightion/codexlb2otel/commit/3fdcfff5ed57984d9e806e20b53a0ca1b11996db))
+
+
+### Bug Fixes
+
+* amortize inactive correlation expiry sweeps ([83e3693](https://github.com/rknightion/codexlb2otel/commit/83e3693f0e9d4d47d2137659318b9379662563d4))
+* bound account polling and report outcomes ([13d3fe0](https://github.com/rknightion/codexlb2otel/commit/13d3fe0c56056bb1522e3daa2f28763a91e67de5))
+* bound correlation history across threads and checkpoints ([cddc05a](https://github.com/rknightion/codexlb2otel/commit/cddc05a82f5393a272b3260bf34d2b5189619cae))
+* check same-document Markdown anchors ([8dd768d](https://github.com/rknightion/codexlb2otel/commit/8dd768d8d86bc0c95e352f703a72a0b0aa4ff77a))
+* complete wave 4 plan type seam ([ef863a4](https://github.com/rknightion/codexlb2otel/commit/ef863a45471aaf5608a3d16900f8b5ff0156f4df))
+* convert account quota reset epochs ([88773a4](https://github.com/rknightion/codexlb2otel/commit/88773a47c9e56005ea759e73a7774c6971f4d04a))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.11.0 ([#82](https://github.com/rknightion/codexlb2otel/issues/82)) ([05e236e](https://github.com/rknightion/codexlb2otel/commit/05e236e9af6210fcdfed5ee1c7a450580adc7a18))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.120 ([#78](https://github.com/rknightion/codexlb2otel/issues/78)) ([72c2995](https://github.com/rknightion/codexlb2otel/commit/72c29953f4d6a03528cbf0c2f319d30900cbaf01))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.121 ([#81](https://github.com/rknightion/codexlb2otel/issues/81)) ([b74157a](https://github.com/rknightion/codexlb2otel/commit/b74157ab0e48adb6d96b6c86c88c84645cf0cd76))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.122 ([#83](https://github.com/rknightion/codexlb2otel/issues/83)) ([8c365f9](https://github.com/rknightion/codexlb2otel/commit/8c365f9ea05bdc7dce39d3067d80d3651ab2338b))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.123 ([#85](https://github.com/rknightion/codexlb2otel/issues/85)) ([067dda9](https://github.com/rknightion/codexlb2otel/commit/067dda959c5c6472e538768e8deb31a8c7b3d02a))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.124 ([#86](https://github.com/rknightion/codexlb2otel/issues/86)) ([c73fb5b](https://github.com/rknightion/codexlb2otel/commit/c73fb5b09a31fcb42848cb7e8c6fe4350dcd7979))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.125 ([#87](https://github.com/rknightion/codexlb2otel/issues/87)) ([981cfae](https://github.com/rknightion/codexlb2otel/commit/981cfaea2ec143681bf6ba70436f13e84e872e16))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.126 ([#89](https://github.com/rknightion/codexlb2otel/issues/89)) ([5e613c6](https://github.com/rknightion/codexlb2otel/commit/5e613c69700e55be745f4d36c0ffa270fda315b2))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.127 ([#90](https://github.com/rknightion/codexlb2otel/issues/90)) ([7ddb45c](https://github.com/rknightion/codexlb2otel/commit/7ddb45cf65f2f63a907bc14b1e85aa55c6deec3f))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.128 ([#91](https://github.com/rknightion/codexlb2otel/issues/91)) ([cb6afc4](https://github.com/rknightion/codexlb2otel/commit/cb6afc4237b79a5af0fd9ca772c7ba63db3fddfd))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.129 ([#92](https://github.com/rknightion/codexlb2otel/issues/92)) ([4b46fa5](https://github.com/rknightion/codexlb2otel/commit/4b46fa554d17d35306b21f488473320587f5686d))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.130 ([#93](https://github.com/rknightion/codexlb2otel/issues/93)) ([ad82c04](https://github.com/rknightion/codexlb2otel/commit/ad82c0496c22913837c43906b3678c041e54ebda))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.132 ([#94](https://github.com/rknightion/codexlb2otel/issues/94)) ([6baf345](https://github.com/rknightion/codexlb2otel/commit/6baf3450efd256cd8069fced7eeb18ae121cebae))
+* distinguish retained tool call occurrences in trace spans ([89cea0c](https://github.com/rknightion/codexlb2otel/commit/89cea0c1bdaec600664875e43ea3182fb021866a))
+* export quota limit names ([92799ec](https://github.com/rknightion/codexlb2otel/commit/92799ec481f071dd3ec287ba2d6588970959464d))
+* include active quota limit metadata ([23e1e39](https://github.com/rknightion/codexlb2otel/commit/23e1e3945757ef1bdfabb66f8199f6453c931984))
+* make the full corpus confidence gate finish ([8b539ed](https://github.com/rknightion/codexlb2otel/commit/8b539ed82164a547bccd036f2ba7f58d1f6cf6c7))
+* preserve retry semantics on backoff v7 ([5848d14](https://github.com/rknightion/codexlb2otel/commit/5848d1419e22f6ca85f34bf553996cf66e8c6f3b))
+* reduce instant barcharts to rows so the category axis shows series names ([bfcf800](https://github.com/rknightion/codexlb2otel/commit/bfcf800e0648cdbe4285530ac18e7c0d8155df19))
+* validate documentation anchors and correct release auth comment ([1af294a](https://github.com/rknightion/codexlb2otel/commit/1af294a443af5e1e15d4d156f09846b1ca354665))
+* wire enrichment signal scopes and documentation gate ([ef91bbe](https://github.com/rknightion/codexlb2otel/commit/ef91bbee5ef00b55ce714d02e68cce76f791be84))
+
 ## [0.5.0](https://github.com/rknightion/codexlb2otel/compare/v0.4.0...v0.5.0) (2026-09-05)
 
 
