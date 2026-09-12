@@ -47,13 +47,14 @@ If only enrichment data is absent, inspect `codexlb.selfobs.enrich_lookups` and 
 `codexlb.selfobs.result` values. `disabled` means the feature has no usable DSN or was not enabled;
 `miss` means no matching request row; `error` means a point lookup failed or timed out. Cache hits
 do not produce a lookup-duration sample. These conditions do not stop archive ingestion or the other
-sinks. Confirm that the existing database role has `SELECT` on `request_logs`, `api_keys`, and
-`accounts`, and that the response id matches `request_logs.request_id`; `archive_request_id` is only
-used as a prefetch cache alias.
+sinks. Confirm that the existing database role has `SELECT` on `request_logs`, `api_keys`,
+`accounts`, `usage_history`, `additional_usage_history`, and `api_key_accounts`, and that the
+response id matches `request_logs.request_id`; `archive_request_id` is only used as a prefetch cache
+alias.
 
 On Camden, enrichment is expected to be enabled through the dedicated read-only
 `codexlb2otel_ro` role. If `db_hit` stops, separate `disabled`, `error`, and `miss` outcomes first,
-then check the lookup-duration histogram, timeout or query errors, the three read grants, and the
+then check the lookup-duration histogram, timeout or query errors, the six read grants, and the
 response-id match. Keep the connection secret in the deployment environment. The archive and other
 sinks continue while enrichment is unavailable; the cost counter is a useful regression check when
 cost data should be present.

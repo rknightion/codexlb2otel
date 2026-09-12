@@ -86,6 +86,18 @@ func TestBuildEnricher_InvalidOptionalConfigDegradesToDisabled(t *testing.T) {
 	}
 }
 
+func TestBuildAccountPoller_WithoutMetricsDegradesToDisabled(t *testing.T) {
+	cfg := config.Default().AccountPoller
+	cfg.Enabled = true
+	cfg.DSN = "${CODEXLB2OTEL_MISSING_ACCOUNT_TEST_DSN}"
+	t.Setenv("CODEXLB2OTEL_MISSING_ACCOUNT_TEST_DSN", "")
+
+	if poller := buildAccountPoller(t.Context(), cfg, nil, slog.New(slog.DiscardHandler)); poller != nil {
+		poller.Close()
+		t.Fatal("buildAccountPoller returned a poller without an OTLP metrics sink")
+	}
+}
+
 func TestEnrichingEmitJoinsBeforeDownstreamDelivery(t *testing.T) {
 	downstream := &captureSink{}
 	emit := enrichingEmit(attachingEnricher{}, nil, downstream)

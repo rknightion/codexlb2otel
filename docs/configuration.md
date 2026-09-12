@@ -110,13 +110,33 @@ These bounded diagnostics are emitted in the turn body and response span only; f
 error bodies are not copied. Lookup outcomes are `cache_hit`, `db_hit`, `miss`, `error`, and
 `disabled`.
 
-The database role must already exist and have `SELECT` on `request_logs`, `api_keys`, and
-`accounts`. The service does not create roles, change grants, or write to the database. Invalid
+The database role must already exist and have `SELECT` on `request_logs`, `api_keys`, `accounts`,
+`usage_history`, `additional_usage_history`, and `api_key_accounts`. The service does not create
+roles, change grants, or write to the database. Invalid
 bounds, an empty or unresolved DSN secret, or a malformed DSN that prevents pool construction
 disables enrichment at startup. A syntactically valid DSN whose database is unreachable can still
 construct the lazy pool; the service starts, enrichment lookups and prefetches report errors until
 the database is reachable, and the archive, Loki, metrics, traces, and other enabled sinks continue
 independently. Lookup timeouts and query errors lose only the affected enrichment result.
+
+## Optional account poller
+
+`account_poller` is independent of per-response enrichment and disabled by default. It emits
+database-sourced account health, quota, credit-balance, and API-key eligibility gauges, including for
+accounts with no matching archive traffic. Enable it only with the existing read-only DSN:
+
+```yaml
+account_poller:
+  enabled: true
+  dsn: "${CODEXLB2OTEL_POSTGRES_DSN}"
+  interval: 2m
+  query_timeout: 2s
+```
+
+The poller reads the existing six-table role surface and publishes a snapshot at each interval;
+metric callbacks read that snapshot and never perform database I/O. It never creates roles, changes
+grants, or writes to the database. Invalid local poller settings or a database failure leave archive
+delivery and other enabled sinks running.
 
 ## In-process drift probe
 

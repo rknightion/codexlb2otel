@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rknightion/codexlb2otel/internal/accountpoll"
 	"github.com/rknightion/codexlb2otel/internal/config"
 	"github.com/rknightion/codexlb2otel/internal/drift"
 	"github.com/rknightion/codexlb2otel/internal/enrich"
@@ -133,6 +134,11 @@ func newLogger(cfg config.Log) *slog.Logger {
 func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink, metricsSink *otlpmetric.Sink, liveStore *live.Store) error {
 	enricher := buildEnricher(ctx, cfg.Postgres, log)
 	defer enricher.Close()
+	accountPoller := buildAccountPoller(ctx, cfg.AccountPoller, metricsSink, log)
+	if accountPoller != nil {
+		defer accountPoller.Close()
+		go accountPoller.Run(ctx)
+	}
 
 	probeCtx, stopProbe := context.WithCancel(ctx)
 	probe := buildDriftProbe(probeCtx, cfg, log)
@@ -252,6 +258,45 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, snk sink.Sink
 	}
 
 	return errors.Join(runErr, probeErr, flushErr, closeErr, healthErr, liveErr)
+}
+
+func buildAccountPoller(ctx context.Context, cfg config.AccountPoller, metrics *otlpmetric.Sink, log *slog.Logger) *accountpoll.Poller {
+	if !cfg.Enabled {
+		return nil
+	}
+	if metrics == nil {
+		log.Warn("account poller disabled: OTLP metrics are disabled")
+		return nil
+	}
+	if cfg.Interval <= 0 || cfg.QueryTimeout <= 0 {
+		log.Warn("account poller disabled: invalid bounds",
+			"interval", cfg.Interval,
+			"query_timeout", cfg.QueryTimeout)
+		return nil
+	}
+	dsn, err := cfg.DSN.Resolve()
+	if err != nil {
+		log.Warn("account poller disabled: dsn unavailable", "err", err)
+		return nil
+	}
+	poller, err := accountpoll.New(ctx, dsn, accountpoll.Options{
+		Interval:     cfg.Interval,
+		QueryTimeout: cfg.QueryTimeout,
+		OnError: func(err error) {
+			log.Warn("account poll failed; retaining last snapshot", "err", err)
+		},
+	})
+	if err != nil {
+		log.Warn("account poller disabled: pool unavailable", "err", err)
+		return nil
+	}
+	if err := metrics.RegisterAccountPoller(poller); err != nil {
+		poller.Close()
+		log.Warn("account poller disabled: metric callback unavailable", "err", err)
+		return nil
+	}
+	log.Info("account poller enabled", "interval", cfg.Interval, "query_timeout", cfg.QueryTimeout)
+	return poller
 }
 
 func buildEnricher(ctx context.Context, cfg config.Postgres, log *slog.Logger) enrich.Enricher {

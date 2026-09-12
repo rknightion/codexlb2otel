@@ -3,8 +3,8 @@
 Tails [codex-lb](https://github.com/rknightion/codex-lb)'s conversation-archive files, derives
 model and agent telemetry from the raw Codex websocket traffic, and emits it to Grafana Cloud as
 **OTLP metrics**, **Loki logs**, and optional **Tempo traces**. When an existing read-only Postgres
-connection is configured, it also joins request-log data onto the matching response without writing
-to the database.
+connection is configured, it also joins request-log data onto the matching response and can poll
+account health and quota snapshots without writing to the database.
 
 codex-lb captures every frame of the Codex CLI's `wss://chatgpt.com/backend-api/codex/responses`
 session. That capture carries telemetry available nowhere else - OpenAI's internal engine ids,
@@ -297,9 +297,28 @@ nullable proxy waits, and bounded upstream status, error-code, and transport dia
 metadata and spans. A missing DSN, unavailable database, timeout, or query error affects enrichment
 only, so archive ingestion and other sinks continue.
 
-The read-only role must already have `SELECT` on `request_logs`, `api_keys`, and `accounts`. The
-service never creates roles or changes grants. Enrichment outcomes are visible as `cache_hit`,
+The read-only role must already have `SELECT` on `request_logs`, `api_keys`, `accounts`,
+`usage_history`, `additional_usage_history`, and `api_key_accounts`. The service never creates roles
+or changes grants. Enrichment outcomes are visible as `cache_hit`,
 `db_hit`, `miss`, `error`, or `disabled`; lookup duration is recorded only for database attempts.
+
+### Optional account poller
+
+The independent account poller is also off by default. When enabled with the same read-only DSN, it
+publishes account status, quota headroom, reset time, credits, and API-key eligibility for every
+account it can read, including accounts with no archive traffic:
+
+```yaml
+account_poller:
+  enabled: true
+  dsn: "${CODEXLB2OTEL_POSTGRES_DSN}"
+  interval: 2m
+  query_timeout: 2s
+```
+
+It snapshots the database on its own schedule, so metric callbacks never do database I/O. See
+[Configuration](docs/configuration.md#optional-account-poller) and
+[Security](docs/security.md#telemetry-data-boundary) for the data-boundary rules.
 
 ## Retention and in-process drift
 
@@ -324,7 +343,8 @@ using the mounted config.
 
 Camden's settled deployment enables Postgres enrichment through its existing `codexlb2otel_ro`
 read-only role, with credentials supplied by `.env`. That role has `SELECT` on `request_logs`,
-`api_keys`, and `accounts`; the service never creates roles or changes grants. If the DSN reaches a
+`api_keys`, `accounts`, `usage_history`, `additional_usage_history`, and `api_key_accounts`; the
+service never creates roles or changes grants. If the DSN reaches a
 database on the host, the Compose service needs:
 
 ```yaml

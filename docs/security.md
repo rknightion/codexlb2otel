@@ -29,6 +29,27 @@ loki:
 
 Metadata can still carry model, agent, timing, usage, and conversation identifiers.
 
+## Telemetry data boundary
+
+The telemetry backend is an operator-controlled private system; the Git repository is public. Those
+are separate boundaries. The exporter deliberately sends identity-class values such as conversation
+and proxy-session identifiers, workspace metadata, turn-state metadata, model ETags, and passthrough
+identifiers to Loki structured metadata and Tempo span attributes. They are never metric attributes
+or Loki stream labels, because Identity is a cardinality classification rather than a redaction rule.
+
+The database-sourced `codexlb.account.info` metric deliberately includes the account email alongside
+account status, plan, and routing policy so the private dashboard can identify an account without a
+database session. Account email is a bounded metric attribute, not a repository fixture or example.
+Prompt metrics expose only bounded content-item kinds, never prompt or instruction text. Sticky
+routing similarly exposes its kind and key source, never a sticky key value.
+
+Some capture-derived values remain redacted from the committed content-free schema signature even
+though they are emitted to telemetry. In particular, opaque turn-state metadata is not decrypted,
+but its captured value can reach Loki metadata and span attributes. The private dashboard may read
+bounded runtime account-email values from `codexlb.account.info`; never hard-code or export actual
+email addresses, paths, identifiers, turn-state values, or conversation excerpts into dashboard
+definitions, Git, tests, task records, or documentation.
+
 ## Function arguments
 
 Function-call `input` is retained as valid JSON after reduction. The detector walks maps and arrays,
@@ -73,10 +94,11 @@ unavailable optional Postgres DSN disables enrichment and leaves the archive pat
 Scope backend tokens to the signals they write. Agent Observability needs its generation-write
 permission in addition to ordinary telemetry scopes.
 
-Postgres enrichment is read-only and optional. Use an existing role with `SELECT` on `request_logs`,
-`api_keys`, and `accounts`; the service does not create roles, alter grants, or write request data.
-Keep `postgres.enabled` false when no such DSN is available. A database outage must affect only
-enrichment, not archive ingestion or another enabled sink.
+Postgres enrichment and the optional account poller are read-only. Use an existing role with `SELECT`
+on `request_logs`, `api_keys`, `accounts`, `usage_history`, `additional_usage_history`, and
+`api_key_accounts`; the service does not create roles, alter grants, or write request data. Keep
+`postgres.enabled` and `account_poller.enabled` false when no such DSN is available. A database
+outage must affect only the optional database signals, not archive ingestion or another enabled sink.
 
 Upstream status, error code, and transport are bounded diagnostics carried in the turn body and
 response span. Freeform database or error bodies, failure detail, client addresses, endpoint

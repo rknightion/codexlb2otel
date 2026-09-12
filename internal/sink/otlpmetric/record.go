@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 
+	"github.com/rknightion/codexlb2otel/internal/accountpoll"
 	"github.com/rknightion/codexlb2otel/internal/attr"
 	"github.com/rknightion/codexlb2otel/internal/turn"
 )
@@ -52,6 +53,7 @@ func (s *Sink) record(ctx context.Context, t *turn.Turn) {
 	s.recordEngineTimingDeltas(ctx, t, base)
 	s.recordTBT(ctx, t, base)
 	s.recordRateLimits(ctx, t, base)
+	s.recordWave4(ctx, t, base)
 }
 
 // recordCounts handles every plain per-response counter that is not tokens, engine
@@ -536,6 +538,83 @@ func (s *Sink) recordRateLimits(ctx context.Context, t *turn.Turn, base []attr.K
 	}
 }
 
+// recordWave4 emits the frozen Wave 4 turn-derived metrics. Each selector uses
+// attr.Only against the complete metric base, even for apparently small sets: the
+// shared base intentionally grows as the telemetry contract grows, while these
+// instruments must remain exactly at their seam-defined cardinality.
+func (s *Sink) recordWave4(ctx context.Context, t *turn.Turn, base []attr.KV) {
+	if t.AccountID != "" && rateLimitObserved(t) {
+		s.inst.rateLimitReached.Record(ctx, boolToFloat(t.RateLimitReached),
+			otelmetric.WithAttributes(toOtel(rateLimitReachedAttrs(base))...))
+	}
+	if t.AccountID != "" {
+		for model, reached := range t.ExtraRateLimitReached {
+			if model == "" {
+				continue
+			}
+			attrs := s.guard.With(rateLimitModelReachedAttrs(base), attr.KV{Key: attr.GenAIRequestModel, Value: model})
+			s.inst.rateLimitModelReached.Record(ctx, boolToFloat(reached), otelmetric.WithAttributes(toOtel(attrs)...))
+		}
+	}
+
+	if t.AccountID != "" && len(t.QuotaFailureLimits) > 0 {
+		s.inst.quotaFailures.Add(ctx, 1, otelmetric.WithAttributes(toOtel(quotaFailureAttrs(base))...))
+		for _, limit := range t.QuotaFailureLimits {
+			if limit.Family == "" {
+				continue
+			}
+			for _, window := range limit.Windows {
+				if window.Window == "" {
+					continue
+				}
+				attrs := s.guard.With(quotaFailureWindowAttrs(base),
+					attr.KV{Key: attr.QuotaLimitFamily, Value: limit.Family},
+					attr.KV{Key: attr.QuotaWindow, Value: window.Window},
+				)
+				if window.UsedPercent != nil {
+					s.inst.quotaFailureUsed.Record(ctx, *window.UsedPercent, otelmetric.WithAttributes(toOtel(attrs)...))
+				}
+				if window.ResetAfterSeconds != nil {
+					s.inst.quotaFailureReset.Record(ctx, *window.ResetAfterSeconds, otelmetric.WithAttributes(toOtel(attrs)...))
+				}
+			}
+		}
+	}
+
+	if t.RoutingHintAgreement != "" {
+		s.inst.routingHintAgreement.Add(ctx, 1, otelmetric.WithAttributes(toOtel(routingHintAgreementAttrs(base))...))
+	}
+	for kind, count := range t.ContentItemKinds {
+		if kind == "" || count <= 0 {
+			continue
+		}
+		attrs := s.guard.With(contentItemKindAttrs(base), attr.KV{Key: attr.ContentItemKind, Value: kind})
+		s.inst.contentItemKinds.Add(ctx, int64(count), otelmetric.WithAttributes(toOtel(attrs)...))
+	}
+	if t.CompactionTrigger != "" {
+		s.inst.compactions.Add(ctx, 1, otelmetric.WithAttributes(toOtel(compactionAttrs(base))...))
+	}
+	if t.ServiceTierOutcome != "" {
+		s.inst.serviceTierOutcome.Add(ctx, 1, otelmetric.WithAttributes(toOtel(serviceTierOutcomeAttrs(base))...))
+	}
+	if t.StickyKind != "" && t.StickyKeySource != "" {
+		s.inst.stickyRouting.Add(ctx, 1, otelmetric.WithAttributes(toOtel(stickyRoutingAttrs(base))...))
+	}
+	if t.ProxyLatencyMS > 0 {
+		s.inst.proxyLatency.Record(ctx, msToS(t.ProxyLatencyMS), otelmetric.WithAttributes(toOtel(proxyLatencyAttrs(base))...))
+	}
+	if t.ProxyFirstTokenMS > 0 {
+		s.inst.proxyFirstToken.Record(ctx, msToS(t.ProxyFirstTokenMS), otelmetric.WithAttributes(toOtel(proxyLatencyAttrs(base))...))
+	}
+}
+
+// rateLimitObserved is the existing reducer's presence signal for account-level
+// rate-limit booleans. Those bools predate Wave 4 and cannot distinguish a missing
+// block from false, whereas a non-zero window size only exists when the block did.
+func rateLimitObserved(t *turn.Turn) bool {
+	return t.RateLimitWindowMin > 0 || t.RateLimit2WindowMin > 0
+}
+
 // AttributeSetsForTurn returns the metric attribute sets this package would emit for
 // t, without recording any measurement values. clbstat uses it to measure corpus
 // cardinality against the sink's own selector contract rather than a hand-copied
@@ -720,6 +799,64 @@ func attributeSetsForTurn(t *turn.Turn, guard *attr.Guard, base []attr.KV) []Ins
 				add(attr.MetricCreditsBalance, accountAttrs)
 			}
 		}
+	}
+
+	if t.AccountID != "" && rateLimitObserved(t) {
+		add(attr.MetricRateLimitReached, rateLimitReachedAttrs(base))
+	}
+	if t.AccountID != "" {
+		for model := range t.ExtraRateLimitReached {
+			if model != "" {
+				add(attr.MetricRateLimitModelReached,
+					guard.With(rateLimitModelReachedAttrs(base), attr.KV{Key: attr.GenAIRequestModel, Value: model}))
+			}
+		}
+	}
+	if t.AccountID != "" && len(t.QuotaFailureLimits) > 0 {
+		add(attr.MetricQuotaFailures, quotaFailureAttrs(base))
+		for _, limit := range t.QuotaFailureLimits {
+			if limit.Family == "" {
+				continue
+			}
+			for _, window := range limit.Windows {
+				if window.Window == "" {
+					continue
+				}
+				attrs := guard.With(quotaFailureWindowAttrs(base),
+					attr.KV{Key: attr.QuotaLimitFamily, Value: limit.Family},
+					attr.KV{Key: attr.QuotaWindow, Value: window.Window})
+				if window.UsedPercent != nil {
+					add(attr.MetricQuotaFailureUsed, attrs)
+				}
+				if window.ResetAfterSeconds != nil {
+					add(attr.MetricQuotaFailureReset, attrs)
+				}
+			}
+		}
+	}
+	if t.RoutingHintAgreement != "" {
+		add(attr.MetricRoutingHintAgreement, routingHintAgreementAttrs(base))
+	}
+	for kind, count := range t.ContentItemKinds {
+		if kind != "" && count > 0 {
+			add(attr.MetricContentItemKinds,
+				guard.With(contentItemKindAttrs(base), attr.KV{Key: attr.ContentItemKind, Value: kind}))
+		}
+	}
+	if t.CompactionTrigger != "" {
+		add(attr.MetricCompactions, compactionAttrs(base))
+	}
+	if t.ServiceTierOutcome != "" {
+		add(attr.MetricServiceTierOutcome, serviceTierOutcomeAttrs(base))
+	}
+	if t.StickyKind != "" && t.StickyKeySource != "" {
+		add(attr.MetricStickyRouting, stickyRoutingAttrs(base))
+	}
+	if t.ProxyLatencyMS > 0 {
+		add(attr.MetricProxyLatency, proxyLatencyAttrs(base))
+	}
+	if t.ProxyFirstTokenMS > 0 {
+		add(attr.MetricProxyFirstToken, proxyLatencyAttrs(base))
 	}
 
 	return out
@@ -975,6 +1112,128 @@ func rateLimitAttrs(base []attr.KV) []attr.KV {
 
 func rateLimitWindowAttrs(guard *attr.Guard, base []attr.KV, minutes int) []attr.KV {
 	return guard.With(base, attr.KV{Key: attr.RateLimitWindowMinutes, Value: strconv.Itoa(minutes)})
+}
+
+func rateLimitReachedAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.AccountID)
+}
+
+func rateLimitModelReachedAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.AccountID)
+}
+
+func quotaFailureAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.AccountID, attr.PlanType, attr.QuotaActiveLimit, attr.ErrorType)
+}
+
+func quotaFailureWindowAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.AccountID)
+}
+
+func routingHintAgreementAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.RoutingHintAgreement, attr.Family, attr.ConnectionKind)
+}
+
+func contentItemKindAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.Family)
+}
+
+func compactionAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.CompactionTrigger, attr.CompactionReason, attr.CompactionStrategy, attr.CompactionPhase)
+}
+
+func serviceTierOutcomeAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.ServiceTierOutcome, attr.GenAIRequestModel, attr.Family)
+}
+
+func stickyRoutingAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.StickyKind, attr.StickyKeySource, attr.Family)
+}
+
+func proxyLatencyAttrs(base []attr.KV) []attr.KV {
+	return attr.Only(base, attr.Family, attr.ConnectionKind, attr.GenAIRequestModel)
+}
+
+// observeAccounts is an asynchronous callback. It is intentionally a separate
+// snapshot path from record: account gauges describe every configured account,
+// including accounts with no archive traffic, so deriving them from a Turn would
+// recreate the blind spot this family closes.
+func (s *Sink) observeAccounts(_ context.Context, observer otelmetric.Observer) error {
+	for _, account := range s.snapshot().Accounts {
+		if account.AccountID == "" {
+			continue
+		}
+		infoAttrs := accountInfoAttrs(s.guard, account)
+		observer.ObserveFloat64(s.inst.accountInfo, 1, otelmetric.WithAttributes(toOtel(infoAttrs)...))
+		for _, quota := range account.Quotas {
+			quotaAttrs := accountQuotaAttrs(s.guard, account, quota.Window, quota.WindowMinutes)
+			if quota.UsedPercent != nil {
+				observer.ObserveFloat64(s.inst.accountQuotaUsed, *quota.UsedPercent, otelmetric.WithAttributes(toOtel(quotaAttrs)...))
+			}
+			if quota.ResetAfterSeconds != nil {
+				resetAttrs := accountQuotaResetAttrs(s.guard, account, quota.Window, quota.WindowMinutes)
+				observer.ObserveFloat64(s.inst.accountQuotaReset, *quota.ResetAfterSeconds, otelmetric.WithAttributes(toOtel(resetAttrs)...))
+			}
+		}
+		for _, quota := range account.ModelQuotas {
+			if quota.UsedPercent == nil {
+				continue
+			}
+			attrs := accountModelQuotaAttrs(s.guard, account, quota.QuotaKey, quota.Window, quota.WindowMinutes)
+			observer.ObserveFloat64(s.inst.accountModelQuotaUsed, *quota.UsedPercent, otelmetric.WithAttributes(toOtel(attrs)...))
+		}
+		if account.CreditsBalance != nil {
+			attrs := s.guard.With(nil, attr.KV{Key: attr.AccountID, Value: account.AccountID})
+			observer.ObserveFloat64(s.inst.accountCreditsBalance, *account.CreditsBalance, otelmetric.WithAttributes(toOtel(attrs)...))
+		}
+		for _, key := range account.APIKeys {
+			if key.Name == "" {
+				continue
+			}
+			attrs := s.guard.With(nil,
+				attr.KV{Key: attr.AccountID, Value: account.AccountID},
+				attr.KV{Key: attr.APIKeyName, Value: key.Name},
+			)
+			observer.ObserveFloat64(s.inst.accountAPIKeyEligible, boolToFloat(key.Eligible), otelmetric.WithAttributes(toOtel(attrs)...))
+		}
+	}
+	return nil
+}
+
+func accountQuotaAttrs(guard *attr.Guard, account accountpoll.Account, window string, minutes int) []attr.KV {
+	return guard.With(nil,
+		attr.KV{Key: attr.AccountID, Value: account.AccountID},
+		attr.KV{Key: attr.QuotaWindow, Value: window},
+		attr.KV{Key: attr.PlanType, Value: account.PlanType},
+		attr.KV{Key: attr.RateLimitWindowMinutes, Value: strconv.Itoa(minutes)},
+	)
+}
+
+func accountQuotaResetAttrs(guard *attr.Guard, account accountpoll.Account, window string, minutes int) []attr.KV {
+	return guard.With(nil,
+		attr.KV{Key: attr.AccountID, Value: account.AccountID},
+		attr.KV{Key: attr.QuotaWindow, Value: window},
+		attr.KV{Key: attr.RateLimitWindowMinutes, Value: strconv.Itoa(minutes)},
+	)
+}
+
+func accountModelQuotaAttrs(guard *attr.Guard, account accountpoll.Account, key, window string, minutes int) []attr.KV {
+	return guard.With(nil,
+		attr.KV{Key: attr.AccountID, Value: account.AccountID},
+		attr.KV{Key: attr.QuotaKey, Value: key},
+		attr.KV{Key: attr.QuotaWindow, Value: window},
+		attr.KV{Key: attr.RateLimitWindowMinutes, Value: strconv.Itoa(minutes)},
+	)
+}
+
+func accountInfoAttrs(guard *attr.Guard, account accountpoll.Account) []attr.KV {
+	return guard.With(nil,
+		attr.KV{Key: attr.AccountID, Value: account.AccountID},
+		attr.KV{Key: attr.AccountEmail, Value: account.Email},
+		attr.KV{Key: attr.AccountStatus, Value: account.Status},
+		attr.KV{Key: attr.PlanType, Value: account.PlanType},
+		attr.KV{Key: attr.AccountRoutingPolicy, Value: account.RoutingPolicy},
+	)
 }
 
 // msToS converts a millisecond field to the seconds every histogram in this sink is

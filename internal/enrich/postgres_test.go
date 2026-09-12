@@ -136,6 +136,57 @@ func TestScanRow_MapsNullableTurnEnrichment(t *testing.T) {
 	}
 }
 
+func TestScanRow_MapsWidenedRequestLogColumns(t *testing.T) {
+	planType := "prolite"
+	conversationID := "conversation-1"
+	sessionID := "proxy-session-1"
+	serviceTier := "priority"
+	actualServiceTier := "default"
+	requestedServiceTier := "priority"
+	transport := "websocket"
+	stickyKind := "prompt_cache"
+	stickyKeySource := "thread_header"
+	proxyRouteMode := "direct"
+
+	got, err := scanRow(&fakeRowScanner{values: scanValuesFor(scanFixture{
+		planType:             &planType,
+		conversationID:       &conversationID,
+		sessionID:            &sessionID,
+		serviceTier:          &serviceTier,
+		actualServiceTier:    &actualServiceTier,
+		requestedServiceTier: &requestedServiceTier,
+		latencyMS:            1234.5,
+		latencyFirstTokenMS:  456.75,
+		transport:            &transport,
+		stickyKind:           &stickyKind,
+		stickyKeySource:      &stickyKeySource,
+		proxyRouteMode:       &proxyRouteMode,
+	})})
+	if err != nil {
+		t.Fatalf("scanRow() error = %v", err)
+	}
+
+	if got.PlanType != planType || got.ConversationID != conversationID || got.SessionID != sessionID {
+		t.Fatalf("identity/plan fields = %q/%q/%q, want %q/%q/%q",
+			got.PlanType, got.ConversationID, got.SessionID, planType, conversationID, sessionID)
+	}
+	if got.ServiceTier != serviceTier || got.ActualServiceTier != actualServiceTier ||
+		got.RequestedServiceTier != requestedServiceTier {
+		t.Fatalf("tier fields = %q/%q/%q, want %q/%q/%q",
+			got.ServiceTier, got.ActualServiceTier, got.RequestedServiceTier,
+			serviceTier, actualServiceTier, requestedServiceTier)
+	}
+	if got.LatencyMS != 1234.5 || got.LatencyFirstTokenMS != 456.75 {
+		t.Fatalf("proxy latency fields = %v/%v, want 1234.5/456.75", got.LatencyMS, got.LatencyFirstTokenMS)
+	}
+	if got.Transport != transport || got.StickyKind != stickyKind ||
+		got.StickyKeySource != stickyKeySource || got.ProxyRouteMode != proxyRouteMode {
+		t.Fatalf("routing fields = %q/%q/%q/%q, want %q/%q/%q/%q",
+			got.Transport, got.StickyKind, got.StickyKeySource, got.ProxyRouteMode,
+			transport, stickyKind, stickyKeySource, proxyRouteMode)
+	}
+}
+
 func TestScanRow_ConnectionRowsKeepNullableWaitsAbsent(t *testing.T) {
 	zero := 0
 	queue := 125
@@ -172,9 +223,21 @@ func TestScanRow_ConnectionRowsKeepNullableWaitsAbsent(t *testing.T) {
 
 func TestPostgresQueriesSelectAllEnrichmentColumns(t *testing.T) {
 	columns := []string{
+		"plan_type",
+		"conversation_id",
+		"session_id",
+		"service_tier",
+		"actual_service_tier",
+		"requested_service_tier",
 		"useragent_group",
 		"connection_request_kind",
 		"failure_phase",
+		"latency_ms",
+		"latency_first_token_ms",
+		"transport",
+		"sticky_kind",
+		"sticky_key_source",
+		"upstream_proxy_route_mode",
 		"latency_queue_ms",
 		"latency_response_create_gate_wait_ms",
 		"latency_bridge_queue_wait_ms",
@@ -190,6 +253,9 @@ func TestPostgresQueriesSelectAllEnrichmentColumns(t *testing.T) {
 		{name: "prefetch", sql: prefetchSQL},
 	} {
 		t.Run(query.name, func(t *testing.T) {
+			if !strings.Contains(query.sql, "request_logs.deleted_at IS NULL") {
+				t.Errorf("query does not filter soft-deleted rows")
+			}
 			for _, column := range columns {
 				needle := "request_logs." + column
 				if count := strings.Count(query.sql, needle); count != 1 {
@@ -201,12 +267,59 @@ func TestPostgresQueriesSelectAllEnrichmentColumns(t *testing.T) {
 }
 
 func scanValues(clientGroup, connectionKind, failurePhase *string, queue, gate, bridge, status *int, errorCode, transport *string) []any {
+	return scanValuesFor(scanFixture{
+		clientGroup:              clientGroup,
+		connectionKind:           connectionKind,
+		failurePhase:             failurePhase,
+		latencyResponseCreatedMS: 12.5,
+		latencyFirstUpstreamMS:   8.25,
+		queue:                    queue,
+		gate:                     gate,
+		bridge:                   bridge,
+		status:                   status,
+		upstreamErrorCode:        errorCode,
+		upstreamTransport:        transport,
+	})
+}
+
+type scanFixture struct {
+	planType                 *string
+	conversationID           *string
+	sessionID                *string
+	serviceTier              *string
+	actualServiceTier        *string
+	requestedServiceTier     *string
+	clientGroup              *string
+	connectionKind           *string
+	failurePhase             *string
+	latencyMS                float64
+	latencyFirstTokenMS      float64
+	latencyResponseCreatedMS float64
+	latencyFirstUpstreamMS   float64
+	queue                    *int
+	gate                     *int
+	bridge                   *int
+	status                   *int
+	upstreamErrorCode        *string
+	upstreamTransport        *string
+	transport                *string
+	stickyKind               *string
+	stickyKeySource          *string
+	proxyRouteMode           *string
+}
+
+func scanValuesFor(f scanFixture) []any {
 	return []any{
 		int64(7), "resp_scan", "archive_scan", float64(1.25), "key-scan", "scan",
-		"success", "", optionalStringValue(clientGroup), optionalStringValue(connectionKind), optionalStringValue(failurePhase),
-		float64(12.5), float64(8.25),
-		optionalIntValue(queue), optionalIntValue(gate), optionalIntValue(bridge),
-		optionalIntValue(status), optionalStringValue(errorCode), optionalStringValue(transport),
+		"success", "",
+		optionalStringValue(f.planType), optionalStringValue(f.conversationID), optionalStringValue(f.sessionID),
+		optionalStringValue(f.serviceTier), optionalStringValue(f.actualServiceTier), optionalStringValue(f.requestedServiceTier),
+		optionalStringValue(f.clientGroup), optionalStringValue(f.connectionKind), optionalStringValue(f.failurePhase),
+		f.latencyMS, f.latencyFirstTokenMS, f.latencyResponseCreatedMS, f.latencyFirstUpstreamMS,
+		optionalIntValue(f.queue), optionalIntValue(f.gate), optionalIntValue(f.bridge),
+		optionalIntValue(f.status), optionalStringValue(f.upstreamErrorCode), optionalStringValue(f.upstreamTransport),
+		optionalStringValue(f.transport), optionalStringValue(f.stickyKind), optionalStringValue(f.stickyKeySource),
+		optionalStringValue(f.proxyRouteMode),
 	}
 }
 

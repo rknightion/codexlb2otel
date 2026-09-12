@@ -219,6 +219,76 @@ func TestStoreEnricher_AttachesTurnEnrichmentAndAbsentValues(t *testing.T) {
 	}
 }
 
+func TestStoreEnricher_AttachesWidenedRequestLogFields(t *testing.T) {
+	row := Row{
+		RequestID:            "resp_widened",
+		PlanType:             "prolite",
+		ConversationID:       "conversation-1",
+		SessionID:            "proxy-session-1",
+		ServiceTier:          "priority",
+		ActualServiceTier:    "default",
+		RequestedServiceTier: "priority",
+		LatencyMS:            1234.5,
+		LatencyFirstTokenMS:  456.75,
+		Transport:            "websocket",
+		StickyKind:           "prompt_cache",
+		StickyKeySource:      "thread_header",
+		ProxyRouteMode:       "direct",
+	}
+	store := &fakeStore{lookups: map[string]Row{row.RequestID: row}}
+	e := NewStoreEnricher(store, Options{LookupTimeout: time.Second, CacheEntries: 8})
+	defer e.Close()
+
+	got := &turn.Turn{ResponseID: row.RequestID, PlanType: "wire-plan"}
+	if result := e.Enrich(context.Background(), got); !result.Found {
+		t.Fatalf("Enrich() = %+v, want found", result)
+	}
+	if got.PlanType != row.PlanType || got.ConversationID != row.ConversationID || got.ProxySessionID != row.SessionID {
+		t.Fatalf("plan/identity fields = %q/%q/%q, want %q/%q/%q",
+			got.PlanType, got.ConversationID, got.ProxySessionID,
+			row.PlanType, row.ConversationID, row.SessionID)
+	}
+	if got.ProxyServiceTier != row.ServiceTier || got.ProxyActualServiceTier != row.ActualServiceTier ||
+		got.ProxyRequestedServiceTier != row.RequestedServiceTier {
+		t.Fatalf("tier fields = %q/%q/%q, want %q/%q/%q",
+			got.ProxyServiceTier, got.ProxyActualServiceTier, got.ProxyRequestedServiceTier,
+			row.ServiceTier, row.ActualServiceTier, row.RequestedServiceTier)
+	}
+	if got.ProxyLatencyMS != row.LatencyMS || got.ProxyFirstTokenMS != row.LatencyFirstTokenMS {
+		t.Fatalf("proxy latencies = %v/%v, want %v/%v",
+			got.ProxyLatencyMS, got.ProxyFirstTokenMS, row.LatencyMS, row.LatencyFirstTokenMS)
+	}
+	if got.ServiceTierOutcome != "downgraded" {
+		t.Fatalf("ServiceTierOutcome = %q, want downgraded", got.ServiceTierOutcome)
+	}
+	if got.StickyKind != row.StickyKind || got.StickyKeySource != row.StickyKeySource ||
+		got.ProxyRouteMode != row.ProxyRouteMode {
+		t.Fatalf("routing fields = %q/%q/%q, want %q/%q/%q",
+			got.StickyKind, got.StickyKeySource, got.ProxyRouteMode,
+			row.StickyKind, row.StickyKeySource, row.ProxyRouteMode)
+	}
+	if result := e.Enrich(context.Background(), &turn.Turn{ResponseID: row.RequestID}); !result.Found {
+		t.Fatalf("cached Enrich() = %+v, want found", result)
+	}
+}
+
+func TestServiceTierOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name, requested, actual, want string
+	}{
+		{name: "not requested", want: "not_requested"},
+		{name: "granted", requested: "priority", actual: "priority", want: "granted"},
+		{name: "downgraded", requested: "priority", actual: "default", want: "downgraded"},
+		{name: "unknown actual", requested: "priority", want: "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := serviceTierOutcome(tc.requested, tc.actual); got != tc.want {
+				t.Fatalf("serviceTierOutcome(%q, %q) = %q, want %q", tc.requested, tc.actual, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStoreEnricher_ConnectionRowsKeepNullableWaitsAbsent(t *testing.T) {
 	zero := 0
 	for _, connectionKind := range []string{"normal", "prewarm"} {

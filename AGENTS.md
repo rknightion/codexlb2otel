@@ -34,8 +34,10 @@ write the shape, not the instance.
 - Tempo traces and Agent Observability generations are permanently disabled on the camden
   deployment; native per-profile Codex integration owns the generations path. Source-level trace
   tests are therefore not live delivery evidence.
-- Postgres enrichment runs through the read-only `codexlb2otel_ro` role, which holds `SELECT` on
-  `request_logs`, `api_keys` and `accounts` only. The DSN lives in the deployment environment.
+- Postgres enrichment and the optional account poller run through the read-only `codexlb2otel_ro`
+  role, which holds `SELECT` on `request_logs`, `api_keys`, `accounts`, `usage_history`,
+  `additional_usage_history` and `api_key_accounts` only. The DSN lives in the deployment
+  environment.
 
 ## Task tracking
 

@@ -14,15 +14,18 @@ package otlpmetric
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	otelmetric "go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 
+	"github.com/rknightion/codexlb2otel/internal/accountpoll"
 	"github.com/rknightion/codexlb2otel/internal/attr"
 	"github.com/rknightion/codexlb2otel/internal/config"
 	"github.com/rknightion/codexlb2otel/internal/turn"
@@ -47,7 +50,12 @@ const costResponseLimit = 65536
 type Sink struct {
 	guard *attr.Guard
 	mp    *sdkmetric.MeterProvider
+	meter otelmetric.Meter
 	inst  instruments
+
+	accountMu           sync.RWMutex
+	accountSnapshot     func() accountpoll.Snapshot
+	accountRegistration otelmetric.Registration
 
 	// selfObsRegistered guards RegisterSelfObs (selfobs.go) against being called
 	// twice, which would register a second callback and double-report every
@@ -123,7 +131,54 @@ func newSink(reader sdkmetric.Reader, svc config.Service, guard *attr.Guard) (*S
 		return nil, fmt.Errorf("otlpmetric: building instruments: %w", err)
 	}
 
-	return &Sink{guard: guard, mp: mp, inst: inst, costResponses: make(map[string]struct{})}, nil
+	return &Sink{guard: guard, mp: mp, meter: meter, inst: inst, costResponses: make(map[string]struct{})}, nil
+}
+
+// RegisterAccountPoller registers the six account gauges against L3's exact
+// accountpoll.Snapshot. The callback only calls Poller.Snapshot, whose contract is
+// a short-lock deep copy with no database IO; queries stay exclusively in L3's poll
+// schedule. Root owns deciding whether the optional poller is constructed at all.
+func (s *Sink) RegisterAccountPoller(poller *accountpoll.Poller) error {
+	if poller == nil {
+		return fmt.Errorf("otlpmetric: account poller must not be nil")
+	}
+	return s.registerAccountSnapshot(poller.Snapshot)
+}
+
+func (s *Sink) registerAccountSnapshot(source func() accountpoll.Snapshot) error {
+	if source == nil {
+		return fmt.Errorf("otlpmetric: account snapshot source must not be nil")
+	}
+	s.accountMu.Lock()
+	defer s.accountMu.Unlock()
+	if s.accountRegistration != nil {
+		return fmt.Errorf("otlpmetric: account poller already registered")
+	}
+	s.accountSnapshot = source
+	registration, err := s.meter.RegisterCallback(s.observeAccounts,
+		s.inst.accountQuotaUsed,
+		s.inst.accountQuotaReset,
+		s.inst.accountModelQuotaUsed,
+		s.inst.accountCreditsBalance,
+		s.inst.accountInfo,
+		s.inst.accountAPIKeyEligible,
+	)
+	if err != nil {
+		s.accountSnapshot = nil
+		return fmt.Errorf("otlpmetric: register account gauges: %w", err)
+	}
+	s.accountRegistration = registration
+	return nil
+}
+
+func (s *Sink) snapshot() accountpoll.Snapshot {
+	s.accountMu.RLock()
+	source := s.accountSnapshot
+	s.accountMu.RUnlock()
+	if source == nil {
+		return accountpoll.Snapshot{}
+	}
+	return source()
 }
 
 // firstCostResponse reports whether responseID has not been charged in this
@@ -205,8 +260,20 @@ func (s *Sink) Flush(ctx context.Context) error {
 // persisting a checkpoint, per the Sink interface's contract, because a failure
 // here is Close's problem, not theirs.
 func (s *Sink) Close(ctx context.Context) error {
-	if err := s.mp.Shutdown(ctx); err != nil {
-		return fmt.Errorf("otlpmetric: shutdown: %w", err)
+	s.accountMu.Lock()
+	registration := s.accountRegistration
+	s.accountRegistration = nil
+	s.accountSnapshot = nil
+	s.accountMu.Unlock()
+	var unregisterErr error
+	if registration != nil {
+		if err := registration.Unregister(); err != nil {
+			unregisterErr = fmt.Errorf("otlpmetric: unregister account gauges: %w", err)
+		}
 	}
-	return nil
+	var shutdownErr error
+	if err := s.mp.Shutdown(ctx); err != nil {
+		shutdownErr = fmt.Errorf("otlpmetric: shutdown: %w", err)
+	}
+	return errors.Join(unregisterErr, shutdownErr)
 }

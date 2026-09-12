@@ -39,21 +39,27 @@ JOB = 'job="codexlb2otel"'
 # read from the Go source so the generator runs anywhere; verify() diffs it against
 # .metrics_from_code.txt, which IS extracted from the source, so drift fails loudly.
 ALL_METRICS = [
+    "codexlb.account.api_key_eligible", "codexlb.account.credits_balance",
+    "codexlb.account.info", "codexlb.account.model_quota_used_percent",
+    "codexlb.account.quota_reset_after", "codexlb.account.quota_used_percent",
     "codexlb.proxy.wait", "codexlb.proxy.wait_coverage",
     "codexlb.archive_drift_findings", "codexlb.attributes_rejected", "codexlb.baseline_resets", "codexlb.client_tool_pause",
-    "codexlb.cost_usd",
+    "codexlb.compactions", "codexlb.content_item_kinds", "codexlb.cost_usd",
     "codexlb.credits.balance", "codexlb.credits.unlimited", "codexlb.engine_calls",
     "codexlb.engine_iapi_inference", "codexlb.engine_iapi_sampling", "codexlb.engine_iapi_tbt",
     "codexlb.engine_service_inference", "codexlb.engine_service_minus_iapi_tbt",
     "codexlb.engine_service_sampling", "codexlb.engine_service_tbt",
     "codexlb.engine_uncached_prompt_tokens", "codexlb.engine_wall", "codexlb.errors",
     "codexlb.harness_unblocked", "codexlb.image_gen_tokens", "codexlb.pre_inference",
-    "codexlb.rate_limit.model_used_percent", "codexlb.rate_limit.reset_after",
+    "codexlb.proxy_first_token", "codexlb.proxy_latency",
+    "codexlb.quota_failure.reset_after", "codexlb.quota_failure.used_percent",
+    "codexlb.quota_failures", "codexlb.rate_limit.limit_reached",
+    "codexlb.rate_limit.model_limit_reached", "codexlb.rate_limit.model_used_percent", "codexlb.rate_limit.reset_after",
     "codexlb.rate_limit.secondary_used_percent",
     "codexlb.rate_limit.used_percent", "codexlb.responses",
     "codexlb.responses_excl_engine_and_tool", "codexlb.responses_excl_engine_wait_sampling",
     "codexlb.responses_excl_engine_wait_sampling_iapi", "codexlb.responsesapi_excl_client_tools",
-    "codexlb.safety_buffering_events", "codexlb.sampling_and_stream",
+    "codexlb.routing_hint_agreement", "codexlb.safety_buffering_events", "codexlb.sampling_and_stream",
     "codexlb.selfobs.bytes_read", "codexlb.selfobs.current_file_offset",
     "codexlb.selfobs.decode_errors", "codexlb.selfobs.file_replacements",
     "codexlb.selfobs.enrich_cache_entries", "codexlb.selfobs.enrich_lookup_duration",
@@ -63,7 +69,8 @@ ALL_METRICS = [
     "codexlb.selfobs.partial_member_reads", "codexlb.selfobs.reducer_series",
     "codexlb.selfobs.reducer_threads", "codexlb.selfobs.sink_pending",
     "codexlb.selfobs.sink_rejections", "codexlb.selfobs.turns_emitted",
-    "codexlb.selfobs.turns_evicted", "codexlb.selfobs.undecodable_lines", "codexlb.tokens",
+    "codexlb.selfobs.turns_evicted", "codexlb.selfobs.undecodable_lines",
+    "codexlb.service_tier_outcome", "codexlb.sticky_routing", "codexlb.tokens",
     "codexlb.tool_calls", "codexlb.transport_events",
     "codexlb.turn.duration", "codexlb.turns", "codexlb.web_search_requests",
     "gen_ai.client.operation.duration", "gen_ai.client.token.usage", "gen_ai.client.tool_calls_per_operation",
@@ -77,12 +84,20 @@ ALL_METRICS = [
 # client-tool pause recorded, no sink rejection since the last restart); they still get
 # panels, because "no data" and "no panel" are different answers.
 PROM_NAME = {
+    "codexlb.account.api_key_eligible": "codexlb_account_api_key_eligible_ratio",
+    "codexlb.account.credits_balance": "codexlb_account_credits_balance",
+    "codexlb.account.info": "codexlb_account_info_ratio",
+    "codexlb.account.model_quota_used_percent": "codexlb_account_model_quota_used_percent",
+    "codexlb.account.quota_reset_after": "codexlb_account_quota_reset_after_seconds",
+    "codexlb.account.quota_used_percent": "codexlb_account_quota_used_percent",
     "codexlb.proxy.wait": "codexlb_proxy_wait_seconds",
     "codexlb.proxy.wait_coverage": "codexlb_proxy_wait_coverage_total",
     "codexlb.archive_drift_findings": "codexlb_archive_drift_findings",
     "codexlb.attributes_rejected": "codexlb_attributes_rejected_total",
     "codexlb.baseline_resets": "codexlb_baseline_resets_total",
     "codexlb.client_tool_pause": "codexlb_client_tool_pause_seconds",     # ZERO-TRAFFIC
+    "codexlb.compactions": "codexlb_compactions_total",
+    "codexlb.content_item_kinds": "codexlb_content_item_kinds_total",
     "codexlb.cost_usd": "codexlb_cost_usd_total",
     "codexlb.credits.balance": "codexlb_credits_balance",
     "codexlb.credits.unlimited": "codexlb_credits_unlimited_ratio",
@@ -100,6 +115,13 @@ PROM_NAME = {
     "codexlb.harness_unblocked": "codexlb_harness_unblocked_seconds",
     "codexlb.image_gen_tokens": "codexlb_image_gen_tokens_total",         # ZERO-TRAFFIC
     "codexlb.pre_inference": "codexlb_pre_inference_seconds",
+    "codexlb.proxy_first_token": "codexlb_proxy_first_token_seconds",
+    "codexlb.proxy_latency": "codexlb_proxy_latency_seconds",
+    "codexlb.quota_failure.reset_after": "codexlb_quota_failure_reset_after_seconds",
+    "codexlb.quota_failure.used_percent": "codexlb_quota_failure_used_percent",
+    "codexlb.quota_failures": "codexlb_quota_failures_total",
+    "codexlb.rate_limit.limit_reached": "codexlb_rate_limit_limit_reached_ratio",
+    "codexlb.rate_limit.model_limit_reached": "codexlb_rate_limit_model_limit_reached_ratio",
     "codexlb.rate_limit.model_used_percent": "codexlb_rate_limit_model_used_percent",
     "codexlb.rate_limit.reset_after": "codexlb_rate_limit_reset_after_seconds",
     "codexlb.rate_limit.secondary_used_percent": "codexlb_rate_limit_secondary_used_percent",
@@ -109,6 +131,7 @@ PROM_NAME = {
     "codexlb.responses_excl_engine_wait_sampling": "codexlb_responses_excl_engine_wait_sampling_seconds",
     "codexlb.responses_excl_engine_wait_sampling_iapi": "codexlb_responses_excl_engine_wait_sampling_iapi_seconds",
     "codexlb.responsesapi_excl_client_tools": "codexlb_responsesapi_excl_client_tools_seconds",
+    "codexlb.routing_hint_agreement": "codexlb_routing_hint_agreement_total",
     "codexlb.safety_buffering_events": "codexlb_safety_buffering_events_total",
     "codexlb.sampling_and_stream": "codexlb_sampling_and_stream_seconds",
     "codexlb.selfobs.bytes_read": "codexlb_selfobs_bytes_read_bytes_total",
@@ -132,6 +155,8 @@ PROM_NAME = {
     "codexlb.selfobs.turns_emitted": "codexlb_selfobs_turns_emitted_total",
     "codexlb.selfobs.turns_evicted": "codexlb_selfobs_turns_evicted_total",
     "codexlb.selfobs.undecodable_lines": "codexlb_selfobs_undecodable_lines_total",
+    "codexlb.service_tier_outcome": "codexlb_service_tier_outcome_total",
+    "codexlb.sticky_routing": "codexlb_sticky_routing_total",
     "codexlb.tokens": "codexlb_tokens_total",
     "codexlb.tool_calls": "codexlb_tool_calls_total",
     "codexlb.transport_events": "codexlb_transport_events_total",
@@ -1481,7 +1506,138 @@ def tab_limits():
 
 
 # ---------------------------------------------------------------------------
-# Tab 7 - Errors and transport
+# Tab 7 - Quota, account and request health
+# ---------------------------------------------------------------------------
+def tab_quota_account_health():
+    p = []
+    p.append(panel(
+        "Account health snapshot", [
+            q(f'max by (codexlb_account_id, codexlb_account_email, codexlb_account_status, '
+              f'codexlb_plan_type, codexlb_account_routing_policy) '
+              f'({prom("codexlb.account.info")}{sel(filt=F_ACCT)})', "", instant=True),
+        ], "table", opts=TABLE_OPTS,
+        desc="One current row per account from the optional database poller, including accounts that have not served archive traffic. Account email is intentionally available only in this private telemetry backend; do not copy dashboard values into Git."))
+    p.append(panel(
+        "Account quota headroom", [
+            q(f'100 - max by (codexlb_account_id, codexlb_quota_window, codexlb_plan_type, '
+              f'codexlb_rate_limit_window_minutes) '
+              f'({prom("codexlb.account.quota_used_percent")}{sel(filt=F_ACCT)})',
+              "{{codexlb_account_id}} / {{codexlb_quota_window}} / {{codexlb_plan_type}} / {{codexlb_rate_limit_window_minutes}}m", instant=True),
+        ], "bargauge", unit="percent", minv=0, maxv=100,
+        thresholds=[{"color": "red", "value": None},
+                    {"color": "orange", "value": 20},
+                    {"color": "green", "value": 40}],
+        opts={"displayMode": "lcd", "orientation": "horizontal", "showUnfilled": True,
+              "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}},
+        desc="Headroom from the database snapshot, not from observed request traffic. It covers every account returned by the poller, including an idle account."))
+    p.append(panel(
+        "Account quota reset", [
+            q(f'{prom("codexlb.account.quota_reset_after")}{sel(filt=F_ACCT)}',
+              "{{codexlb_account_id}} / {{codexlb_quota_window}} / {{codexlb_rate_limit_window_minutes}}m"),
+        ], unit="s", opts=LEG,
+        desc="Time remaining in each account quota window, computed at poll time. A falling sawtooth is healthy; an absent series means that window did not report a reset."))
+    p.append(panel(
+        "Per-model account quota", [
+            q(f'{prom("codexlb.account.model_quota_used_percent")}{sel(filt=F_ACCT)}',
+              "{{codexlb_account_id}} / {{codexlb_quota_key}} / {{codexlb_quota_window}} / {{codexlb_rate_limit_window_minutes}}m"),
+        ], unit="percent", minv=0, maxv=100, thresholds=GREEN_RED, opts=LEG,
+        desc="Model-family quota utilisation from the account poller. A model window can be exhausted while the account-wide window still has headroom."))
+    p.append(panel(
+        "Account credits balance", [
+            q(f'{prom("codexlb.account.credits_balance")}{sel(filt=F_ACCT)}',
+              "{{codexlb_account_id}}", instant=True),
+        ], "bargauge", opts={"displayMode": "lcd", "orientation": "horizontal", "showUnfilled": True,
+                               "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}},
+        desc="Latest database-sourced credit balance. It is independent of a 429 snapshot and may be absent when the source did not provide a balance."))
+    p.append(panel(
+        "API-key eligibility", [
+            q(f'max by (codexlb_account_id, codexlb_api_key_name) '
+              f'({prom("codexlb.account.api_key_eligible")}{sel(filt=F_ACCT)})', "", instant=True),
+        ], "table", opts=TABLE_OPTS,
+        desc="One or zero for each account/key pair from the optional poller. Zero means the key cannot route to that account under the current assignment rules."))
+    p.append(panel(
+        "Rate-limit block by account", [
+            q(f'max by (codexlb_account_id) ({prom("codexlb.rate_limit.limit_reached")}{sel(filt=F_ACCT)})',
+              "{{codexlb_account_id}}", instant=True),
+        ], "bargauge", minv=0, maxv=1, thresholds=ZERO_OK,
+        opts={"displayMode": "lcd", "orientation": "horizontal", "showUnfilled": True,
+              "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}},
+        desc="Archive-derived provider block signal. It answers whether an account was actually rate limited, rather than merely busy or near its quota."))
+    p.append(panel(
+        "Model rate-limit block", [
+            q(f'max by (codexlb_account_id, gen_ai_request_model) '
+              f'({prom("codexlb.rate_limit.model_limit_reached")}{sel(filt=F_ACCT)})', "", instant=True),
+        ], "table", opts=TABLE_OPTS,
+        desc="Provider block state at the account/model level. Use it when the account-level block signal is clear but the affected model is not."))
+    p.append(panel(
+        "Quota failures", [
+            q(f'sum by (codexlb_account_id, codexlb_plan_type, codexlb_quota_active_limit, error_type) '
+              f'(increase({prom("codexlb.quota_failures")}{sel(filt=F_ACCT)}[$__range]))', "", instant=True),
+        ], "table", opts=TABLE_OPTS,
+        desc="429 quota failures in the selected range, retaining the provider's active limit and error type. This is the failure count, not a prediction from utilisation."))
+    p.append(panel(
+        "429 quota utilisation snapshot", [
+            q(f'{prom("codexlb.quota_failure.used_percent")}{sel(filt=F_ACCT)}',
+              "{{codexlb_account_id}} / {{codexlb_quota_limit_family}} / {{codexlb_quota_window}}"),
+        ], unit="percent", minv=0, maxv=100, thresholds=GREEN_RED, opts=LEG,
+        desc="Provider-reported quota utilisation attached to a 429. It is an error-time snapshot, so compare it with the independently polled account gauges rather than treating it as continuously refreshed."))
+    p.append(panel(
+        "429 quota reset snapshot", [
+            q(f'{prom("codexlb.quota_failure.reset_after")}{sel(filt=F_ACCT)}',
+              "{{codexlb_account_id}} / {{codexlb_quota_limit_family}} / {{codexlb_quota_window}}"),
+        ], unit="s", opts=LEG,
+        desc="Provider-reported time to reset attached to a 429. Zero is a real observed value; no series means that part of the error snapshot was absent."))
+    p.append(panel(
+        "Routing-hint agreement", [
+            q(f'sum by (codexlb_routing_hint_agreement, codexlb_family, codexlb_connection_kind) '
+              f'(rate({prom("codexlb.routing_hint_agreement")}{sel(filt=F_FAMILY_ONLY)}[$__rate_interval]))',
+              "{{codexlb_routing_hint_agreement}} / {{codexlb_family}} / {{codexlb_connection_kind}}"),
+        ], unit="ops", opts=LEG,
+        desc="Whether the connection routing hint agrees with the response model. A disagreement is the useful signal: it indicates routing overrode the requested model."))
+    p.append(panel(
+        "Prompt content item kinds", [
+            q(f'sum by (codexlb_content_item_kind, codexlb_family) '
+              f'(rate({prom("codexlb.content_item_kinds")}{sel(filt="codexlb_family=~\"$family\"")}[$__rate_interval]))',
+              "{{codexlb_content_item_kind}} / {{codexlb_family}}"),
+        ], unit="ops", opts=LEG,
+        desc="Rate of typed prompt components. This is a bounded kind inventory, not prompt content; the dashboard deliberately has no panel that renders the underlying instruction text."))
+    p.append(panel(
+        "Compactions", [
+            q(f'sum by (codexlb_compaction_trigger, codexlb_compaction_reason, codexlb_compaction_strategy, codexlb_compaction_phase) '
+              f'(increase({prom("codexlb.compactions")}{{{JOB}}}[$__range]))', "", instant=True),
+        ], "table", opts=TABLE_OPTS,
+        desc="Compactions in the selected range, classified by the emitted lifecycle metadata. A compaction is an archive-level event, so this panel intentionally has no account or model matcher."))
+    p.append(panel(
+        "Requested service-tier outcome", [
+            q(f'sum by (codexlb_service_tier_outcome, gen_ai_request_model, codexlb_family) '
+              f'(rate({prom("codexlb.service_tier_outcome")}{sel(filt="gen_ai_request_model=~\"$model\", codexlb_family=~\"$family\"")}[$__rate_interval]))',
+              "{{codexlb_service_tier_outcome}} / {{gen_ai_request_model}} / {{codexlb_family}}"),
+        ], unit="ops", opts=LEG,
+        desc="Whether a requested priority tier was granted, downgraded, not requested, or unknown. It retains only outcome, model, and family to contain series cardinality."))
+    p.append(panel(
+        "Sticky routing", [
+            q(f'sum by (codexlb_sticky_kind, codexlb_sticky_key_source, codexlb_family) '
+              f'(rate({prom("codexlb.sticky_routing")}{sel(filt="codexlb_family=~\"$family\"")}[$__rate_interval]))',
+              "{{codexlb_sticky_kind}} / {{codexlb_sticky_key_source}} / {{codexlb_family}}"),
+        ], unit="ops", opts=LEG,
+        desc="Rate of sticky-routing observations by mechanism. It answers how affinity was selected without exposing the value used as the sticky key."))
+    p.append(panel(
+        "Proxy latency (p50/p95/p99)",
+        hist_quantiles("codexlb.proxy_latency", "gen_ai_request_model, codexlb_family, codexlb_connection_kind",
+                       "{{gen_ai_request_model}} / {{codexlb_family}}", filt=F_DURATION),
+        unit="s", opts=LEG,
+        desc="Proxy latency from the request-log enrichment path, grouped by the model, family, and connection cohort it actually carries. This is distinct from the structurally absent HTTP-bridge wait kinds."))
+    p.append(panel(
+        "Proxy first token (p50/p95/p99)",
+        hist_quantiles("codexlb.proxy_first_token", "gen_ai_request_model, codexlb_family, codexlb_connection_kind",
+                       "{{gen_ai_request_model}} / {{codexlb_family}}", filt=F_DURATION),
+        unit="s", opts=LEG,
+        desc="Time from the proxy's upstream request to its first upstream event. It measures perceived streaming responsiveness from database enrichment, separately from the GenAI semantic-convention histogram."))
+    return p
+
+
+# ---------------------------------------------------------------------------
+# Tab 8 - Errors and transport
 # ---------------------------------------------------------------------------
 def tab_errors():
     p = []
@@ -1984,6 +2140,9 @@ def build():
         ("Rate Limits & Accounts", tab_limits(),
          [12, 12, 12, 12, 12, 12],
          [8, 8, 8, 8, 8, 8]),
+        ("Quota, Account & Request Health", tab_quota_account_health(),
+         [12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12],
+         [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]),
         ("Errors & Transport", tab_errors(),
          [12, 12, 12, 12, 12, 12],
          [8, 8, 8, 8, 11, 11]),
@@ -2008,8 +2167,8 @@ def build():
     spec = {
         "title": "codexlb2otel - Full Telemetry",
         "description": (
-            "Every signal codexlb2otel emits: all 63 metrics, all 9 Loki record types, and "
-            "the trace tree. Twelve tabs, from agent behaviour through to the exporter's "
+            "Every signal codexlb2otel emits: all 83 metrics, all 9 Loki record types, and "
+            "the trace tree. Thirteen tabs, from agent behaviour through to the exporter's "
             "own health. Generated by dashboards/v2/generate.py, which fails the build if "
             "any declared metric or record type loses its last panel."),
         "tags": ["codexlb2otel", "codex-lb", "genai", "generated"],

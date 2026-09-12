@@ -22,19 +22,22 @@ const (
 
 // Record is one line of the archive.
 type Record struct {
-	AccountID  string    `json:"account_id"`
-	Direction  string    `json:"direction"`
-	Headers    Headers   `json:"headers"`
-	Kind       string    `json:"kind"`
-	Method     string    `json:"method"`
-	Payload    Payload   `json:"payload"`
-	RequestID  string    `json:"request_id"`
-	StatusCode *int      `json:"status_code"`
-	Timestamp  time.Time `json:"timestamp"`
-	Transport  string    `json:"transport"`
-	URL        string    `json:"url"`
-	Extra      Extra     `json:"extra"`
+	AccountID string    `json:"account_id"`
+	Direction string    `json:"direction"`
+	Headers   Headers   `json:"headers"`
+	Kind      string    `json:"kind"`
+	Method    string    `json:"method"`
+	Payload   Payload   `json:"payload"`
+	RequestID string    `json:"request_id"`
+	Timestamp time.Time `json:"timestamp"`
+	Transport string    `json:"transport"`
+	URL       string    `json:"url"`
+	Extra     Extra     `json:"extra"`
 }
+
+// The envelope status_code is deliberately not retained. It was null on all
+// 553,888 observed websocket records; terminal upstream status belongs to the
+// inner error event, whose status_code/status wire shapes the reducer consumes.
 
 // Headers is the captured request header set, keyed by LOWERCASE name.
 //

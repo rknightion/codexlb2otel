@@ -72,6 +72,26 @@ type instruments struct {
 	rateLimitPerModel otelmetric.Float64Gauge
 	creditsBalance    otelmetric.Float64Gauge
 	creditsUnlimited  otelmetric.Float64Gauge
+
+	rateLimitReached      otelmetric.Float64Gauge
+	rateLimitModelReached otelmetric.Float64Gauge
+	quotaFailures         otelmetric.Int64Counter
+	quotaFailureUsed      otelmetric.Float64Gauge
+	quotaFailureReset     otelmetric.Float64Gauge
+	routingHintAgreement  otelmetric.Int64Counter
+	contentItemKinds      otelmetric.Int64Counter
+	compactions           otelmetric.Int64Counter
+	serviceTierOutcome    otelmetric.Int64Counter
+	stickyRouting         otelmetric.Int64Counter
+	proxyLatency          otelmetric.Float64Histogram
+	proxyFirstToken       otelmetric.Float64Histogram
+
+	accountQuotaUsed      otelmetric.Float64ObservableGauge
+	accountQuotaReset     otelmetric.Float64ObservableGauge
+	accountModelQuotaUsed otelmetric.Float64ObservableGauge
+	accountCreditsBalance otelmetric.Float64ObservableGauge
+	accountInfo           otelmetric.Float64ObservableGauge
+	accountAPIKeyEligible otelmetric.Float64ObservableGauge
 }
 
 // negativeCapableTBTBoundaries covers MetricEngineServiceMinusIapiTBT, the one TBT
@@ -445,6 +465,103 @@ func newInstruments(meter otelmetric.Meter, guard *attr.Guard) (instruments, err
 			"metered (0), per account."),
 		otelmetric.WithUnit("1"))
 	must(attr.MetricCreditsUnlimited, err)
+
+	// Wave 4 turn-derived instruments deliberately use their own narrow attribute
+	// sets in record.go. None inherits the shared GenAI provider/operation keys: the
+	// frozen seam lists their entire contract and every omitted key would otherwise
+	// silently create a new series dimension.
+	i.rateLimitReached, err = meter.Float64Gauge(attr.MetricRateLimitReached,
+		otelmetric.WithDescription("Whether an account rate-limit block reports limit reached (1) or not (0)."),
+		otelmetric.WithUnit("1"))
+	must(attr.MetricRateLimitReached, err)
+
+	i.rateLimitModelReached, err = meter.Float64Gauge(attr.MetricRateLimitModelReached,
+		otelmetric.WithDescription("Whether a model-specific rate-limit block reports limit reached (1) or not (0)."),
+		otelmetric.WithUnit("1"))
+	must(attr.MetricRateLimitModelReached, err)
+
+	i.quotaFailures, err = meter.Int64Counter(attr.MetricQuotaFailures,
+		otelmetric.WithDescription("Quota failures carrying an error-header quota snapshot."),
+		otelmetric.WithUnit("{failure}"))
+	must(attr.MetricQuotaFailures, err)
+
+	i.quotaFailureUsed, err = meter.Float64Gauge(attr.MetricQuotaFailureUsed,
+		otelmetric.WithDescription("Quota used percent reported with a quota failure."),
+		otelmetric.WithUnit("%"))
+	must(attr.MetricQuotaFailureUsed, err)
+
+	i.quotaFailureReset, err = meter.Float64Gauge(attr.MetricQuotaFailureReset,
+		otelmetric.WithDescription("Seconds until a quota-failure window resets."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricQuotaFailureReset, err)
+
+	i.routingHintAgreement, err = meter.Int64Counter(attr.MetricRoutingHintAgreement,
+		otelmetric.WithDescription("Connection routing-hint agreement with the response model."),
+		otelmetric.WithUnit("{response}"))
+	must(attr.MetricRoutingHintAgreement, err)
+
+	i.contentItemKinds, err = meter.Int64Counter(attr.MetricContentItemKinds,
+		otelmetric.WithDescription("Prompt content items by bounded kind."),
+		otelmetric.WithUnit("{item}"))
+	must(attr.MetricContentItemKinds, err)
+
+	i.compactions, err = meter.Int64Counter(attr.MetricCompactions,
+		otelmetric.WithDescription("Context compactions by their bounded cause and strategy."),
+		otelmetric.WithUnit("{compaction}"))
+	must(attr.MetricCompactions, err)
+
+	i.serviceTierOutcome, err = meter.Int64Counter(attr.MetricServiceTierOutcome,
+		otelmetric.WithDescription("Requested service-tier outcomes."),
+		otelmetric.WithUnit("{response}"))
+	must(attr.MetricServiceTierOutcome, err)
+
+	i.stickyRouting, err = meter.Int64Counter(attr.MetricStickyRouting,
+		otelmetric.WithDescription("Sticky routing selections."),
+		otelmetric.WithUnit("{response}"))
+	must(attr.MetricStickyRouting, err)
+
+	i.proxyLatency, err = meter.Float64Histogram(attr.MetricProxyLatency,
+		otelmetric.WithDescription("Proxy end-to-end latency."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricProxyLatency, err)
+
+	i.proxyFirstToken, err = meter.Float64Histogram(attr.MetricProxyFirstToken,
+		otelmetric.WithDescription("Proxy time to first token."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricProxyFirstToken, err)
+
+	// Account gauges are asynchronous: the callback is registered only after root
+	// supplies L3's poller. That keeps optional database configuration from changing
+	// normal turn-metric startup, and lets callbacks read only an already-published
+	// accountpoll.Snapshot.
+	i.accountQuotaUsed, err = meter.Float64ObservableGauge(attr.MetricAccountQuotaUsed,
+		otelmetric.WithDescription("Latest account quota used percent from the account poller."),
+		otelmetric.WithUnit("%"))
+	must(attr.MetricAccountQuotaUsed, err)
+
+	i.accountQuotaReset, err = meter.Float64ObservableGauge(attr.MetricAccountQuotaReset,
+		otelmetric.WithDescription("Seconds until an account quota window resets, computed at poll time."),
+		otelmetric.WithUnit("s"))
+	must(attr.MetricAccountQuotaReset, err)
+
+	i.accountModelQuotaUsed, err = meter.Float64ObservableGauge(attr.MetricAccountModelQuotaUsed,
+		otelmetric.WithDescription("Latest model-specific account quota used percent from the account poller."),
+		otelmetric.WithUnit("%"))
+	must(attr.MetricAccountModelQuotaUsed, err)
+
+	i.accountCreditsBalance, err = meter.Float64ObservableGauge(attr.MetricAccountCreditsBalance,
+		otelmetric.WithDescription("Latest account credits balance from the account poller."))
+	must(attr.MetricAccountCreditsBalance, err)
+
+	i.accountInfo, err = meter.Float64ObservableGauge(attr.MetricAccountInfo,
+		otelmetric.WithDescription("Account state and routing policy from the account poller."),
+		otelmetric.WithUnit("1"))
+	must(attr.MetricAccountInfo, err)
+
+	i.accountAPIKeyEligible, err = meter.Float64ObservableGauge(attr.MetricAccountAPIKeyEligible,
+		otelmetric.WithDescription("Whether an API key can route to an account according to account assignment scope."),
+		otelmetric.WithUnit("1"))
+	must(attr.MetricAccountAPIKeyEligible, err)
 
 	if len(errs) > 0 {
 		return instruments{}, errors.Join(errs...)

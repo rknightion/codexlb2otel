@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -112,6 +113,7 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 			ItemCounts:     map[string]int{},
 		}
 		t.TraceID, t.SpanID = rec.Trace()
+		r.applyTurnMetadataExtensions(t, rec.Header(frame.HdrTurnMetadata))
 		r.open[rec.RequestID] = t
 	}
 	t.LastTS = rec.Timestamp
@@ -142,10 +144,14 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 	switch ev.Type {
 	case frame.EvResponseCreate:
 		r.applyCreate(t, ev)
+		applyRoutingHint(t, rec.Header("x-codex-routing-hint"))
 	case frame.EvRateLimits:
 		r.applyRateLimits(t, ev)
 	case frame.EvResponseCreated:
 		r.applyCreated(t, ev)
+		applyRoutingHint(t, rec.Header("x-codex-routing-hint"))
+	case frame.EvResponseMetadata, frame.EvBareResponseMetadata:
+		applyResponseMetadata(t, ev)
 	case frame.EvResponseInProgress:
 		r.applyInProgress(t, ev)
 	case frame.EvOutputItemDone:
@@ -159,6 +165,7 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 	// arrive this way.
 	case frame.EvError:
 		r.applyError(t, ev)
+		applyRoutingHint(t, rec.Header("x-codex-routing-hint"))
 		r.ensureLogicalTurn(t)
 		delete(r.open, rec.RequestID)
 		return t, nil
@@ -167,6 +174,7 @@ func (r *Reducer) Add(rec *frame.Record) (*Turn, error) {
 		if err := r.applyCompleted(t, ev); err != nil {
 			return nil, err
 		}
+		applyRoutingHint(t, rec.Header("x-codex-routing-hint"))
 		r.ensureLogicalTurn(t)
 		delete(r.open, rec.RequestID)
 		return t, nil
@@ -233,12 +241,17 @@ func (r *Reducer) addUncorrelated(rec *frame.Record) (*Turn, error) {
 
 type errorEvent struct {
 	Error struct {
-		Type    string `json:"type"`
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Param   string `json:"param"`
+		Type            string   `json:"type"`
+		Code            string   `json:"code"`
+		Message         string   `json:"message"`
+		Param           string   `json:"param"`
+		PlanType        string   `json:"plan_type"`
+		ResetsAt        *float64 `json:"resets_at"`
+		ResetsInSeconds *float64 `json:"resets_in_seconds"`
 	} `json:"error"`
-	Status int `json:"status"`
+	StatusCode *int              `json:"status_code"`
+	Status     *int              `json:"status"`
+	Headers    map[string]string `json:"headers"`
 }
 
 func (r *Reducer) applyError(t *Turn, ev frame.Event) {
@@ -248,8 +261,167 @@ func (r *Reducer) applyError(t *Turn, ev frame.Event) {
 		return
 	}
 	t.ErrorType = e.Error.Type
+	// The observed error shapes do not carry error.code, so production values remain
+	// database-sourced. Keep this legacy decoder assignment for synthetic protocol
+	// compatibility until that older wire contract is retired.
 	t.ErrorCode = e.Error.Code
 	t.ErrorMessage = e.Error.Message
+	if e.StatusCode != nil {
+		t.UpstreamStatusCode = *e.StatusCode
+	} else if e.Status != nil {
+		t.UpstreamStatusCode = *e.Status
+	}
+	if e.Error.PlanType != "" {
+		t.PlanType = e.Error.PlanType
+	}
+	t.QuotaFailureResetsAt = e.Error.ResetsAt
+	t.QuotaFailureResetsInSeconds = e.Error.ResetsInSeconds
+	applyQuotaFailureHeaders(t, e.Headers)
+}
+
+// applyQuotaFailureHeaders reduces the patterned quota response headers without
+// retaining their raw names. Empty strings are omitted, while an explicit "0" is a
+// real measured value and therefore gets a non-nil pointer on the Turn.
+func applyQuotaFailureHeaders(t *Turn, headers map[string]string) {
+	type quotaFamily struct {
+		limit QuotaFailureLimit
+		byWin map[string]*QuotaFailureWindow
+	}
+	families := map[string]*quotaFamily{}
+	for rawName, value := range headers {
+		name := strings.ToLower(rawName)
+		if value == "" {
+			continue
+		}
+		switch name {
+		case "x-codex-active-limit":
+			t.QuotaFailureActiveLimit = value
+			continue
+		case "x-codex-plan-type":
+			if t.PlanType == "" {
+				t.PlanType = value
+			}
+			continue
+		case "x-codex-credits-has-credits":
+			t.QuotaFailureCreditsHas = quotaBool(value)
+			continue
+		case "x-codex-credits-unlimited":
+			t.QuotaFailureCreditsUnlimited = quotaBool(value)
+			continue
+		case "x-codex-credits-balance":
+			t.QuotaFailureCreditsBalance = value
+			continue
+		}
+
+		family, field, ok := quotaHeaderField(name)
+		if !ok {
+			continue
+		}
+		f := families[family]
+		if f == nil {
+			f = &quotaFamily{limit: QuotaFailureLimit{Family: family}, byWin: map[string]*QuotaFailureWindow{}}
+			families[family] = f
+		}
+		switch field {
+		case "limit-name":
+			f.limit.LimitName = value
+		case "primary-over-secondary-limit-percent":
+			f.limit.PrimaryOverSecondaryLimitPercent = quotaFloat(value)
+		default:
+			window, measurement, ok := strings.Cut(field, "-")
+			if !ok || (window != "primary" && window != "secondary") {
+				continue
+			}
+			w := f.byWin[window]
+			if w == nil {
+				w = &QuotaFailureWindow{Window: window}
+				f.byWin[window] = w
+			}
+			switch measurement {
+			case "used-percent":
+				w.UsedPercent = quotaFloat(value)
+			case "window-minutes":
+				w.WindowMinutes = quotaInt(value)
+			case "reset-at":
+				w.ResetAt = quotaFloat(value)
+			case "reset-after-seconds":
+				w.ResetAfterSeconds = quotaFloat(value)
+			}
+		}
+	}
+
+	keys := make([]string, 0, len(families))
+	for family := range families {
+		keys = append(keys, family)
+	}
+	sort.Strings(keys)
+	for _, family := range keys {
+		f := families[family]
+		for _, window := range []string{"primary", "secondary"} {
+			if w := f.byWin[window]; w != nil {
+				f.limit.Windows = append(f.limit.Windows, *w)
+			}
+		}
+		t.QuotaFailureLimits = append(t.QuotaFailureLimits, f.limit)
+	}
+}
+
+func quotaHeaderField(name string) (family, field string, ok bool) {
+	for _, candidate := range []string{
+		"limit-name",
+		"primary-over-secondary-limit-percent",
+		"primary-used-percent",
+		"primary-window-minutes",
+		"primary-reset-at",
+		"primary-reset-after-seconds",
+		"secondary-used-percent",
+		"secondary-window-minutes",
+		"secondary-reset-at",
+		"secondary-reset-after-seconds",
+	} {
+		suffix := "-" + candidate
+		if prefix, matched := strings.CutSuffix(name, suffix); matched {
+			return quotaFamilyName(prefix), candidate, true
+		}
+	}
+	return "", "", false
+}
+
+func quotaFamilyName(prefix string) string {
+	switch prefix {
+	case "x-codex":
+		return "codex"
+	case "x-codex-bengalfox":
+		return "bengalfox"
+	case "x-base-model-inference":
+		return "base_model_inference"
+	default:
+		return strings.ReplaceAll(strings.TrimPrefix(prefix, "x-"), "-", "_")
+	}
+}
+
+func quotaFloat(value string) *float64 {
+	v, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return nil
+	}
+	return &v
+}
+
+func quotaInt(value string) *int {
+	v, err := strconv.Atoi(value)
+	if err != nil {
+		return nil
+	}
+	return &v
+}
+
+func quotaBool(value string) *bool {
+	v, err := strconv.ParseBool(strings.ToLower(value))
+	if err != nil {
+		return nil
+	}
+	return &v
 }
 
 // ensureLogicalTurn assigns an id to a response that never reported timing metrics.
@@ -338,7 +510,12 @@ type inputItem struct {
 	// place the wire protocol carries a tool catalogue (#22 item 1 assumed a
 	// top-level response.create field named tools[]; the corpus has none across
 	// 8,916 response.create events). See Turn.Tools.
-	Tools json.RawMessage `json:"tools"`
+	Tools       json.RawMessage `json:"tools"`
+	Passthrough *struct {
+		TurnID           string   `json:"turn_id"`
+		CreateTime       *float64 `json:"create_time"`
+		ContentItemKinds []string `json:"content_item_kinds"`
+	} `json:"internal_chat_message_metadata_passthrough"`
 }
 
 // wireTool is one entry of an additional_tools item's own tools[] array. Deliberately
@@ -551,18 +728,78 @@ func (r *Reducer) applyClientMetadata(t *Turn, cm clientMetadata) {
 // still taken only from response.create client_metadata, never from stale headers.
 func (r *Reducer) applyTurnMetadataExtensions(t *Turn, raw string) {
 	var m struct {
-		RootTurnID   string `json:"root_turn_id"`
-		AgentName    string `json:"agent_name"`
-		SandboxMode  string `json:"sandbox_mode"`
-		WindowNumber int    `json:"window_number"`
+		RootTurnID      string          `json:"root_turn_id"`
+		AgentName       string          `json:"agent_name"`
+		SandboxMode     string          `json:"sandbox_mode"`
+		WindowNumber    int             `json:"window_number"`
+		ContextWindowID string          `json:"context_window_id"`
+		Workspaces      json.RawMessage `json:"workspaces"`
+		Compaction      struct {
+			Trigger        string `json:"trigger"`
+			Reason         string `json:"reason"`
+			Implementation string `json:"implementation"`
+			Phase          string `json:"phase"`
+			Strategy       string `json:"strategy"`
+		} `json:"compaction"`
+		// These fields are intentionally not emitted: every observed value is
+		// constant, so they add no operational information.
+		AutoReviewEnabled          *bool `json:"auto_review_enabled"`
+		NodeREPLDisabled           *bool `json:"node_repl_disabled"`
+		NodeREPLAutoReviewRequired *bool `json:"node_repl_auto_review_required"`
 	}
 	if json.Unmarshal([]byte(raw), &m) != nil {
 		return
 	}
-	t.RootTurnID = m.RootTurnID
-	t.AgentName = m.AgentName
-	t.SandboxMode = m.SandboxMode
-	t.WindowNumber = m.WindowNumber
+	if m.RootTurnID != "" {
+		t.RootTurnID = m.RootTurnID
+	}
+	if m.AgentName != "" {
+		t.AgentName = m.AgentName
+	}
+	if m.SandboxMode != "" {
+		t.SandboxMode = m.SandboxMode
+	}
+	if m.WindowNumber != 0 {
+		t.WindowNumber = m.WindowNumber
+	}
+	if m.ContextWindowID != "" {
+		t.ContextWindowID = m.ContextWindowID
+	}
+	if workspaces, ok := stableJSONObject(m.Workspaces); ok {
+		t.Workspaces = workspaces
+	}
+	if m.Compaction.Trigger != "" {
+		t.CompactionTrigger = m.Compaction.Trigger
+	}
+	if m.Compaction.Reason != "" {
+		t.CompactionReason = m.Compaction.Reason
+	}
+	if m.Compaction.Implementation != "" {
+		t.CompactionImplementation = m.Compaction.Implementation
+	}
+	if m.Compaction.Phase != "" {
+		t.CompactionPhase = m.Compaction.Phase
+	}
+	if m.Compaction.Strategy != "" {
+		t.CompactionStrategy = m.Compaction.Strategy
+	}
+}
+
+// stableJSONObject canonicalises map key order before an identity value reaches a
+// sink. It preserves the opaque object but does not infer a schema for it.
+func stableJSONObject(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", false
+	}
+	var object map[string]any
+	if json.Unmarshal(raw, &object) != nil {
+		return "", false
+	}
+	encoded, err := json.Marshal(object)
+	if err != nil {
+		return "", false
+	}
+	return string(encoded), true
 }
 
 // shortHash identifies a large near-static body without shipping it.
@@ -578,6 +815,7 @@ func shortHash(s string) string {
 // routine), so each item is emitted only on the first turn that carries it.
 func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 	for _, it := range items {
+		r.capturePassthroughMetadata(t, it.Passthrough)
 		switch it.Type {
 		case "message":
 			if r.opts.MaxPromptChars <= 0 {
@@ -664,6 +902,89 @@ func (r *Reducer) captureInput(t *Turn, items []inputItem) {
 	}
 }
 
+func (r *Reducer) capturePassthroughMetadata(t *Turn, metadata *struct {
+	TurnID           string   `json:"turn_id"`
+	CreateTime       *float64 `json:"create_time"`
+	ContentItemKinds []string `json:"content_item_kinds"`
+}) {
+	if metadata == nil {
+		return
+	}
+	if metadata.TurnID != "" {
+		t.PassthroughTurnID = metadata.TurnID
+	}
+	if metadata.CreateTime != nil {
+		t.PassthroughCreateTime = *metadata.CreateTime
+	}
+	for _, kind := range metadata.ContentItemKinds {
+		if t.ContentItemKinds == nil {
+			t.ContentItemKinds = map[string]int{}
+		}
+		t.ContentItemKinds[boundedContentItemKind(kind)]++
+	}
+}
+
+func boundedContentItemKind(kind string) string {
+	if contentItemKinds[kind] {
+		return kind
+	}
+	return "unknown"
+}
+
+var contentItemKinds = map[string]bool{
+	"model.base_instructions":          true,
+	"model_switch.instructions":        true,
+	"memories.instructions":            true,
+	"host_skills.instructions":         true,
+	"permissions.instructions":         true,
+	"collaboration_mode.instructions":  true,
+	"apps.instructions":                true,
+	"plugins.usage_instructions":       true,
+	"plugins.recommendations":          true,
+	"multi_agent.usage_hint":           true,
+	"multi_agent.mode_instructions":    true,
+	"multi_agent.role_instructions":    true,
+	"agents_md.instructions":           true,
+	"environments.environment_context": true,
+	"hooks.additional_context":         true,
+	"user.text":                        true,
+	"generic.turn_aborted":             true,
+	"unknown":                          true,
+}
+
+func applyResponseMetadata(t *Turn, ev frame.Event) {
+	var metadata struct {
+		Headers map[string]string `json:"headers"`
+	}
+	if ev.Decode(&metadata) != nil {
+		return
+	}
+	for name, value := range metadata.Headers {
+		switch strings.ToLower(name) {
+		case "x-models-etag":
+			t.ModelsETag = value
+		case "x-codex-turn-state":
+			t.TurnState = value
+		}
+	}
+}
+
+func applyRoutingHint(t *Turn, hint string) {
+	if hint == "" && t.RoutingHintAgreement != "" {
+		return
+	}
+	requested, ok := strings.CutPrefix(hint, "model=")
+	if !ok || requested == "" || t.Model == "" {
+		t.RoutingHintAgreement = "absent"
+		return
+	}
+	if requested == t.Model {
+		t.RoutingHintAgreement = "agree"
+		return
+	}
+	t.RoutingHintAgreement = "disagree"
+}
+
 // applyToolCatalogue decodes an additional_tools item's tools[] and gets the SAME
 // dedup-by-hash treatment as InstructionsHash, mirrored deliberately rather than
 // invented fresh: ToolsHash is set on every response that carries a catalogue,
@@ -708,14 +1029,15 @@ type rateLimitWindow struct {
 	UsedPercent       float64 `json:"used_percent"`
 	WindowMinutes     int     `json:"window_minutes"`
 	ResetAfterSeconds float64 `json:"reset_after_seconds"`
+	ResetAt           float64 `json:"reset_at"`
 }
 
 // rateLimitBlock is the shape used by both the account's own limits and each entry of
 // additional_rate_limits. Every level is a pointer: the server sends explicit nulls
 // for windows a plan does not have.
 type rateLimitBlock struct {
-	Allowed      bool             `json:"allowed"`
-	LimitReached bool             `json:"limit_reached"`
+	Allowed      *bool            `json:"allowed"`
+	LimitReached *bool            `json:"limit_reached"`
 	Primary      *rateLimitWindow `json:"primary"`
 	Secondary    *rateLimitWindow `json:"secondary"`
 }
@@ -748,8 +1070,12 @@ func (r *Reducer) applyRateLimits(t *Turn, ev frame.Event) {
 		t.CreditsBalance = c.Balance
 	}
 	if rl := e.RateLimits; rl != nil {
-		t.RateLimitReached = rl.LimitReached
-		t.RateLimitAllowed = rl.Allowed
+		if rl.LimitReached != nil {
+			t.RateLimitReached = *rl.LimitReached
+		}
+		if rl.Allowed != nil {
+			t.RateLimitAllowed = *rl.Allowed
+		}
 		if p := rl.Primary; p != nil {
 			t.RateLimitUsedPercent = p.UsedPercent
 			t.RateLimitWindowMin = p.WindowMinutes
@@ -767,6 +1093,18 @@ func (r *Reducer) applyRateLimits(t *Turn, ev frame.Event) {
 		if blk == nil {
 			continue
 		}
+		if blk.Allowed != nil {
+			if t.ExtraRateLimitAllowed == nil {
+				t.ExtraRateLimitAllowed = map[string]bool{}
+			}
+			t.ExtraRateLimitAllowed[model] = *blk.Allowed
+		}
+		if blk.LimitReached != nil {
+			if t.ExtraRateLimitReached == nil {
+				t.ExtraRateLimitReached = map[string]bool{}
+			}
+			t.ExtraRateLimitReached[model] = *blk.LimitReached
+		}
 		if t.ExtraRateLimits == nil {
 			t.ExtraRateLimits = map[string][]RateLimitWindow{}
 		}
@@ -776,7 +1114,7 @@ func (r *Reducer) applyRateLimits(t *Turn, ev frame.Event) {
 			}
 			t.ExtraRateLimits[model] = append(t.ExtraRateLimits[model], RateLimitWindow{
 				UsedPercent: window.UsedPercent, WindowMin: window.WindowMinutes,
-				ResetSeconds: window.ResetAfterSeconds,
+				ResetSeconds: window.ResetAfterSeconds, ResetAt: window.ResetAt,
 			})
 		}
 	}

@@ -81,23 +81,48 @@ used as a point-query key. `cache_hit`, `db_hit`, `miss`, `error`, and `disabled
 visible in `codexlb.selfobs.enrich_lookups`; lookup duration covers DB attempts only. The joined row
 also supplies nullable proxy waits (`latency_queue_ms`, `latency_response_create_gate_wait_ms`, and
 `latency_bridge_queue_wait_ms`) and bounded upstream status, error-code, and transport fields.
-Null means no observation; a stored zero remains an observed zero.
+Null means no observation; a stored zero remains an observed zero. On this websocket-only deployment,
+the `queue` and `bridge_queue` wait kinds are structurally absent: codex-lb assigns them only on its
+HTTP-bridge submit path, which the websocket request path does not use. The
+`response_create_gate` wait is a separate observation and can still be present. Do not sum these
+waits into an end-to-end latency total.
 
 If the DSN, pool, or query is unavailable, enrichment is disabled or records an error while archive
 tailing and the other sinks continue. The read-only role must already have `SELECT` on `request_logs`,
-`api_keys`, and `accounts`; this service never creates roles or changes grants.
+`api_keys`, `accounts`, `usage_history`, `additional_usage_history`, and `api_key_accounts`; this
+service never creates roles or changes grants.
 
 ### Camden enrichment check
 
 Camden runs enrichment enabled through its dedicated `codexlb2otel_ro` role. That role is read-only
-and has `SELECT` on `request_logs`, `api_keys`, and `accounts`; its secret connection details stay in
-the deployment environment. When `db_hit` stops, inspect the `codexlb.selfobs.enrich_lookups`
+and has `SELECT` on `request_logs`, `api_keys`, `accounts`, `usage_history`,
+`additional_usage_history`, and `api_key_accounts`; its secret connection details stay in the
+deployment environment. When `db_hit` stops, inspect the `codexlb.selfobs.enrich_lookups`
 counter by `codexlb.selfobs.result` and distinguish `disabled`, `error`, and `miss` before changing
 anything. Check the lookup-duration histogram and the service logs for timeout or query errors, then
 verify that the response id still matches `request_logs.request_id` and that the role retains its
-three grants. A `miss` can be a missing request row, while `error` indicates the database operation
+six table grants. A `miss` can be a missing request row, while `error` indicates the database operation
 failed. Cache hits have no lookup-duration sample. The archive tail and other sinks should continue
 while this is investigated; use the cost counter as a regression check when cost data was expected.
+
+## Optional account poller
+
+`account_poller` is a separate, disabled-by-default database reader for account health and quota
+gauges. It does not depend on archive traffic, so it can report an account that has served no
+requests. Enable it only with the same existing read-only DSN and role:
+
+```yaml
+account_poller:
+  enabled: true
+  dsn: "${CODEXLB2OTEL_POSTGRES_DSN}"
+  interval: 2m
+  query_timeout: 2s
+```
+
+At each interval it reads account status, routing policy, quota windows, model quota windows, credit
+balance, and key eligibility from five account tables, then publishes an immutable snapshot for
+the metric callbacks. Those callbacks never query the database. An invalid DSN or a polling failure
+disables or degrades this optional signal only; archive tailing and the other sinks continue.
 
 ## Camden deployment
 

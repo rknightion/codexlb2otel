@@ -46,9 +46,17 @@ type Row struct {
 	APIKeyName                      string
 	Status                          string
 	ErrorCode                       string
+	PlanType                        string
+	ConversationID                  string
+	SessionID                       string
+	ServiceTier                     string
+	ActualServiceTier               string
+	RequestedServiceTier            string
 	ClientGroup                     string
 	ConnectionKind                  string
 	FailurePhase                    string
+	LatencyMS                       float64
+	LatencyFirstTokenMS             float64
 	LatencyResponseCreatedMS        float64
 	LatencyFirstUpstreamEventMS     float64
 	LatencyQueueMS                  *int
@@ -57,6 +65,10 @@ type Row struct {
 	UpstreamStatusCode              int
 	UpstreamErrorCode               string
 	UpstreamTransport               string
+	Transport                       string
+	StickyKind                      string
+	StickyKeySource                 string
+	ProxyRouteMode                  string
 }
 
 // Outcome is a bounded label value for codexlb.selfobs.enrich_lookups.
@@ -371,6 +383,9 @@ func attach(t *turn.Turn, row Row) {
 	t.ClientGroup = row.ClientGroup
 	t.ConnectionKind = row.ConnectionKind
 	t.FailurePhase = row.FailurePhase
+	if row.PlanType != "" {
+		t.PlanType = row.PlanType
+	}
 	t.CostUSD = row.CostUSD
 	t.APIKeyID = row.APIKeyID
 	t.APIKeyName = row.APIKeyName
@@ -379,12 +394,39 @@ func attach(t *turn.Turn, row Row) {
 	t.ProxyFailurePhase = row.FailurePhase
 	t.ProxyResponseCreatedMS = row.LatencyResponseCreatedMS
 	t.ProxyFirstUpstreamEventMS = row.LatencyFirstUpstreamEventMS
+	t.ProxyLatencyMS = row.LatencyMS
+	t.ProxyFirstTokenMS = row.LatencyFirstTokenMS
+	t.ConversationID = row.ConversationID
+	t.ProxySessionID = row.SessionID
+	t.ProxyServiceTier = row.ServiceTier
+	t.ProxyActualServiceTier = row.ActualServiceTier
+	t.ProxyRequestedServiceTier = row.RequestedServiceTier
+	t.ServiceTierOutcome = serviceTierOutcome(row.RequestedServiceTier, row.ActualServiceTier)
+	t.StickyKind = row.StickyKind
+	t.StickyKeySource = row.StickyKeySource
+	t.ProxyRouteMode = row.ProxyRouteMode
 	t.ProxyQueueWaitMS = row.LatencyQueueMS
 	t.ProxyResponseCreateGateWaitMS = row.LatencyResponseCreateGateWaitMS
 	t.ProxyBridgeQueueWaitMS = row.LatencyBridgeQueueWaitMS
 	t.UpstreamStatusCode = row.UpstreamStatusCode
 	t.UpstreamErrorCode = row.UpstreamErrorCode
 	t.UpstreamTransport = row.UpstreamTransport
+}
+
+// serviceTierOutcome keeps the request's requested tier separate from the proxy's
+// actual tier. An absent actual tier is unknown, not a downgrade: the proxy may have
+// omitted its grant reading even when a request asked for a tier.
+func serviceTierOutcome(requested, actual string) string {
+	switch {
+	case requested == "":
+		return "not_requested"
+	case actual == "":
+		return "unknown"
+	case requested == actual:
+		return "granted"
+	default:
+		return "downgraded"
+	}
 }
 
 type disabled struct{}

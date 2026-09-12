@@ -128,3 +128,26 @@ func TestBuildSinks_AllSinksShareOneGuard(t *testing.T) {
 		t.Errorf("shared guard saw %d models, want 1: %v", seen[attr.GenAIRequestModel], seen)
 	}
 }
+
+func TestBuildAccountPollerRegistersWithMetricsSink(t *testing.T) {
+	cfg := config.Default()
+	credentialed(t, &cfg)
+	cfg.OTLP.Metrics.Enabled = true
+	cfg.AccountPoller.Enabled = true
+	cfg.AccountPoller.DSN = "postgres://127.0.0.1:1/testdb?sslmode=disable"
+
+	snk, _, metrics, _, err := buildSinks(t.Context(), cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("buildSinks: %v", err)
+	}
+	defer snk.Close(context.Background())
+
+	poller := buildAccountPoller(t.Context(), cfg.AccountPoller, metrics, slog.New(slog.DiscardHandler))
+	if poller == nil {
+		t.Fatal("buildAccountPoller returned nil for valid optional config")
+	}
+	defer poller.Close()
+	if err := metrics.RegisterAccountPoller(poller); err == nil {
+		t.Fatal("second registration succeeded; root wiring did not register the first callback")
+	}
+}
