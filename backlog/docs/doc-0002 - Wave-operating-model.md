@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 17:01'
-updated_date: '2026-09-06 10:51'
+updated_date: '2026-09-12 18:30'
 ---
 This document carries **only what is specific to codexlb2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -109,6 +109,18 @@ does not cover STOPS and returns the question.** In this repo that specifically 
 attribute key, any change to an instrument's cardinality, any baseline acceptance, and any change to
 what a sink does with an error class. Those are contract decisions; a lane inventing an answer costs
 more than the round trip. A boundary with no escape hatch is a stop condition wearing a safety label.
+
+## External writes a wave may make
+
+A wave's goal §0 enumerates its authority. One standing grant, so it is not re-argued every
+dependency wave:
+
+- **The root may close superseded Renovate pull requests itself** once the equivalent change has
+  landed on `main` under a different module path or version. Comment the landing SHA on the PR
+  before closing it. Granted 2026-09-12: wave 5 parked CXO-0048 waiting for Renovate to autoclose
+  PRs 54-56, which cost one extra tracker commit and one cancelled CI run for no gain in safety.
+- Everything else outbound - cutting a release, writing a dashboard to the stack, tenant or cloud
+  mutations, deploys - stays with the operator unless that wave's goal names it.
 
 ## Run-end against this tracker
 

@@ -1,9 +1,9 @@
 {
   "version": 3,
   "coverage": {
-    "files": 70,
-    "file_bytes": 10079485031,
-    "read_bytes": 10079485031,
+    "files": 74,
+    "file_bytes": 10412037997,
+    "read_bytes": 10412037997,
     "sampled": false
   },
   "storage": {
@@ -92,6 +92,7 @@
       "x-codex-beta-features",
       "x-codex-installation-id",
       "x-codex-parent-thread-id",
+      "x-codex-routing-hint",
       "x-codex-turn-metadata",
       "x-codex-turn-state",
       "x-codex-window-id",
@@ -130,6 +131,9 @@
       ],
       "x-codex-beta-features": [
         "remote_compaction_v2"
+      ],
+      "x-codex-routing-hint": [
+        "\u003cset\u003e"
       ],
       "x-codex-turn-metadata": [
         "\u003cset\u003e"
@@ -213,7 +217,8 @@
             "string"
           ],
           "values": [
-            "responses"
+            "responses",
+            "responses_compaction_v2"
           ]
         },
         "header.x-codex-turn-metadata{}.compaction.phase": {
@@ -222,7 +227,8 @@
           ],
           "values": [
             "mid_turn",
-            "pre_turn"
+            "pre_turn",
+            "standalone_turn"
           ]
         },
         "header.x-codex-turn-metadata{}.compaction.reason": {
@@ -243,7 +249,8 @@
             "string"
           ],
           "values": [
-            "auto"
+            "auto",
+            "manual"
           ]
         },
         "header.x-codex-turn-metadata{}.context_window_id": {
@@ -467,6 +474,57 @@
             "number"
           ]
         },
+        "additional_rate_limits.gpt-reserve": {
+          "types": [
+            "object"
+          ]
+        },
+        "additional_rate_limits.gpt-reserve.allowed": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "true"
+          ]
+        },
+        "additional_rate_limits.gpt-reserve.limit_reached": {
+          "types": [
+            "bool"
+          ],
+          "values": [
+            "false"
+          ]
+        },
+        "additional_rate_limits.gpt-reserve.primary": {
+          "types": [
+            "object"
+          ]
+        },
+        "additional_rate_limits.gpt-reserve.primary.reset_after_seconds": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.gpt-reserve.primary.reset_at": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.gpt-reserve.primary.used_percent": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.gpt-reserve.primary.window_minutes": {
+          "types": [
+            "number"
+          ]
+        },
+        "additional_rate_limits.gpt-reserve.secondary": {
+          "types": [
+            "null"
+          ]
+        },
         "code_review_rate_limits": {
           "types": [
             "null"
@@ -481,9 +539,6 @@
           "types": [
             "null",
             "string"
-          ],
-          "values": [
-            "0"
           ]
         },
         "credits.has_credits": {
@@ -509,7 +564,8 @@
           ],
           "values": [
             "business",
-            "pro"
+            "pro",
+            "prolite"
           ]
         },
         "promo": {
@@ -528,6 +584,7 @@
             "bool"
           ],
           "values": [
+            "false",
             "true"
           ]
         },
@@ -536,7 +593,8 @@
             "bool"
           ],
           "values": [
-            "false"
+            "false",
+            "true"
           ]
         },
         "rate_limits.primary": {
@@ -617,7 +675,10 @@
             "W/\"796bcb5a04b039f45c70b61798ff2aec\"",
             "W/\"7aab8774608793f66cebc9fcca613561\"",
             "W/\"813645c2d5c52994b9518c36f731f646\"",
-            "W/\"e039a011d7349e83bf2856838464bfcc\""
+            "W/\"c88f51bf37ede188d8db8369a2433589\"",
+            "W/\"d4eff5e47e775cd5cc88f098d5809e2b\"",
+            "W/\"e039a011d7349e83bf2856838464bfcc\"",
+            "W/\"ed05f794da956faa89e79015e030a8ca\""
           ]
         },
         "type": {
@@ -648,6 +709,11 @@
             "websocket_connection_limit_reached"
           ]
         },
+        "error.eligible_promo": {
+          "types": [
+            "null"
+          ]
+        },
         "error.message": {
           "types": [
             "string"
@@ -662,13 +728,342 @@
             "previous_response_id"
           ]
         },
+        "error.plan_type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "prolite"
+          ]
+        },
+        "error.resets_at": {
+          "types": [
+            "number"
+          ]
+        },
+        "error.resets_in_seconds": {
+          "types": [
+            "number"
+          ]
+        },
         "error.type": {
           "types": [
             "string"
           ],
           "values": [
             "invalid_request_error",
-            "service_unavailable_error"
+            "service_unavailable_error",
+            "usage_limit_reached"
+          ]
+        },
+        "headers": {
+          "types": [
+            "object"
+          ]
+        },
+        "headers.X-Base-Model-Inference-Limit-Name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "gpt-reserve"
+          ]
+        },
+        "headers.X-Base-Model-Inference-Primary-Over-Secondary-Limit-Percent": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Base-Model-Inference-Primary-Reset-After-Seconds": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "604800"
+          ]
+        },
+        "headers.X-Base-Model-Inference-Primary-Reset-At": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "1789804504",
+            "1789804571",
+            "1789804820",
+            "1789804862",
+            "1789804901",
+            "1789805037",
+            "1789805145",
+            "1789805183",
+            "1789805206"
+          ]
+        },
+        "headers.X-Base-Model-Inference-Primary-Used-Percent": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Base-Model-Inference-Primary-Window-Minutes": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "10080"
+          ]
+        },
+        "headers.X-Base-Model-Inference-Secondary-Reset-After-Seconds": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Base-Model-Inference-Secondary-Reset-At": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            ""
+          ]
+        },
+        "headers.X-Base-Model-Inference-Secondary-Used-Percent": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Base-Model-Inference-Secondary-Window-Minutes": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Codex-Active-Limit": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "premium"
+          ]
+        },
+        "headers.X-Codex-Bengalfox-Limit-Name": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "GPT-5.3-Codex-Spark"
+          ]
+        },
+        "headers.X-Codex-Bengalfox-Primary-Over-Secondary-Limit-Percent": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Codex-Bengalfox-Primary-Reset-After-Seconds": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "18000"
+          ]
+        },
+        "headers.X-Codex-Bengalfox-Primary-Reset-At": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "1789217704",
+            "1789217771",
+            "1789218020",
+            "1789218062",
+            "1789218101",
+            "1789218237",
+            "1789218345",
+            "1789218383",
+            "1789218406"
+          ]
+        },
+        "headers.X-Codex-Bengalfox-Primary-Used-Percent": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Codex-Bengalfox-Primary-Window-Minutes": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "300"
+          ]
+        },
+        "headers.X-Codex-Bengalfox-Secondary-Reset-After-Seconds": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "604800"
+          ]
+        },
+        "headers.X-Codex-Bengalfox-Secondary-Reset-At": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "1789804504",
+            "1789804571",
+            "1789804820",
+            "1789804862",
+            "1789804901",
+            "1789805037",
+            "1789805145",
+            "1789805183",
+            "1789805206"
+          ]
+        },
+        "headers.X-Codex-Bengalfox-Secondary-Used-Percent": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Codex-Bengalfox-Secondary-Window-Minutes": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "10080"
+          ]
+        },
+        "headers.X-Codex-Credits-Balance": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Codex-Credits-Has-Credits": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "False"
+          ]
+        },
+        "headers.X-Codex-Credits-Unlimited": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "False"
+          ]
+        },
+        "headers.X-Codex-Plan-Type": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "prolite"
+          ]
+        },
+        "headers.X-Codex-Primary-Over-Secondary-Limit-Percent": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Codex-Primary-Reset-After-Seconds": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "401722",
+            "401745",
+            "401784",
+            "401892",
+            "402028",
+            "402067",
+            "402108",
+            "402358",
+            "402425"
+          ]
+        },
+        "headers.X-Codex-Primary-Reset-At": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "1789602128",
+            "1789602129"
+          ]
+        },
+        "headers.X-Codex-Primary-Used-Percent": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "100"
+          ]
+        },
+        "headers.X-Codex-Primary-Window-Minutes": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "10080"
+          ]
+        },
+        "headers.X-Codex-Secondary-Reset-After-Seconds": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Codex-Secondary-Reset-At": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            ""
+          ]
+        },
+        "headers.X-Codex-Secondary-Used-Percent": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
+          ]
+        },
+        "headers.X-Codex-Secondary-Window-Minutes": {
+          "types": [
+            "string"
+          ],
+          "values": [
+            "0"
           ]
         },
         "sequence_number": {
@@ -677,6 +1072,11 @@
           ]
         },
         "status": {
+          "types": [
+            "number"
+          ]
+        },
+        "status_code": {
           "types": [
             "number"
           ]
@@ -1830,7 +2230,8 @@
             "string"
           ],
           "values": [
-            "responses"
+            "responses",
+            "responses_compaction_v2"
           ]
         },
         "client_metadata.x-codex-turn-metadata{}.compaction.phase": {
@@ -1839,7 +2240,8 @@
           ],
           "values": [
             "mid_turn",
-            "pre_turn"
+            "pre_turn",
+            "standalone_turn"
           ]
         },
         "client_metadata.x-codex-turn-metadata{}.compaction.reason": {
@@ -1860,7 +2262,8 @@
             "string"
           ],
           "values": [
-            "auto"
+            "auto",
+            "manual"
           ]
         },
         "client_metadata.x-codex-turn-metadata{}.context_window_id": {
@@ -2107,6 +2510,31 @@
           ]
         },
         "input[].input": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].internal_chat_message_metadata_passthrough": {
+          "types": [
+            "object"
+          ]
+        },
+        "input[].internal_chat_message_metadata_passthrough.content_item_kinds": {
+          "types": [
+            "array"
+          ]
+        },
+        "input[].internal_chat_message_metadata_passthrough.content_item_kinds[]": {
+          "types": [
+            "string"
+          ]
+        },
+        "input[].internal_chat_message_metadata_passthrough.create_time": {
+          "types": [
+            "number"
+          ]
+        },
+        "input[].internal_chat_message_metadata_passthrough.turn_id": {
           "types": [
             "string"
           ]
@@ -4342,6 +4770,7 @@
             "string"
           ],
           "values": [
+            "bio",
             "cyber"
           ]
         },
@@ -4491,6 +4920,7 @@
             "string"
           ],
           "values": [
+            "compaction",
             "custom_tool_call",
             "function_call",
             "message",
@@ -4667,6 +5097,7 @@
             "string"
           ],
           "values": [
+            "compaction",
             "custom_tool_call",
             "function_call",
             "message",

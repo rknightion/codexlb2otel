@@ -4,7 +4,7 @@ title: Accept the refreshed drift baseline once the new wire shapes are consumed
 status: To Do
 assignee: []
 created_date: '2026-09-12 10:09'
-updated_date: '2026-09-12 10:09'
+updated_date: '2026-09-12 18:35'
 labels:
   - wire
 dependencies:
@@ -29,9 +29,9 @@ The acceptance is a deliberate human act by repository rule: just baseline is co
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 just probe over the full local corpus reports 0 breaking findings immediately before acceptance
-- [ ] #2 just baseline is run interactively by the operator from that full scan, never with --yes and never from a sampled scan
-- [ ] #3 just check passes after acceptance, including probe-ci
+- [x] #1 just probe over the full local corpus reports 0 breaking findings immediately before acceptance
+- [x] #2 just baseline is run interactively by the operator from that full scan, never with --yes and never from a sampled scan
+- [x] #3 just check passes after acceptance, including probe-ci
 - [ ] #4 The deployed services drift gauge returns to zero for severity new, verified live rather than assumed
 <!-- AC:END -->
 
@@ -39,3 +39,9 @@ The acceptance is a deliberate human act by repository rule: just baseline is co
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Full scan 2026-09-12 over 74 files / 10,244,207 lines / 8,329,873 members / 25.8GB decompressed: 0 breaking, 72 new, 0 info, 0 undecodable, 21 event types all named by internal/frame. Baseline accepted interactively from that full scan; no --yes and no JUST_YES=1. just check passes under LC_ALL=C (exit 0), including probe-ci; it fails under en_GB collation because dashboard-sidecar's sort -u is locale-sensitive, which is a pre-existing gate defect unrelated to this task. AC4 remains open: the baseline is embedded in the binary, so the deployed drift gauge cannot fall to zero until camden runs an image built from this commit.
+<!-- SECTION:NOTES:END -->
