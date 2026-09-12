@@ -6,7 +6,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/OpenRouterTeam/go-sdk v0.7.132
-	github.com/cenkalti/backoff/v5 v5.0.3
+	github.com/cenkalti/backoff/v7 v7.0.0
 	github.com/grafana/agento11y/go v0.18.0
 	github.com/jackc/pgx/v5 v5.11.0
 	go.opentelemetry.io/otel v1.46.0
@@ -20,6 +20,7 @@ require (
 )
 
 require (
+	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260811164956-006e29f97886 // indirect

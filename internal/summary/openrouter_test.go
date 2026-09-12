@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/OpenRouterTeam/go-sdk/models/sdkerrors"
+	"github.com/cenkalti/backoff/v7"
 )
 
 // The distinction this pins cost a real run: a single call that ran out of time and a
@@ -142,5 +143,49 @@ func TestHeaderClient_SetsTheCacheOptIn(t *testing.T) {
 func TestTextOf_ReportsWhyThereIsNoText(t *testing.T) {
 	if _, err := textOf(nil); err == nil {
 		t.Error("a nil response was accepted")
+	}
+}
+
+// v7's WithMaxTries counts the first call. OpenRouterOptions.MaxRetries remains a
+// count of additional calls, so three retries must mean four attempts on the live path.
+func TestOpenRouterRetry_RetryableFailureUsesConfiguredAttemptCount(t *testing.T) {
+	want := errors.New("connection reset by peer")
+	attempts := 0
+	_, err := retry(context.Background(), 3, func() (string, error) {
+		attempts++
+		return "", want
+	}, backoff.WithBackOff(&backoff.ZeroBackOff{}))
+	if attempts != 4 {
+		t.Errorf("attempts = %d, want 4", attempts)
+	}
+	if !errors.Is(err, want) {
+		t.Errorf("returned error no longer exposes the final transport error: %v", err)
+	}
+	if !errors.Is(err, backoff.ErrExhausted) {
+		t.Errorf("returned error = %v, want exhausted retry cause", err)
+	}
+	if got := backoff.AsRetryError(err); got == nil || got.LastErr != want {
+		t.Errorf("RetryError = %#v, want final error %v", got, want)
+	}
+}
+
+// A non-retryable OpenRouter 4xx becomes Permanent. v7 returns a RetryError rather
+// than v5's direct error, but both the stop reason and original API error remain matchable.
+func TestOpenRouterRetry_PermanentFourXXStopsOnceAndPreservesAPIError(t *testing.T) {
+	want := &sdkerrors.APIError{StatusCode: http.StatusUnauthorized}
+	attempts := 0
+	_, err := retry(context.Background(), 3, func() (string, error) {
+		attempts++
+		return "", backoff.Permanent(want)
+	}, backoff.WithBackOff(&backoff.ZeroBackOff{}))
+	if attempts != 1 {
+		t.Errorf("attempts = %d, want 1", attempts)
+	}
+	if !errors.Is(err, backoff.ErrPermanent) {
+		t.Errorf("returned error = %v, want permanent retry cause", err)
+	}
+	var got *sdkerrors.APIError
+	if !errors.As(err, &got) || got != want {
+		t.Errorf("returned error no longer exposes the original API error: %v", err)
 	}
 }

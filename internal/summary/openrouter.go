@@ -19,7 +19,7 @@ import (
 	"github.com/OpenRouterTeam/go-sdk/models/operations"
 	"github.com/OpenRouterTeam/go-sdk/models/sdkerrors"
 	"github.com/OpenRouterTeam/go-sdk/optionalnullable"
-	"github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v7"
 )
 
 // OpenRouterOptions configures the live client.
@@ -174,12 +174,31 @@ func (c *OpenRouter) Complete(ctx context.Context, system, user string) (string,
 		return text, nil
 	}
 
-	if c.opts.MaxRetries <= 0 {
+	return retry(ctx, c.opts.MaxRetries, send)
+}
+
+// retry preserves MaxRetries as a count of retries, rather than v7's total attempts.
+//
+// Backoff v7 wraps all failures in RetryError: its Cause records why retrying stopped
+// (Permanent, exhaustion, elapsed time, or context cancellation) and LastErr carries
+// the final operation error. RetryError unwraps both, so errors.Is and errors.As still
+// expose the API or transport error to callers. Its default 15-minute elapsed limit
+// would add a second, time-dependent cap to this configured-attempt policy, so disable
+// it and let the run context bound waiting instead. Context cancellation interrupts a
+// wait, while Complete's send closure still passes ctx to an in-flight SDK request.
+func retry(ctx context.Context, maxRetries int, send backoff.Operation[string], opts ...backoff.RetryOption) (string, error) {
+	if maxRetries <= 0 {
 		return send()
 	}
-	return backoff.Retry(ctx, send,
+
+	retryOpts := []backoff.RetryOption{
 		backoff.WithBackOff(backoff.NewExponentialBackOff()),
-		backoff.WithMaxTries(uint(c.opts.MaxRetries)+1))
+		// WithMaxTries includes the initial call, whereas MaxRetries does not.
+		backoff.WithMaxTries(uint(maxRetries) + 1),
+		backoff.WithMaxElapsedTime(0),
+	}
+	retryOpts = append(retryOpts, opts...)
+	return backoff.Retry(ctx, send, retryOpts...)
 }
 
 // textOf pulls the assistant text out of a response.
