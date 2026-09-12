@@ -3,6 +3,7 @@ package accountpoll
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -92,6 +93,57 @@ func TestPollerQueriesFrozenSourcesAndQuotesWindow(t *testing.T) {
 	}
 	if !strings.Contains(apiKeyEligibilitySQL, "api_keys") || !strings.Contains(apiKeyEligibilitySQL, "api_key_accounts") {
 		t.Fatalf("eligibility query does not read both key sources:\n%s", apiKeyEligibilitySQL)
+	}
+}
+
+func TestQuotaQueriesConvertEpochResetAtToTimestamp(t *testing.T) {
+	for name, query := range map[string]string{
+		"usage history":            usageSQL,
+		"additional usage history": modelQuotaSQL,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(query, "to_timestamp(reset_at)") {
+				t.Fatalf("query scans integer reset_at without converting it to a timestamp:\n%s", query)
+			}
+		})
+	}
+}
+
+func TestPostgresIntegration_AccountPollerGatedByDSN(t *testing.T) {
+	dsn := os.Getenv("CLB_TEST_PG_DSN")
+	if dsn == "" {
+		t.Skip("CLB_TEST_PG_DSN is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	poller, err := New(ctx, dsn, Options{
+		Interval:     time.Minute,
+		QueryTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer poller.Close()
+	if err := poller.Poll(ctx); err != nil {
+		t.Fatalf("Poll() error = %v", err)
+	}
+
+	snapshot := poller.Snapshot()
+	var quotas, modelQuotas, apiKeys int
+	for _, account := range snapshot.Accounts {
+		if strings.Contains(account.AccountID, "_") {
+			t.Fatal("account poller emitted a suffixed account id")
+		}
+		quotas += len(account.Quotas)
+		modelQuotas += len(account.ModelQuotas)
+		apiKeys += len(account.APIKeys)
+	}
+	if len(snapshot.Accounts) == 0 || quotas == 0 || modelQuotas == 0 || apiKeys == 0 {
+		t.Fatalf(
+			"snapshot population: accounts=%d quotas=%d model_quotas=%d api_keys=%d; want every family non-empty",
+			len(snapshot.Accounts), quotas, modelQuotas, apiKeys,
+		)
 	}
 }
 

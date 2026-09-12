@@ -394,7 +394,7 @@ SELECT DISTINCT ON (account_id, COALESCE("window", 'primary'))
 	account_id,
 	COALESCE("window", 'primary') AS quota_window,
 	used_percent,
-	reset_at,
+	to_timestamp(reset_at) AS reset_at,
 	window_minutes,
 	(
 		SELECT latest.credits_balance
@@ -414,7 +414,7 @@ SELECT DISTINCT ON (account_id, quota_key, COALESCE("window", 'primary'))
 	limit_name,
 	COALESCE("window", 'primary') AS quota_window,
 	used_percent,
-	reset_at,
+	to_timestamp(reset_at) AS reset_at,
 	window_minutes
 FROM additional_usage_history
 ORDER BY account_id, quota_key, COALESCE("window", 'primary'), recorded_at DESC`
