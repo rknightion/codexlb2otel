@@ -3,11 +3,11 @@ id: CXO-0040
 title: >-
   Fix archive error-event decoding: the wrong key, the dead field, and the
   always-empty upstream status
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-12 10:07'
-updated_date: '2026-09-12 11:03'
+updated_date: '2026-09-12 12:27'
 labels:
   - wire
   - telemetry
@@ -33,17 +33,17 @@ The wire carries TWO error shapes. The rate-limit shape has `status_code` (numbe
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 errorEvent accepts both wire shapes: status_code and status, whichever is present, with status_code winning when both appear
-- [ ] #2 The decoded HTTP status reaches turn.Turn and is emitted as codexlb.upstream.status_code when the archive supplies it
-- [ ] #3 Postgres request_logs.upstream_status_code remains a fallback and never overwrites a value the archive supplied
-- [ ] #4 frame.Record.StatusCode is either consumed or removed, and the choice is stated in a comment naming the observed null rate on the websocket family
-- [ ] #5 A table-driven test covers both error shapes plus an error event with neither key, asserting the resulting Turn fields
-- [ ] #6 A comment on Turn.ErrorCode records that the archive never carries error.code and that the field is database-sourced
+- [x] #1 errorEvent accepts both wire shapes: status_code and status, whichever is present, with status_code winning when both appear
+- [x] #2 The decoded HTTP status reaches turn.Turn and is emitted as codexlb.upstream.status_code when the archive supplies it
+- [x] #3 Postgres request_logs.upstream_status_code remains a fallback and never overwrites a value the archive supplied
+- [x] #4 frame.Record.StatusCode is either consumed or removed, and the choice is stated in a comment naming the observed null rate on the websocket family
+- [x] #5 A table-driven test covers both error shapes plus an error event with neither key, asserting the resulting Turn fields
+- [x] #6 A comment on Turn.ErrorCode records that the archive never carries error.code and that the field is database-sourced
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -53,3 +53,9 @@ The wire carries TWO error shapes. The rate-limit shape has `status_code` (numbe
 2. Reduce both error status keys test-first and preserve the database fallback.
 3. Verify focused tests, integrated gates, review, deployment and live evidence.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented dual-shape error status decoding, archive-first fallback semantics, dead envelope-field removal, and database-sourcing documentation. Focused reducer tests and the integrated just check gate passed.
+<!-- SECTION:FINAL_SUMMARY:END -->

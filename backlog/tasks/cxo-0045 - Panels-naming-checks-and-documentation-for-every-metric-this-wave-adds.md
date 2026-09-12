@@ -1,11 +1,11 @@
 ---
 id: CXO-0045
 title: 'Panels, naming checks and documentation for every metric this wave adds'
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-12 10:09'
-updated_date: '2026-09-12 11:03'
+updated_date: '2026-09-12 12:27'
 labels:
   - dashboards
   - docs
@@ -36,18 +36,18 @@ Documentation that is stale as of 2026-09-12 and belongs here:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every metric constant added by this wave has a panel, and generate.py reports no uncovered metric
-- [ ] #2 dashboards/v2/.metrics_from_code.txt and dashboards/v2/codexlb2otel-full.json are regenerated once and just dashboard-check passes
-- [ ] #3 dashboards/scripts/check_names.py passes, including its own unit test
-- [ ] #4 A panel shows quota headroom for every account including those serving no traffic, and a panel shows key eligibility
-- [ ] #5 docs/operations.md states which proxy-wait kinds are structurally absent on a websocket-only deployment and why
-- [ ] #6 AGENTS.md records the six tables the read-only role now selects from
-- [ ] #7 just docs-links passes
+- [x] #1 Every metric constant added by this wave has a panel, and generate.py reports no uncovered metric
+- [x] #2 dashboards/v2/.metrics_from_code.txt and dashboards/v2/codexlb2otel-full.json are regenerated once and just dashboard-check passes
+- [x] #3 dashboards/scripts/check_names.py passes, including its own unit test
+- [x] #4 A panel shows quota headroom for every account including those serving no traffic, and a panel shows key eligibility
+- [x] #5 docs/operations.md states which proxy-wait kinds are structurally absent on a websocket-only deployment and why
+- [x] #6 AGENTS.md records the six tables the read-only role now selects from
+- [x] #7 just docs-links passes
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -57,3 +57,9 @@ Documentation that is stale as of 2026-09-12 and belongs here:
 2. Add one panel per new metric and update operations and role documentation.
 3. Regenerate artifacts once and validate naming, dashboard coverage and links.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added panels for all 18 Wave 4 metrics, regenerated dashboard artifacts once, updated operations and role documentation, and passed dashboard naming, coverage, link, and integrated checks.
+<!-- SECTION:FINAL_SUMMARY:END -->

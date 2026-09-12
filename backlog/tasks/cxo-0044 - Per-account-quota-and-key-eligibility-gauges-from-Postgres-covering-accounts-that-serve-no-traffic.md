@@ -3,11 +3,11 @@ id: CXO-0044
 title: >-
   Per-account quota and key-eligibility gauges from Postgres, covering accounts
   that serve no traffic
-status: In Progress
+status: Parked
 assignee:
   - '@codex'
 created_date: '2026-09-12 10:09'
-updated_date: '2026-09-12 11:03'
+updated_date: '2026-09-12 12:27'
 labels:
   - enrichment
   - metrics
@@ -65,15 +65,15 @@ Measured query cost against the live database: the latest-per-account reads plan
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A poller reads the five account and quota tables on its own schedule and publishes an immutable snapshot
+- [x] #1 A poller reads the five account and quota tables on its own schedule and publishes an immutable snapshot
 - [ ] #2 The observable callbacks read only that snapshot and perform no database IO, and a test proves a callback invoked while the poller holds its lock returns within a bounded time rather than blocking
-- [ ] #3 Every account in the accounts table produces a codexlb.account.info series whether or not it has served traffic
-- [ ] #4 codexlb.account.api_key_eligible is 0 for an account that no active key can reach and 1 otherwise, and a test covers the scope-enabled-but-unassigned case
-- [ ] #5 The account id attribute value is the bare uuid prefix and joins with the archive-derived rate limit series
-- [ ] #6 Every quoted identifier for the window column is present, and a test executes the statements against a stub rejecting an unquoted reserved word
+- [x] #3 Every account in the accounts table produces a codexlb.account.info series whether or not it has served traffic
+- [x] #4 codexlb.account.api_key_eligible is 0 for an account that no active key can reach and 1 otherwise, and a test covers the scope-enabled-but-unassigned case
+- [x] #5 The account id attribute value is the bare uuid prefix and joins with the archive-derived rate limit series
+- [x] #6 Every quoted identifier for the window column is present, and a test executes the statements against a stub rejecting an unquoted reserved word
 - [ ] #7 A database fault disables only these gauges; archive ingestion, Loki and the existing metric path keep running, with the outcome visible in the self-observability counters
-- [ ] #8 The feature is disabled by default in config.example.yaml and TestLoad_ExampleConfigIsDeployable still passes
-- [ ] #9 accounts.email is selected and emitted as a bounded attribute on codexlb.account.info, so an account is identifiable in a dashboard without a database session
+- [x] #8 The feature is disabled by default in config.example.yaml and TestLoad_ExampleConfigIsDeployable still passes
+- [x] #9 accounts.email is selected and emitted as a bounded attribute on codexlb.account.info, so an account is identifiable in a dashboard without a database session
 <!-- AC:END -->
 
 ## Definition of Done
@@ -88,3 +88,15 @@ Measured query cost against the live database: the latest-per-account reads plan
 2. Implement a scheduled read-only poller publishing immutable snapshots.
 3. Wire non-blocking observable gauges and verify focused, integration and live evidence.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Park boundary: add an end-to-end test that publishes a real Poller snapshot and collects it through the registered observable callbacks while proving collection cannot wait on poller database I/O or locks; add the missing frozen poller self-observability counter contract; then enable account_poller in Camden configuration under deployment authority and verify codexlb_account_info live. The current code, read-only Postgres statements, disabled-by-default config, and dashboard panels are present, but AC2 and AC7 remain unproven and Camden configuration is intentionally unchanged.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented the scheduled read-only account poller, immutable snapshots, account and eligibility gauges, disabled-by-default configuration, wiring, tests, dashboards, and live SQL proof. Parked because the required real Poller-to-registered-callback non-blocking seam test and a frozen poller self-observability counter are absent; Camden account_poller is also not enabled, so account gauges cannot be verified live.
+<!-- SECTION:FINAL_SUMMARY:END -->

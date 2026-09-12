@@ -1,11 +1,11 @@
 ---
 id: CXO-0041
 title: 'Capture the quota snapshot the 429 error event carries, and emit limit_reached'
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-12 10:07'
-updated_date: '2026-09-12 11:03'
+updated_date: '2026-09-12 12:27'
 labels:
   - wire
   - telemetry
@@ -47,19 +47,19 @@ Per-model, the same two fields are decoded into rateLimitBlock and then discarde
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The error event quota snapshot is reduced onto the Turn: plan type, resets_at, resets_in_seconds, and per limit family the used percent, window minutes, reset-after seconds and limit name
-- [ ] #2 Empty-string header values are distinguished from zero and are omitted rather than recorded as 0
-- [ ] #3 The Python-spelled booleans in the credits headers are parsed case-insensitively and a value that is neither True nor False is omitted, not defaulted
-- [ ] #4 Quota-at-failure metrics exist and carry the account id and the limit family as bounded attributes, with the limit-family attribute capped in internal/attr
-- [ ] #5 codexlb.rate_limit.limit_reached is emitted from the existing Turn.RateLimitReached and Turn.RateLimitAllowed fields, per account
-- [ ] #6 Per-model allowed and limit_reached from additional_rate_limits are preserved rather than discarded, and reset_at is added to RateLimitWindow
-- [ ] #7 A test drives a captured 429 error event through the reducer and asserts every extracted field, including one empty-string window
-- [ ] #8 No header value reaches telemetry as a raw header name; the attribute keys are codexlb-namespaced
+- [x] #1 The error event quota snapshot is reduced onto the Turn: plan type, resets_at, resets_in_seconds, and per limit family the used percent, window minutes, reset-after seconds and limit name
+- [x] #2 Empty-string header values are distinguished from zero and are omitted rather than recorded as 0
+- [x] #3 The Python-spelled booleans in the credits headers are parsed case-insensitively and a value that is neither True nor False is omitted, not defaulted
+- [x] #4 Quota-at-failure metrics exist and carry the account id and the limit family as bounded attributes, with the limit-family attribute capped in internal/attr
+- [x] #5 codexlb.rate_limit.limit_reached is emitted from the existing Turn.RateLimitReached and Turn.RateLimitAllowed fields, per account
+- [x] #6 Per-model allowed and limit_reached from additional_rate_limits are preserved rather than discarded, and reset_at is added to RateLimitWindow
+- [x] #7 A test drives a captured 429 error event through the reducer and asserts every extracted field, including one empty-string window
+- [x] #8 No header value reaches telemetry as a raw header name; the attribute keys are codexlb-namespaced
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -69,3 +69,9 @@ Per-model, the same two fields are decoded into rateLimitBlock and then discarde
 2. Reduce the patterned 429 quota snapshot and rate-limit booleans test-first.
 3. Emit the frozen instruments and verify focused, integrated and live evidence.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented quota-at-failure reduction and metrics, strict empty and boolean parsing, per-model limit state preservation, and bounded attributes. Focused tests, dashboard coverage, and the integrated just check gate passed.
+<!-- SECTION:FINAL_SUMMARY:END -->

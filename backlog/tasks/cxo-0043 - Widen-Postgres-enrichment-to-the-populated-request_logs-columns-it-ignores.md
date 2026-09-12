@@ -1,11 +1,11 @@
 ---
 id: CXO-0043
 title: Widen Postgres enrichment to the populated request_logs columns it ignores
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-12 10:08'
-updated_date: '2026-09-12 11:03'
+updated_date: '2026-09-12 12:27'
 labels:
   - enrichment
   - metrics
@@ -64,19 +64,19 @@ Enum inventories measured over 24h, for capping in internal/attr:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The enrichment row carries plan_type, conversation_id, session_id, service_tier, actual_service_tier, transport, sticky_kind, sticky_key_source and upstream_proxy_route_mode
-- [ ] #2 requested_service_tier is selected and a requested-versus-granted tier outcome is emitted as a bounded metric attribute
-- [ ] #3 Proxy-measured latency_ms and latency_first_token_ms are selected and emitted separately from the archive-derived timings, so the two can be compared rather than conflated
-- [ ] #4 Both lookup and prefetch statements filter deleted_at IS NULL
-- [ ] #5 The point-query key remains request_logs.request_id and a comment records that archive_request_id differs on the large majority of rows
-- [ ] #6 Every newly attached bounded field has a capped internal/attr registry entry carrying its measured Observed set
-- [ ] #7 A comment in internal/enrich names the columns that are structurally absent on a websocket-only deployment and why, so they are not re-added as a supposed fix
-- [ ] #8 The widened query is proven to still use idx_logs_request_status_api_key_session_time rather than a sequential scan
+- [x] #1 The enrichment row carries plan_type, conversation_id, session_id, service_tier, actual_service_tier, transport, sticky_kind, sticky_key_source and upstream_proxy_route_mode
+- [x] #2 requested_service_tier is selected and a requested-versus-granted tier outcome is emitted as a bounded metric attribute
+- [x] #3 Proxy-measured latency_ms and latency_first_token_ms are selected and emitted separately from the archive-derived timings, so the two can be compared rather than conflated
+- [x] #4 Both lookup and prefetch statements filter deleted_at IS NULL
+- [x] #5 The point-query key remains request_logs.request_id and a comment records that archive_request_id differs on the large majority of rows
+- [x] #6 Every newly attached bounded field has a capped internal/attr registry entry carrying its measured Observed set
+- [x] #7 A comment in internal/enrich names the columns that are structurally absent on a websocket-only deployment and why, so they are not re-added as a supposed fix
+- [x] #8 The widened query is proven to still use idx_logs_request_status_api_key_session_time rather than a sequential scan
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -86,3 +86,9 @@ Enum inventories measured over 24h, for capping in internal/attr:
 2. Widen lookup and prefetch statements while retaining request_id and the index-compatible filter.
 3. Verify focused tests, live read-only SQL execution and query plans.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Widened Postgres enrichment, kept request_id lookup semantics, added soft-delete filters and bounded metrics, and proved both statements against live read-only Postgres with indexed plans. The integrated just check gate passed.
+<!-- SECTION:FINAL_SUMMARY:END -->

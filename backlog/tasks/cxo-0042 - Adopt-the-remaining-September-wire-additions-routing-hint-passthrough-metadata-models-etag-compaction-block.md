@@ -3,11 +3,11 @@ id: CXO-0042
 title: >-
   Adopt the remaining September wire additions: routing hint, passthrough
   metadata, models etag, compaction block
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-12 10:08'
-updated_date: '2026-09-12 11:03'
+updated_date: '2026-09-12 12:27'
 labels:
   - wire
   - telemetry
@@ -43,22 +43,22 @@ Routing decisions for the four, and the standing policy they follow. Personal da
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A counter records whether the connection-level routing hint agrees with the per-response model, as a bounded outcome attribute, without introducing the hint value itself as a dimension
-- [ ] #2 Passthrough turn_id and create_time are reduced onto the Turn as Identity-class fields
-- [ ] #3 content_item_kinds is counted per kind as a bounded attribute capped in internal/attr, with the observed vocabulary recorded
-- [ ] #4 x-models-etag is reduced and emitted as an Identity-class field, not as a metric dimension
-- [ ] #5 The compaction block trigger, reason, implementation, phase and strategy are reduced and emitted as bounded attributes
-- [ ] #6 internal/attr PlanType Observed includes prolite
-- [ ] #7 A test asserts context_window_id is classified Identity and is absent from metric attributes and Loki labels
-- [ ] #8 x-codex-turn-metadata.workspaces is emitted as an Identity-class field reaching Loki structured metadata and span attributes, and a test asserts it is never a metric attribute or a Loki stream label
-- [ ] #9 The attr Sensitive class is retired: its one member SafetyID becomes Identity, Guard loses its Sensitive gates, and TestRegistryIsWellFormed is updated accordingly
-- [ ] #10 x-codex-turn-state is emitted as an Identity-class field and remains redacted from internal/profile/embedded.go, so it reaches telemetry but never corpus.sig.json
-- [ ] #11 auto_review_enabled and the node_repl fields remain unemitted, and the comment saying so cites their constant value rather than privacy
+- [x] #1 A counter records whether the connection-level routing hint agrees with the per-response model, as a bounded outcome attribute, without introducing the hint value itself as a dimension
+- [x] #2 Passthrough turn_id and create_time are reduced onto the Turn as Identity-class fields
+- [x] #3 content_item_kinds is counted per kind as a bounded attribute capped in internal/attr, with the observed vocabulary recorded
+- [x] #4 x-models-etag is reduced and emitted as an Identity-class field, not as a metric dimension
+- [x] #5 The compaction block trigger, reason, implementation, phase and strategy are reduced and emitted as bounded attributes
+- [x] #6 internal/attr PlanType Observed includes prolite
+- [x] #7 A test asserts context_window_id is classified Identity and is absent from metric attributes and Loki labels
+- [x] #8 x-codex-turn-metadata.workspaces is emitted as an Identity-class field reaching Loki structured metadata and span attributes, and a test asserts it is never a metric attribute or a Loki stream label
+- [x] #9 The attr Sensitive class is retired: its one member SafetyID becomes Identity, Guard loses its Sensitive gates, and TestRegistryIsWellFormed is updated accordingly
+- [x] #10 x-codex-turn-state is emitted as an Identity-class field and remains redacted from internal/profile/embedded.go, so it reaches telemetry but never corpus.sig.json
+- [x] #11 auto_review_enabled and the node_repl fields remain unemitted, and the comment saying so cites their constant value rather than privacy
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
+- [x] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -68,3 +68,9 @@ Routing decisions for the four, and the standing policy they follow. Personal da
 2. Reduce routing, passthrough, metadata and compaction shapes.
 3. Route Identity fields to non-indexed sinks and verify bounded metrics.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented September wire additions across reduction and sinks, including bounded routing and content metrics plus Identity-only fields. Frozen registry tests and the integrated just check gate passed.
+<!-- SECTION:FINAL_SUMMARY:END -->
