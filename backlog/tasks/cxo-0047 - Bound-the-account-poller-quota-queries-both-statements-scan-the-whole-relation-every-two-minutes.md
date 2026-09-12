@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-12 16:54'
-updated_date: '2026-09-12 16:54'
+updated_date: '2026-09-12 17:00'
 labels:
   - enrichment
   - metrics
@@ -46,3 +46,43 @@ The bound must preserve two frozen properties: the latest-window expression stay
 <!-- DOD:BEGIN -->
 - [ ] #1 just check passes: fmt-check, lint, build, test-short and probe-ci all clean
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Live EXPLAIN, 2026-09-12, deployed database, read-only
+
+Measured, not estimated. Full plans in the gitignored codex/wave5-poller-explain-2026-09-12.md.
+
+Row counts: accounts 5, api_keys 2, usage_history 69,729, additional_usage_history 75,045.
+
+usageSQL: 326.6 ms. Parallel seq scan over the whole relation, external merge sort spilling
+3,136 kB to disk, to return 8 rows. Separately, the correlated credits_balance subquery runs
+once per history row - 69,729 index searches, 278,916 shared buffer hits - to produce at most
+one value per account. Roughly 2.2 GB of buffer traffic every two minutes.
+
+modelQuotaSQL: 204.0 ms. Seq scan, external merge sort spilling 9,544 kB, to return 9 rows.
+
+REJECTED, tested: dropping the COALESCE changes nothing. additional_usage_history.window is
+NOT NULL with zero null rows, so its COALESCE is dead weight, but removing it still gave
+205.9 ms with the same seq scan and the same 9,544 kB sort. Postgres has no loose index scan,
+so DISTINCT ON over an unbounded relation reads everything whatever the index. The index
+choice is not the defect; the unbounded DISTINCT ON is.
+
+usage_history.window IS nullable in the schema, currently zero null rows, and has a matching
+expression index on COALESCE(window,'primary'). Its COALESCE must stay. Wave 4 justified the
+COALESCE on BOTH tables as matching the covering indexes - correct for usage_history, wrong
+for additional_usage_history, whose indexes are all on the raw column.
+
+WORKS, tested: driving the probe off the small accounts relation with CROSS JOIN LATERAL and
+ORDER BY recorded_at DESC LIMIT 1 gives 26.2 ms, same 9 rows, 15 index searches over 54
+buffers instead of 75,045 scanned rows. Residual defect in that plan: 25.9 of the 26.2 ms is
+the SELECT DISTINCT quota_key, window driving-set discovery, still a growing seq scan.
+Bounding that is part of this task.
+
+Every index the rewrite needs already exists. This task creates no index and issues no DDL.
+
+Urgency: query_timeout is 2s and usageSQL is at 326 ms on a base growing ~120 rows/hour, so
+it doubles in roughly 24 days. Two to three doublings reach the timeout, at which point the
+poll fails, every account gauge goes stale, archive ingestion stays green and nothing pages.
+<!-- SECTION:NOTES:END -->
