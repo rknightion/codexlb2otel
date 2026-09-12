@@ -99,7 +99,7 @@ Every new bounded key has cap 100. Identity keys are `ContentOnly` and are never
 | `PassthroughTurnID` | `codexlb.passthrough.turn_id` | Identity, ContentOnly | not enumerated |
 | `PassthroughCreateTime` | `codexlb.passthrough.create_time` | Identity, ContentOnly | not enumerated |
 
-Reuse without renaming: `AccountID`, `PlanType`, `APIKeyName`, `RateLimitWindowMinutes`, `ServiceTier`, `ServiceTierRequested`, `Family`, `ConnectionKind`, `GenAIRequestModel` and `ErrorType`. `SafetyID` is now Identity. The Sensitive class and every Sensitive gate are gone.
+Reuse without renaming: `AccountID`, `PlanType`, `APIKeyName`, `RateLimitWindowMinutes`, `ServiceTier`, `ServiceTierRequested`, `Family`, `ConnectionKind`, `GenAIRequestModel` and `ErrorType`. `PlanType` has observed values `pro`, `business` and `prolite`. `SafetyID` is now Identity. The Sensitive class and every Sensitive gate are gone.
 
 ## Metric names and exact attribute sets
 

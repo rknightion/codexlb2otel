@@ -222,7 +222,7 @@ var registry = []Field{
 	{Key: AccountID, Class: Bounded, Cap: 16, IDLike: true,
 		Of: func(t *turn.Turn) string { return t.AccountID }},
 	{Key: PlanType, Class: Bounded, Cap: 8,
-		Observed: []string{"pro", "business"},
+		Observed: []string{"pro", "business", "prolite"},
 		Of:       func(t *turn.Turn) string { return t.PlanType }},
 	{Key: ServiceTier, Class: Bounded, Cap: 8,
 		Observed: []string{"default", "auto"},
