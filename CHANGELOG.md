@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/rknightion/codexlb2otel/compare/v0.6.0...v0.6.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* pin the dashboard sidecar sort to C collation ([fd9df44](https://github.com/rknightion/codexlb2otel/commit/fd9df449471cc491098e9caa934bc9b93f357415))
+
 ## [0.6.0](https://github.com/rknightion/codexlb2otel/compare/v0.5.0...v0.6.0) (2026-09-12)
 
 
