@@ -26,6 +26,11 @@ reviews:
       in labels, annotations or examples.
 knowledge_base:
   linked_repositories:
+  - repository: m7kni/m7kni-net-site
+    instructions: >-
+      Documentation hub. This repository dispatches documentation changes to the hub, which clones the
+      docs source and builds it. Check docs_path, config_file and the dispatch payload against this
+      repository's entry in the hub's docs-repos.json manifest.
   - repository: rknightion/codex-lb
     instructions: >-
       Use codex-lb's current archive writer, frame schema, gzip rotation/member behaviour and request-log
