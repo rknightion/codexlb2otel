@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.1](https://github.com/rknightion/codexlb2otel/compare/v0.6.0...v0.6.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.133 ([#96](https://github.com/rknightion/codexlb2otel/issues/96)) ([cdedd5f](https://github.com/rknightion/codexlb2otel/commit/cdedd5f0bfa21382f9c9448ec51caea9cff36041))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.134 ([#98](https://github.com/rknightion/codexlb2otel/issues/98)) ([6c33979](https://github.com/rknightion/codexlb2otel/commit/6c3397927f09a947cb3ef02172b5b0655c46fb2c))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.135 ([#99](https://github.com/rknightion/codexlb2otel/issues/99)) ([3c86749](https://github.com/rknightion/codexlb2otel/commit/3c867494ed73ab5090c7780fc59840852413062c))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.136 ([#100](https://github.com/rknightion/codexlb2otel/issues/100)) ([a304813](https://github.com/rknightion/codexlb2otel/commit/a304813bfabf700a777a32e4b5f6cae7e66d9da9))
+* pin the dashboard sidecar sort to C collation ([fd9df44](https://github.com/rknightion/codexlb2otel/commit/fd9df449471cc491098e9caa934bc9b93f357415))
+
 ## [0.6.0](https://github.com/rknightion/codexlb2otel/compare/v0.5.0...v0.6.0) (2026-09-12)
 
 
