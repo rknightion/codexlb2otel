@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.6.1](https://github.com/rknightion/codexlb2otel/compare/v0.6.0...v0.6.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.133 ([#96](https://github.com/rknightion/codexlb2otel/issues/96)) ([cdedd5f](https://github.com/rknightion/codexlb2otel/commit/cdedd5f0bfa21382f9c9448ec51caea9cff36041))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.134 ([#98](https://github.com/rknightion/codexlb2otel/issues/98)) ([6c33979](https://github.com/rknightion/codexlb2otel/commit/6c3397927f09a947cb3ef02172b5b0655c46fb2c))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.135 ([#99](https://github.com/rknightion/codexlb2otel/issues/99)) ([3c86749](https://github.com/rknightion/codexlb2otel/commit/3c867494ed73ab5090c7780fc59840852413062c))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.136 ([#100](https://github.com/rknightion/codexlb2otel/issues/100)) ([a304813](https://github.com/rknightion/codexlb2otel/commit/a304813bfabf700a777a32e4b5f6cae7e66d9da9))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.137 ([#101](https://github.com/rknightion/codexlb2otel/issues/101)) ([7efde89](https://github.com/rknightion/codexlb2otel/commit/7efde895a996e76c175e83f4f58243203b19c60f))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.138 ([#102](https://github.com/rknightion/codexlb2otel/issues/102)) ([bb4ab5b](https://github.com/rknightion/codexlb2otel/commit/bb4ab5bd105224523d238ea4777c5bbdc4760725))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.139 ([#103](https://github.com/rknightion/codexlb2otel/issues/103)) ([fc3517c](https://github.com/rknightion/codexlb2otel/commit/fc3517c0e7eb0a5d774f7fb90d53b9d6c2ecc677))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.140 ([#104](https://github.com/rknightion/codexlb2otel/issues/104)) ([54015ce](https://github.com/rknightion/codexlb2otel/commit/54015ce0f05fb7f328b2756887035cd24e456fb7))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.141 ([#105](https://github.com/rknightion/codexlb2otel/issues/105)) ([ce93d2e](https://github.com/rknightion/codexlb2otel/commit/ce93d2ef7764a903a574119e0613ad89b3dc7468))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.142 ([#106](https://github.com/rknightion/codexlb2otel/issues/106)) ([c4a6e92](https://github.com/rknightion/codexlb2otel/commit/c4a6e92a98002a687290fceb5dc25fb1ab4917d6))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.143 ([#107](https://github.com/rknightion/codexlb2otel/issues/107)) ([3d8924a](https://github.com/rknightion/codexlb2otel/commit/3d8924afc248b25017bed2cba3595c8d02b223fb))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.144 ([#108](https://github.com/rknightion/codexlb2otel/issues/108)) ([68ba1c0](https://github.com/rknightion/codexlb2otel/commit/68ba1c02b6964e8239cf36754b64ab3e1d708d0f))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.145 ([#109](https://github.com/rknightion/codexlb2otel/issues/109)) ([95e98a5](https://github.com/rknightion/codexlb2otel/commit/95e98a52148bcdac406a38d0b24734a1581c66dc))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.146 ([#110](https://github.com/rknightion/codexlb2otel/issues/110)) ([1c88d9f](https://github.com/rknightion/codexlb2otel/commit/1c88d9f0233f153db7be24f46968258cc7834350))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.147 ([#111](https://github.com/rknightion/codexlb2otel/issues/111)) ([c0e0508](https://github.com/rknightion/codexlb2otel/commit/c0e05088291f7126e101f0f16612404f35ecadcb))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.148 ([#112](https://github.com/rknightion/codexlb2otel/issues/112)) ([87202b1](https://github.com/rknightion/codexlb2otel/commit/87202b1af5fc138b85493487c56a781c2349423d))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.149 ([#113](https://github.com/rknightion/codexlb2otel/issues/113)) ([48f272a](https://github.com/rknightion/codexlb2otel/commit/48f272ac2153d49aa47fc17e7cafa3ed4e130e42))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.150 ([#114](https://github.com/rknightion/codexlb2otel/issues/114)) ([6015808](https://github.com/rknightion/codexlb2otel/commit/6015808c29c5c074f1379b0945619fd50dd58a4e))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.151 ([#115](https://github.com/rknightion/codexlb2otel/issues/115)) ([b813e17](https://github.com/rknightion/codexlb2otel/commit/b813e174c3f4805a2b3e854897fda7847ea0c441))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.152 ([#116](https://github.com/rknightion/codexlb2otel/issues/116)) ([64bf93e](https://github.com/rknightion/codexlb2otel/commit/64bf93e0affe05ec139f3910ea155377c7ae9244))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.154 ([#117](https://github.com/rknightion/codexlb2otel/issues/117)) ([d69764d](https://github.com/rknightion/codexlb2otel/commit/d69764dbadf2f5021d74ba175b93683dcb97675e))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.155 ([#118](https://github.com/rknightion/codexlb2otel/issues/118)) ([69d507f](https://github.com/rknightion/codexlb2otel/commit/69d507fca5d4cf3faa89b6118ee941a35e76eb35))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.156 ([#119](https://github.com/rknightion/codexlb2otel/issues/119)) ([468b663](https://github.com/rknightion/codexlb2otel/commit/468b66336285faf68d9c6eaac4f1a0667e79b87a))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.157 ([#120](https://github.com/rknightion/codexlb2otel/issues/120)) ([a91bd8e](https://github.com/rknightion/codexlb2otel/commit/a91bd8e4b8e3f6703971259712fe2def7eef36a4))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.158 ([#121](https://github.com/rknightion/codexlb2otel/issues/121)) ([5af5e11](https://github.com/rknightion/codexlb2otel/commit/5af5e1119078bf6c05dcba432018be11cb36fae7))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.159 ([#123](https://github.com/rknightion/codexlb2otel/issues/123)) ([7dbc20a](https://github.com/rknightion/codexlb2otel/commit/7dbc20aa3c53609dd54c01c17a83ebc16d5e0640))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.160 ([#124](https://github.com/rknightion/codexlb2otel/issues/124)) ([89e0c81](https://github.com/rknightion/codexlb2otel/commit/89e0c81f1c91ecabe407f0e41ff4c128fd5e6003))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.7.161 ([#125](https://github.com/rknightion/codexlb2otel/issues/125)) ([5e95cc3](https://github.com/rknightion/codexlb2otel/commit/5e95cc37d580c3cc76ab36560a71780ae0574bac))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.8.0 ([#126](https://github.com/rknightion/codexlb2otel/issues/126)) ([c51d1a0](https://github.com/rknightion/codexlb2otel/commit/c51d1a069d83d059914d4e7d208c1d116c7b29fb))
+* **deps:** update module github.com/openrouterteam/go-sdk to v0.8.1 ([#127](https://github.com/rknightion/codexlb2otel/issues/127)) ([2d721f4](https://github.com/rknightion/codexlb2otel/commit/2d721f418d8e24549acce829a412b86cef317b35))
+* pin the dashboard sidecar sort to C collation ([fd9df44](https://github.com/rknightion/codexlb2otel/commit/fd9df449471cc491098e9caa934bc9b93f357415))
+
 ## [0.6.0](https://github.com/rknightion/codexlb2otel/compare/v0.5.0...v0.6.0) (2026-09-12)
 
 
