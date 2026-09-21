@@ -62,7 +62,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # is fully static) - and the `nonroot` variant already runs as uid/gid 65532 by
 # default. Pinned by digest, unlike the builder stage above: this base has no
 # relationship to go.mod's Go version, so nothing here should ever need to float.
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:f5b485ea962d9bd1186b2f6b3a061191539b905b82ec395de78cbfae51f20e35
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 
 COPY --from=builder /out/codexlb2otel /codexlb2otel
 COPY --from=builder /out/clbsum /clbsum
