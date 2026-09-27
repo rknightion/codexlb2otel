@@ -161,7 +161,7 @@ jobs:
   # check means jobs can change without a branch-protection edit.
   ci-success:
     name: ci-success
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: always()
     needs: [build-test, lint, govulncheck, goreleaser-snapshot, docker-build]
     steps:
