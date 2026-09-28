@@ -48,3 +48,6 @@ docs/fonts/
 # The Backlog.md guard hook and its settings ARE tracked, deliberately: they
 # enforce the tracker rules (bare --notes/--plan replaces a section silently;
 .claude/
+
+# loop-pi (pi-subagents writes .pi/subagents/)
+.pi/
