@@ -8,7 +8,7 @@ updated_date: '2026-09-12 18:30'
 This document carries **only what is specific to codexlb2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
 external-contract freezing, the unattended blocker contract, the goal-file template and the
-pre-flight checklist - is the "Agent fan-out protocol (canonical)" document. Read that first. If
+pre-flight checklist - is in `~/repos/agent-docs/sources/loop/contract.md` and `~/repos/agent-docs/sources/loop/planner.md`. Read those first. If
 anything here reads like a restatement of it, delete it here rather than maintaining two copies.
 
 ## Task interface

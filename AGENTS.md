@@ -56,7 +56,7 @@ write the shape, not the instance.
 - `#NNN` in commit messages and code comments points at a deleted GitHub Issues tracker, not at a
   Backlog task ID.
 
-Read the `Agent fan-out protocol (canonical)` doc before designing a wave, and `Wave operating model`
+Read `~/repos/agent-docs/sources/loop/planner.md` before designing a wave, and `Wave operating model`
 for this project's recurring defects, exclusive resources and run-end contract. Both are in
 `backlog doc list --plain`.
 
