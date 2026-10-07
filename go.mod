@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	charm.land/bubbletea/v2 v2.0.10
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/OpenRouterTeam/go-sdk v0.9.29
+	github.com/OpenRouterTeam/go-sdk v0.9.30
 	github.com/cenkalti/backoff/v7 v7.0.1
 	github.com/grafana/agento11y/go v0.18.0
 	github.com/jackc/pgx/v5 v5.11.0
