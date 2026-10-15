@@ -4,7 +4,6 @@ gate: just check
 ci-required: ci-success
 release-on-push: yes
 deploy-on-push: yes
-receiver: https://loopwatch.m7kni.com
 grafana-stack: none
 
 Public repository: no deployment identifier, host name or archive content in any tracked file,
@@ -28,9 +27,28 @@ separate CI legs (`vuln`, `snapshot`, `image`).
   sizing, drift and archive decoding. It never runs in the inner loop; run it once on the final
   candidate when one of those changed.
 - `just check` and `just test` never read the local corpus, and `just check` needs `python3` on PATH.
+- A baseline is a deliberate act, always from a `-full` scan: a sampled scan (`clbprobe -sampled`)
+  never sets one, and absence findings are informational and never page.
 - Tempo traces and Agent Observability generations are permanently disabled on the deployment, so
   source-level trace tests are not live delivery evidence.
 
 ## Mutexes
 
-None recorded.
+- The live archive directory on the codex-lb host (tailnet only): two lanes running `clbsync` race
+  on the same local corpus tree. One at a time.
+- `corpus/` and `corpus.sig.json`: two lanes cannot both accept a baseline.
+- The Grafana Cloud stack: emitting telemetry live is visible to everything pointed at it; a brief
+  that emits says so.
+- The deployed service and its config: one owner at a time.
+- Contended files, one lane or the root's wiring pass: `internal/attr/attr.go`,
+  `internal/turn/reducer.go`, `internal/sink/otlpmetric/record.go`, `config.example.yaml` and
+  `backlog/config.yml`.
+
+## Lane brief
+
+A lane that hits a contract decision its brief does not cover stops and returns the question: a new
+attribute key, a change to an instrument's cardinality, a baseline acceptance, or what a sink does
+with an error class. The root may close a Renovate pull request itself once the equivalent change
+has landed on `main` under another module path or version; comment the landing SHA first. Releases,
+dashboard writes, tenant or cloud mutations and deploys stay with the owner unless the charter's
+authority names them.

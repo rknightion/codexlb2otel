@@ -56,9 +56,31 @@ write the shape, not the instance.
 - `#NNN` in commit messages and code comments points at a deleted GitHub Issues tracker, not at a
   Backlog task ID.
 
-Read `~/repos/agent-docs/sources/loop/planner.md` before designing a wave, and `Wave operating model`
-for this project's recurring defects, exclusive resources and run-end contract. Both are in
-`backlog doc list --plain`.
+Loops: the protocol lives in `~/repos/agent-docs/sources/loop/` (this board's "Loop protocol pointer" doc points there); this repository's loop facts are in `LOOP.md`.
+
+## Recurring defects
+
+What a review pass should look for:
+
+- **Narrowing silently drops attributes.** `attr.Only(...)` builds every instrument's attribute set;
+  an attribute absent from the list is gone with no error. `codexlb.family` was once dropped from
+  every token counter and duration histogram, so synthetic probe traffic polluted every published
+  cost and latency number. A new instrument states which attributes it drops and why.
+- **A library callback can run re-entrantly, inside a call you made.** Any lock held across a
+  library call is a lock its callbacks must not take: a self-observability callback taking the
+  watcher lock inside `Poll` blocked `Collect` until the `PeriodicReader`'s default 30s timeout (not
+  `otlp.timeout`), and nothing was ingested.
+- **Test the seam itself.** That deadlock lived only where `internal/tail` meets
+  `internal/sink/otlpmetric`; both halves passed alone. A regression test for a "never returns"
+  failure bounds the call (`TestWatcher_ProgressIsSafeFromInsideEmit` bounds `Poll` at 10s).
+- **A plain age cutoff evicts the wedged agent first.** Anything time-based needs a mid-turn
+  exemption and a test for it.
+- **A config fault on one sink stops every signal** (a 401 is never-retryable and holds the
+  checkpoint). A new sink ships disabled in `config.example.yaml`;
+  `TestLoad_ExampleConfigIsDeployable` keeps it so.
+- **Sampling proves nothing about rare shapes** (the rarest occur about 10 times in 1.32M records),
+  and a corpus test must select for the variety it needs rather than assume the newest capture has it.
+- Sweep `backlog/` before committing: `grep -rniE "@gmail|@rob-knight|/Users/[[:alnum:]_.-]+|[0-9]{1,3}(\.[0-9]{1,3}){3}" backlog/`.
 
 ## Deeper references
 
